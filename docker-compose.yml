@@ -1,0 +1,24 @@
+services:
+  nova:
+    build: .
+    container_name: nova
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - PORT=3000
+    volumes:
+      - nova-data:/app/data
+      - nova-workspace:/app/workspace
+      - /srv/projects:/srv/projects
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nova.entrypoints=websecure"
+      - "traefik.http.routers.nova.rule=Host(`nova.srv1794048.hstgr.cloud`)"
+      - "traefik.http.routers.nova.tls.certresolver=letsencrypt"
+      - "traefik.http.services.nova.loadbalancer.server.port=3000"
+      - "traefik.http.routers.nova.middlewares=nova-auth"
+      - "traefik.http.middlewares.nova-auth.basicauth.users=${BASIC_AUTH}"
+
+volumes:
+  nova-data:
+  nova-workspace:

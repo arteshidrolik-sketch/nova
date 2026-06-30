@@ -1,0 +1,7 @@
+node_modules
+.next
+.git
+.env
+.env.local
+*.tar.gz
+npm-debug.log*

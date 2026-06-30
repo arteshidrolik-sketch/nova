@@ -1,0 +1,56 @@
+[
+  {
+    "id": "sk-superpowers",
+    "name": "Senior Geliştirici İş Akışı (Superpowers)",
+    "description": "Test-öncelikli, kanıta dayalı sistematik geliştirme iş akışı: TDD, planlama, izole branch'ler ve sistematik hata ayıklama.",
+    "agentKeys": ["developer", "codeReviewer"],
+    "content": "Her görevde şu zorunlu sırayı izle (öneri değil, kural):\n1) Beyin fırtınası: Kod yazmadan önce Sokratik sorularla gereksinimleri netleştir, alternatifleri değerlendir, tasarımı küçük parçalar halinde onaya sun.\n2) İzolasyon: Onaydan sonra ayrı bir branch/worktree aç, temiz bir test temeli (baseline) doğrula.\n3) Planlama: İşi 2-5 dakikalık görevlere böl; her görev için kesin dosya yolları, tam kod özellikleri ve doğrulama adımları yaz.\n4) TDD döngüsü (zorunlu): RED-GREEN-REFACTOR. Önce başarısız testi yaz, başarısız olduğunu gör, sonra testi geçirecek MİNİMUM kodu yaz, geçtiğini gör, sonra commit et. Test öncesi yazılmış kodu sil.\n5) Kod incelemesi: Sonucu plana ve şiddet seviyesine göre incele; kritik sorunlar ilerlemeyi durdurur.\nİlkeler: YAGNI (spekülatif kod yazma), DRY (tekrarı önle). Hata ayıklamada 4 fazlı kök-neden analizi uygula: belirtiyi izle, hipotez kur, doğrula, düzeltmeyi kanıtla. Asla varsayımla 'tamamlandı' deme; her düzeltmeyi çalıştırarak doğrula. Sık ve anlamlı commit at.",
+    "source": "https://github.com/obra/superpowers",
+    "createdAt": 1782700000001
+  },
+  {
+    "id": "sk-uiux",
+    "name": "UI/UX Profesyonel Tasarım Kalitesi",
+    "description": "Sektöre uygun, erişilebilir ve cilalı arayüzler üretmek için tasarım sistemi kuralları ve teslim öncesi kontrol listesi.",
+    "agentKeys": ["developer"],
+    "content": "Arayüz tasarlarken önce bağlamı çöz: ürün kategorisi, sektör (teknoloji, finans, sağlık, e-ticaret, hizmet, yaratıcı, yaşam tarzı), uygun stil, renk paleti, düzen deseni ve tipografi eşleşmesini birlikte belirle. Sektöre özel anti-pattern'leri ele: örneğin sağlık/wellness markalarında parlak neon renkler ve sert animasyonlardan kaçın. Tutarlılık için ana tasarım sistemini kur, sayfa bazlı override'larla uygula.\nTeslim öncesi kontrol listesi (hepsini doğrula):\n- İkon olarak emoji KULLANMA; SVG kütüphaneleri kullan (Heroicons/Lucide).\n- Tüm tıklanabilir öğelere cursor-pointer ver.\n- Yumuşak hover durumları ekle (150-300ms geçişler).\n- Açık temada metin için en az 4.5:1 kontrast oranını sağla.\n- Klavye navigasyonu için görünür focus durumları ekle.\n- prefers-reduced-motion tercihine saygı göster.\n- Şu kırılma noktalarında responsive test et: 375px, 768px, 1024px, 1440px.\nErişilebilirlik tabanı WCAG AA olsun; tüm metinlerde kontrastı doğrula, fare ile klavye paritesini koru.",
+    "source": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+    "createdAt": 1782700000002
+  },
+  {
+    "id": "sk-research",
+    "name": "Otonom Araştırma ve Sentez",
+    "description": "Bir konuyu birden çok kaynaktan araştırıp temellendirilmiş, kaynaklı bir özet üretme yöntemi.",
+    "agentKeys": ["research"],
+    "content": "Bir araştırma sorusunu hedef-odaklı ve yinelemeli şekilde ele al. Önce soruyu netleştir ve alt sorulara böl. Sonra birden çok kaynak türüne yayıl: topluluk tartışmaları (Reddit, X, Hacker News), video/derinlemesine içerik (YouTube) ve teknik dokümantasyon. Tek kaynağa güvenme; bulguları çapraz doğrula ve çelişkileri not et. Her iddiayı kaynağıyla eşleştir; kaynaksız genelleme yapma. Bulguları topladıkça bağlamı şişirmek yerine yapılandırılmış notlara kaydet, sonra hepsini birlikte sentezle. Çıktı: kısa, temellendirilmiş, kaynak bağlantılı bir özet; ayrıca güven düzeyi ve açık belirsizlikleri belirt. Kütüphane/yöntem seçiminde alternatifleri kriterlerle (bakım durumu, topluluk, performans, lisans, öğrenme eğrisi) karşılaştır ve gerekçeli bir öneri sun.",
+    "source": "https://github.com/itgoyo/awesome-claude-code-skills",
+    "createdAt": 1782700000003
+  },
+  {
+    "id": "sk-kgreview",
+    "name": "Yapısal Kod İnceleme (Bağlam-Farkında)",
+    "description": "Kod tabanının ilişkilerini haritalayıp yapısal, bağlam-farkında ve şiddet sıralı kod incelemesi yapma yöntemi.",
+    "agentKeys": ["codeReviewer", "developer"],
+    "content": "Kodu incelerken önce yapıyı haritala: değiştirilen modüllerin bağımlılıklarını, çağıran/çağrılan ilişkilerini ve etkilenen alanları çıkar. Bir diff'i izole satırlar olarak değil, sistemdeki etkisiyle değerlendir. İnceleme sırasında şunları kontrol et: doğruluk (mantık hataları, kenar durumlar), güvenlik (girdi doğrulama, enjeksiyon, sır sızıntısı, yetkilendirme), performans (gereksiz I/O, N+1, O(n^2) desenler) ve bakım kolaylığı (tekrar, isimlendirme, ölü kod). Bulguları şiddet seviyesine göre sırala (kritik / yüksek / orta / düşük); kritik sorunlar birleştirmeyi (merge) bloke eder. Her bulgu için neden sorun olduğunu ve somut bir düzeltme önerisini belirt. Değişikliğin ilgili testlerle korunup korunmadığını doğrula; eksikse hangi regresyon testlerinin eklenmesi gerektiğini söyle.",
+    "source": "https://github.com/itgoyo/awesome-claude-code-skills",
+    "createdAt": 1782700000004
+  },
+  {
+    "id": "sk-planning",
+    "name": "Dosyalarla Planlama (Kalıcı Çalışma Belleği)",
+    "description": "Karmaşık görevlerde dosya sistemini kalıcı çalışma belleği gibi kullanarak plan, bulgu ve ilerlemeyi izleme yöntemi.",
+    "agentKeys": ["projectOps"],
+    "content": "Bağlam penceresi uçucu ve sınırlıdır; diski kalıcı çalışma belleği olarak kullan. 3+ fazlı, araştırma içeren veya çok adımlı görevlerde 3 dosyalık deseni uygula (basit sorular/tek düzenlemeler için atla):\n1) task_plan.md — Fazlar, bağımlılıklar ve onay kutucuklarıyla (checkbox) ilerleme.\n2) findings.md — Araştırma sonuçları ve keşfedilen bilgiler.\n3) progress.md — Oturum kayıtları ve test sonuçları.\nKurallar:\n- Önce planı oluştur; task_plan.md olmadan işe başlama.\n- 2-Aksiyon Kuralı: Her iki görüntüleme/tarama işleminden sonra bulguları kaydet.\n- Tüm hataları logla ki aynı hata tekrarlanmasın; başarısızlıkta yaklaşımı değiştir.\n- Büyük kararlardan önce planı yeniden oku.\n- Dosya yazımından sonra progress.md'yi güncelle.\n- Durmadan önce tüm fazların bittiğini doğrula.",
+    "source": "https://github.com/OthmanAdi/planning-with-files",
+    "createdAt": 1782700000005
+  },
+  {
+    "id": "sk-gstack",
+    "name": "gstack: Tasarım-Öncelikli Sevk Süreci",
+    "description": "Tek bir özelliği aşamalı bir hattan (Düşün-Planla-İnşa-İncele-Test-Yayınla) geçirerek güvenli şekilde sevk etme yöntemi.",
+    "agentKeys": ["developer", "projectOps"],
+    "content": "Geliştirmeyi rol-tabanlı bir hat olarak kurgula: Düşün → Planla → İnşa → İncele → Test → Yayınla → Değerlendir. Her aşama bir öncekinin çıktısını (artifact) okur: tasarım dokümanı → mühendislik incelemesi → test planı → QA. Tasarım-öncelikli çalış: kod yazmadan önce problemi yeniden çerçevele ve görsel/yapısal seçenekleri keşfet. Küçük başla: tek bir özelliği baştan sona hattan geçirip iş akışını doğrula, sonra ölçekle.\nGüvenlik ve dayanıklılık kuralları:\n- Üretim işinde koruma aç: düzenleme kilitleri ve yıkıcı komut uyarıları kullan; prompt injection'a karşı dikkatli ol.\n- Sevkten önce güvenlik kontrolü yap.\n- Her QA düzeltmesi otomatik regresyon testi üretsin.\n- Sürekli checkpoint: yapılandırılmış bağlamla WIP'i otomatik commit et ki çökmede iş kaybolmasın.\n- Öğrenilenleri kalıcı belleğe yaz ki sistem zamanla iyileşsin.\nİlke: Satır sayısını değil, sevk edilen özelliği ve üretim güvenliğini optimize et.",
+    "source": "https://github.com/garrytan/gstack",
+    "createdAt": 1782700000006
+  }
+]

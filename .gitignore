@@ -1,0 +1,28 @@
+# dependencies
+/node_modules
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# env — ASLA repoya koyma
+.env
+.env.local
+.env*.local
+
+# yerel hafıza + görev dosyaları
+/data
+# ajan aksiyonlarının yazdığı dosyalar
+/workspace
+
+# misc
+.DS_Store
+*.pem
+npm-debug.log*
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts

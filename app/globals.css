@@ -1,0 +1,351 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #070a12;
+  --bg-panel: #0e1422;
+  --bg-elevated: #141c2e;
+  --border: #1d2741;
+  --text: #e8eef8;
+  --text-muted: #8a97ac;
+  --accent: #22d3ee;
+  --accent-2: #3b82f6;
+  --accent-3: #a855f7;
+  --grad: linear-gradient(135deg, var(--accent), var(--accent-2));
+  --grad-3: linear-gradient(135deg, var(--accent), var(--accent-3));
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(1200px 800px at 80% -10%, #0d1832 0%, transparent 60%),
+    radial-gradient(1000px 700px at -10% 110%, #0c1428 0%, transparent 55%),
+    var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* ---- Hareketli aurora arka plan ---- */
+.aurora {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.aurora::before,
+.aurora::after {
+  content: "";
+  position: absolute;
+  width: 55vw;
+  height: 55vw;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.22;
+}
+.aurora::before {
+  background: radial-gradient(circle, var(--accent) 0%, transparent 70%);
+  top: -15%;
+  left: -10%;
+  animation: auroraA 18s ease-in-out infinite alternate;
+}
+.aurora::after {
+  background: radial-gradient(circle, var(--accent-3) 0%, transparent 70%);
+  bottom: -20%;
+  right: -12%;
+  animation: auroraB 22s ease-in-out infinite alternate;
+}
+@keyframes auroraA {
+  from {
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    transform: translate(8vw, 6vh) scale(1.15);
+  }
+}
+@keyframes auroraB {
+  from {
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    transform: translate(-7vw, -5vh) scale(1.2);
+  }
+}
+
+/* ---- Animasyonlar ---- */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.msg-in {
+  animation: fadeInUp 0.35s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+@keyframes popIn {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.pop-in {
+  animation: popIn 0.25s ease both;
+}
+
+/* yazıyor noktaları */
+.typing {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+.typing span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: bounceDot 1.2s infinite ease-in-out;
+}
+.typing span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.typing span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes bounceDot {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  30% {
+    transform: translateY(-6px);
+    opacity: 1;
+  }
+}
+
+/* dönen Nova orb */
+.nova-orb {
+  background: conic-gradient(
+    from 0deg,
+    var(--accent),
+    var(--accent-2),
+    var(--accent-3),
+    var(--accent)
+  );
+  animation: spin 8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* mikrofon nabzı */
+.mic-pulse::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 9999px;
+  box-shadow: 0 0 0 0 #ef444477;
+  animation: ring 1.4s infinite;
+}
+@keyframes ring {
+  to {
+    box-shadow: 0 0 0 13px transparent;
+  }
+}
+
+/* konuşuyor barları */
+.bars {
+  display: inline-flex;
+  gap: 2px;
+  align-items: flex-end;
+  height: 14px;
+}
+.bars i {
+  width: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+  animation: bar 0.9s infinite ease-in-out;
+}
+.bars i:nth-child(1) {
+  animation-delay: 0s;
+}
+.bars i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.bars i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+.bars i:nth-child(4) {
+  animation-delay: 0.1s;
+}
+@keyframes bar {
+  0%,
+  100% {
+    height: 4px;
+  }
+  50% {
+    height: 14px;
+  }
+}
+
+/* NASA foto arka plan — yavaş canlı zoom/pan (Ken Burns) */
+.nova-space-bg {
+  background: #02040a url("/space.jpg?v=2") center / cover no-repeat;
+  animation: spaceDrift 80s ease-in-out infinite alternate;
+  will-change: transform;
+}
+@keyframes spaceDrift {
+  from {
+    transform: scale(1.06) translate(0, 0);
+  }
+  to {
+    transform: scale(1.16) translate(-2.5%, -2%);
+  }
+}
+
+/* yıldız parıltısı (uzay teması) */
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.star {
+  animation: twinkle 3s ease-in-out infinite;
+}
+
+/* ajan haritası animasyonları */
+@keyframes floatY {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+.map-node {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: floatY 6s ease-in-out infinite;
+}
+@keyframes orbPulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.04);
+  }
+}
+.orb-core {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: orbPulse 5s ease-in-out infinite;
+}
+@keyframes haloPulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+.orb-halo {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: haloPulse 5s ease-in-out infinite;
+}
+
+/* etkileşim yardımcıları */
+.nav-item {
+  transition:
+    background 0.2s,
+    transform 0.15s,
+    color 0.2s,
+    box-shadow 0.2s;
+}
+.nav-item:hover {
+  transform: translateX(2px);
+}
+.glow-focus {
+  transition:
+    box-shadow 0.25s,
+    border-color 0.25s;
+}
+.glow-focus:focus-within {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 3px #22d3ee22,
+    0 0 26px #22d3ee22;
+}
+.btn-grad {
+  transition:
+    transform 0.12s,
+    filter 0.2s,
+    box-shadow 0.2s;
+}
+.btn-grad:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+  box-shadow: 0 6px 20px #22d3ee33;
+}
+.btn-grad:active:not(:disabled) {
+  transform: translateY(0);
+}
+.card {
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s,
+    transform 0.15s;
+}
+.card:hover {
+  border-color: #2b3a5e;
+  box-shadow: 0 8px 30px #00000040;
+}
+
+/* ince scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 8px;
+}
+
+/* React Flow düğüm parlama geçişi */
+.nova-node {
+  transition:
+    box-shadow 0.3s ease,
+    transform 0.3s ease,
+    border-color 0.3s ease,
+    background 0.3s ease;
+}
