@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import AgentGraph, { type VoiceState } from "./AgentMap";
 import Chat, { type ChatHandle } from "./Chat";
+import Dashboard from "./Dashboard";
 import type { AgentActivity } from "@/lib/agents/meta";
 
 // Çalışma alanı: solda ajan haritası, sağda tam sohbet — aynı sayfada.
@@ -53,20 +54,31 @@ export default function Workspace({
         />
       </div>
 
-      {/* sohbet (altta, tam genişlik) */}
+      {/* sohbet (altta) + yan pano */}
       <div
-        className={`w-full shrink-0 overflow-hidden transition-all duration-700 ${
+        className={`flex w-full shrink-0 overflow-hidden transition-all duration-700 ${
           immersive ? "h-0 opacity-0" : "h-[46%] opacity-100"
         }`}
       >
-        <Chat
-          ref={chatRef}
-          conversationId={conversationId}
-          onAgentActivity={setActive}
-          onConversationUpdated={onConversationUpdated}
-          onVoiceState={setVoice}
-          onWakeState={setWakeOn}
-        />
+        {/* sohbet — okunur genişlik */}
+        <div
+          className="h-full w-full max-w-3xl border-r"
+          style={{ borderColor: "var(--border)" }}
+        >
+          <Chat
+            ref={chatRef}
+            conversationId={conversationId}
+            onAgentActivity={setActive}
+            onConversationUpdated={onConversationUpdated}
+            onVoiceState={setVoice}
+            onWakeState={setWakeOn}
+          />
+        </div>
+
+        {/* yan bilgi panosu — kalan boşluk (küçük ekranda gizli) */}
+        <aside className="hidden h-full flex-1 lg:block">
+          <Dashboard />
+        </aside>
       </div>
     </div>
   );
