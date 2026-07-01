@@ -137,6 +137,26 @@ export default function AppShell() {
 
   const hideUI = immersive && view === "harita";
 
+  const menuBarNode = (
+    <div
+      className={`shrink-0 overflow-hidden transition-all duration-500 ${
+        hideUI ? "h-0 opacity-0" : "h-14 opacity-100"
+      }`}
+    >
+      <Sidebar
+        active={view}
+        onSelect={setView}
+        pendingCount={pending}
+        conversations={convs}
+        activeConv={activeConv}
+        onNewConv={newConversation}
+        onSelectConv={selectConversation}
+        onRenameConv={renameConversation}
+        onDeleteConv={deleteConversation}
+      />
+    </div>
+  );
+
   async function newConversation() {
     const r = await fetch("/api/conversations", { method: "POST" });
     const d = await r.json();
@@ -190,6 +210,7 @@ ekrana tıkla: tam ekran · Boşluk: konuş · fareyi oynat: menüler
             conversationId={activeConv}
             onConversationUpdated={onConvUpdated}
             immersive={hideUI}
+            menuBar={menuBarNode}
           />
         ) : view === "tasks" ? (
           <Tasks onChange={refreshPending} />
@@ -208,24 +229,8 @@ ekrana tıkla: tam ekran · Boşluk: konuş · fareyi oynat: menüler
         )}
       </main>
 
-      {/* alt menü barı */}
-      <div
-        className={`shrink-0 overflow-hidden transition-all duration-700 ${
-          hideUI ? "h-0 opacity-0" : "h-14 opacity-100"
-        }`}
-      >
-        <Sidebar
-          active={view}
-          onSelect={setView}
-          pendingCount={pending}
-          conversations={convs}
-          activeConv={activeConv}
-          onNewConv={newConversation}
-          onSelectConv={selectConversation}
-          onRenameConv={renameConversation}
-          onDeleteConv={deleteConversation}
-        />
-      </div>
+      {/* harita dışı görünümlerde menü altta */}
+      {view !== "harita" && menuBarNode}
     </div>
   );
 }

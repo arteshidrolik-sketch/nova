@@ -281,6 +281,8 @@ export default function AgentGraph({
           <circle cx="0" cy="0" r="2.6" fill="#ffffff" />
         </g>
 
+        {/* ajan ağı — merkezden yarıya ölçekli (yıldızlar/arka plan tam kalır) */}
+        <g transform="translate(500 330) scale(0.5) translate(-500 -330)">
         {/* bağlantı hatları */}
         {AGENT_KEYS.map((key) => {
           const p = POS[key];
@@ -364,6 +366,7 @@ export default function AgentGraph({
             </g>
           );
         })}
+        </g>
       </svg>
 
       {/* tam ekran düğmesi */}

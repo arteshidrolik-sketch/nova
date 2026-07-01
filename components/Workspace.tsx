@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import AgentGraph, { type VoiceState } from "./AgentMap";
 import Chat, { type ChatHandle } from "./Chat";
 import Dashboard from "./Dashboard";
@@ -11,10 +11,12 @@ export default function Workspace({
   conversationId,
   onConversationUpdated,
   immersive = false,
+  menuBar,
 }: {
   conversationId: string | null;
   onConversationUpdated?: () => void;
   immersive?: boolean;
+  menuBar?: ReactNode;
 }) {
   const [active, setActive] = useState<AgentActivity>(null);
   const [voice, setVoice] = useState<VoiceState>("idle");
@@ -53,6 +55,9 @@ export default function Workspace({
           onToggleWake={toggleWake}
         />
       </div>
+
+      {/* menü barı — harita ile sohbet arasında */}
+      {menuBar}
 
       {/* sohbet (altta) + yan pano */}
       <div
