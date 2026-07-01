@@ -38,10 +38,10 @@ export default function Workspace({
   }, []);
 
   return (
-    <div className="flex h-full flex-col lg:flex-row">
-      {/* harita */}
+    <div className="flex h-full flex-col">
+      {/* harita (üstte) */}
       <div
-        className="relative h-1/2 border-b lg:h-full lg:flex-1 lg:border-b-0 lg:border-r"
+        className="relative min-h-0 flex-1 border-b"
         style={{ borderColor: "var(--border)" }}
       >
         <AgentGraph
@@ -53,12 +53,10 @@ export default function Workspace({
         />
       </div>
 
-      {/* sohbet */}
+      {/* sohbet (altta, tam genişlik) */}
       <div
-        className={`shrink-0 overflow-hidden transition-all duration-700 ${
-          immersive
-            ? "h-0 w-full opacity-0 lg:h-full lg:w-0"
-            : "h-1/2 w-full opacity-100 lg:h-full lg:w-[360px]"
+        className={`w-full shrink-0 overflow-hidden transition-all duration-700 ${
+          immersive ? "h-0 opacity-0" : "h-[46%] opacity-100"
         }`}
       >
         <Chat
