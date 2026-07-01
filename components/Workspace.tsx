@@ -12,11 +12,13 @@ export default function Workspace({
   onConversationUpdated,
   immersive = false,
   menuBar,
+  onBusyChange,
 }: {
   conversationId: string | null;
   onConversationUpdated?: () => void;
   immersive?: boolean;
   menuBar?: ReactNode;
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const [active, setActive] = useState<AgentActivity>(null);
   const [voice, setVoice] = useState<VoiceState>("idle");
@@ -77,6 +79,7 @@ export default function Workspace({
             onConversationUpdated={onConversationUpdated}
             onVoiceState={setVoice}
             onWakeState={setWakeOn}
+            onBusy={onBusyChange}
           />
         </div>
 

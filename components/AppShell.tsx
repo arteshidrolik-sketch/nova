@@ -50,6 +50,7 @@ export default function AppShell() {
   const [convs, setConvs] = useState<ConvMeta[]>([]);
   const [activeConv, setActiveConv] = useState<string | null>(null);
   const [immersive, setImmersive] = useState(false);
+  const [chatBusy, setChatBusy] = useState(false);
 
   const refreshPending = useCallback(async () => {
     try {
@@ -93,7 +94,8 @@ export default function AppShell() {
     return () => clearInterval(id);
   }, [refreshPending]);
 
-  // Fare 5 sn hareketsizse (sadece Çalışma Alanı'nda) tam ekran uzay modu
+  // Ekran koruyucu gibi: 15 sn hiçbir hareket YOKSA tam ekran uzay modu.
+  // Sohbet akarken / ses varken (chatBusy) devreye girmez.
   useEffect(() => {
     if (view !== "harita") {
       setImmersive(false);
@@ -102,6 +104,7 @@ export default function AppShell() {
     let timer: ReturnType<typeof setTimeout>;
     const arm = () => {
       clearTimeout(timer);
+      if (chatBusy) return; // meşgulken zamanlayıcıyı hiç kurma
       timer = setTimeout(() => {
         setImmersive(true);
         // En iyi çaba: tam ekrana geç (tarayıcı izin verirse)
@@ -110,7 +113,7 @@ export default function AppShell() {
         } catch {
           /* yoksay */
         }
-      }, 5000);
+      }, 15000);
     };
     // Fare hareketi / dokunma → menüleri göster
     const wake = () => {
@@ -133,7 +136,7 @@ export default function AppShell() {
       window.removeEventListener("wheel", keepAwake);
       window.removeEventListener("mousedown", keepAwake);
     };
-  }, [view]);
+  }, [view, chatBusy]);
 
   const hideUI = immersive && view === "harita";
 
@@ -211,6 +214,7 @@ ekrana tıkla: tam ekran · Boşluk: konuş · fareyi oynat: menüler
             onConversationUpdated={onConvUpdated}
             immersive={hideUI}
             menuBar={menuBarNode}
+            onBusyChange={setChatBusy}
           />
         ) : view === "tasks" ? (
           <Tasks onChange={refreshPending} />

@@ -110,6 +110,7 @@ type ChatProps = {
   onConversationUpdated?: () => void;
   onVoiceState?: (s: "idle" | "listening" | "speaking") => void;
   onWakeState?: (enabled: boolean) => void;
+  onBusy?: (busy: boolean) => void;
 };
 
 const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
@@ -119,6 +120,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     onConversationUpdated,
     onVoiceState,
     onWakeState,
+    onBusy,
   },
   ref,
 ) {
@@ -190,6 +192,12 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     onVoiceState?.(listening ? "listening" : speaking ? "speaking" : "idle");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listening, speaking]);
+
+  // "Meşgul" sinyali: yazışma akarken / ses varken tam ekran ekran-koruyucu devreye girmesin
+  useEffect(() => {
+    onBusy?.(loading || listening || speaking);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, listening, speaking]);
 
   // Aktif sohbet değişince mesajları yükle
   useEffect(() => {
