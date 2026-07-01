@@ -97,23 +97,18 @@ export default function Dashboard() {
 
   return (
     <div className="flex h-full flex-col gap-3 overflow-y-auto p-4">
-      {/* Saat & tarih */}
-      <div className="rounded-2xl border border-violet-400/40 bg-gradient-to-br from-indigo-500/30 via-violet-500/20 to-fuchsia-500/25 p-4 text-center shadow-[0_0_35px_-12px_rgba(167,139,250,0.7)]">
-        <div className="bg-gradient-to-r from-indigo-200 to-fuchsia-200 bg-clip-text text-4xl font-bold tabular-nums tracking-tight text-transparent">
+      {/* Saat & tarih — küçük, tek satır */}
+      <div className="flex items-center justify-between rounded-xl border border-violet-400/40 bg-gradient-to-r from-indigo-500/25 to-fuchsia-500/20 px-3 py-2 shadow-[0_0_20px_-12px_rgba(167,139,250,0.7)]">
+        <span className="text-base font-semibold tabular-nums text-violet-100">
           {now
             ? now.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
             : "--:--:--"}
-        </div>
-        <div className="mt-1 text-sm font-medium text-violet-100/80">
+        </span>
+        <span className="text-xs font-medium text-violet-200/70">
           {now
-            ? now.toLocaleDateString("tr-TR", {
-                weekday: "long",
-                day: "numeric",
-                month: "long",
-                year: "numeric",
-              })
+            ? now.toLocaleDateString("tr-TR", { weekday: "short", day: "numeric", month: "long" })
             : ""}
-        </div>
+        </span>
       </div>
 
       {/* Hava durumu */}

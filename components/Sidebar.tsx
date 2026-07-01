@@ -60,52 +60,44 @@ export default function Sidebar({
 
   return (
     <aside
-      className="flex h-full w-52 shrink-0 flex-col border-r"
+      className="flex h-full w-full shrink-0 items-center gap-2 border-t px-3"
       style={{
-        background: "rgba(14,20,34,0.72)",
+        background: "rgba(14,20,34,0.82)",
         backdropFilter: "blur(12px)",
         borderColor: "var(--border)",
       }}
     >
       {/* logo */}
-      <div
-        className="flex items-center gap-3 border-b px-5 py-4"
-        style={{ borderColor: "var(--border)" }}
-      >
-        <span className="relative flex h-9 w-9 items-center justify-center rounded-xl">
+      <div className="flex shrink-0 items-center gap-2 pr-1">
+        <span className="relative flex h-8 w-8 items-center justify-center rounded-xl">
           <span className="nova-orb absolute inset-0 rounded-xl" />
           <span className="relative text-sm font-bold text-black">N</span>
         </span>
-        <div className="leading-tight">
-          <div className="font-semibold tracking-wide">Nova</div>
-          <div className="text-xs" style={{ color: "var(--text-muted)" }}>
-            Geliştirici Asistanı
-          </div>
-        </div>
+        <span className="hidden font-semibold tracking-wide xl:block">Nova</span>
       </div>
 
-      {/* ana menü */}
-      <nav className="space-y-1 p-3">
+      {/* ana menü — yatay */}
+      <nav className="flex shrink-0 items-center gap-1">
         {MENU.map((item) => {
           const isActive = item.key === active;
           return (
             <button
               key={item.key}
               onClick={() => onSelect(item.key)}
-              className="nav-item flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm"
+              title={item.label}
+              className="nav-item flex items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-sm"
               style={
                 isActive
                   ? {
-                      background:
-                        "linear-gradient(90deg, #22d3ee1f, transparent)",
+                      background: "linear-gradient(180deg, #22d3ee22, transparent)",
                       color: "var(--text)",
-                      boxShadow: "inset 3px 0 0 var(--accent)",
+                      boxShadow: "inset 0 -2px 0 var(--accent)",
                     }
                   : { color: "var(--text-muted)" }
               }
             >
               <span className="text-base">{item.icon}</span>
-              <span className="flex-1">{item.label}</span>
+              <span className="hidden lg:inline">{item.label}</span>
               {item.key === "tasks" && pendingCount > 0 && (
                 <span
                   className="rounded-full px-1.5 py-0.5 text-xs font-semibold text-black"
@@ -119,36 +111,21 @@ export default function Sidebar({
         })}
       </nav>
 
-      {/* sohbetler */}
-      <div
-        className="flex items-center justify-between border-t px-4 pb-2 pt-3"
-        style={{ borderColor: "var(--border)" }}
-      >
-        <span
-          className="text-xs font-semibold uppercase tracking-wide"
-          style={{ color: "var(--text-muted)" }}
-        >
-          Sohbetler
-        </span>
-        <button
-          onClick={onNewConv}
-          title="Yeni sohbet"
-          className="btn-grad rounded-lg px-2 py-1 text-xs font-medium text-black"
-          style={{ background: "var(--grad)" }}
-        >
-          + Yeni
-        </button>
-      </div>
+      {/* ayraç */}
+      <div className="mx-1 h-8 w-px shrink-0" style={{ background: "var(--border)" }} />
 
-      <div className="flex-1 space-y-1 overflow-y-auto px-3 pb-3">
-        {conversations.length === 0 && (
-          <div
-            className="px-2 py-2 text-xs"
-            style={{ color: "var(--text-muted)" }}
-          >
-            Henüz sohbet yok.
-          </div>
-        )}
+      {/* yeni sohbet */}
+      <button
+        onClick={onNewConv}
+        title="Yeni sohbet"
+        className="btn-grad shrink-0 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium text-black"
+        style={{ background: "var(--grad)" }}
+      >
+        + Yeni
+      </button>
+
+      {/* sohbetler — yatay kaydırılır */}
+      <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
         {conversations.map((c) => {
           const isActive = c.id === activeConv;
           if (editingId === c.id) {
@@ -163,7 +140,7 @@ export default function Sidebar({
                   if (e.key === "Enter") commitEdit();
                   if (e.key === "Escape") setEditingId(null);
                 }}
-                className="w-full rounded-lg border px-2 py-1.5 text-sm outline-none"
+                className="w-40 shrink-0 rounded-lg border px-2 py-1.5 text-sm outline-none"
                 style={{
                   borderColor: "var(--accent)",
                   background: "var(--bg)",
@@ -175,16 +152,12 @@ export default function Sidebar({
           return (
             <div
               key={c.id}
-              className="nav-item group flex items-center gap-1 rounded-lg pr-1"
-              style={
-                isActive
-                  ? { background: "var(--bg-elevated)" }
-                  : undefined
-              }
+              className="nav-item group flex shrink-0 items-center gap-0.5 rounded-lg pr-0.5"
+              style={isActive ? { background: "var(--bg-elevated)" } : undefined}
             >
               <button
                 onClick={() => onSelectConv(c.id)}
-                className="flex-1 truncate px-3 py-2 text-left text-sm"
+                className="max-w-[160px] truncate px-2.5 py-1.5 text-left text-sm"
                 style={{ color: isActive ? "var(--text)" : "var(--text-muted)" }}
                 title={c.title}
               >
@@ -211,13 +184,6 @@ export default function Sidebar({
             </div>
           );
         })}
-      </div>
-
-      <div
-        className="border-t px-4 py-3 text-xs"
-        style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
-      >
-        Nova · lokal
       </div>
     </aside>
   );

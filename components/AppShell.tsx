@@ -175,24 +175,7 @@ export default function AppShell() {
   }, [refreshConvs]);
 
   return (
-    <div className="relative z-10 flex h-screen overflow-hidden">
-      <div
-        className={`shrink-0 overflow-hidden transition-all duration-700 ${
-          hideUI ? "w-0 opacity-0" : "w-52 opacity-100"
-        }`}
-      >
-        <Sidebar
-          active={view}
-          onSelect={setView}
-          pendingCount={pending}
-          conversations={convs}
-          activeConv={activeConv}
-          onNewConv={newConversation}
-          onSelectConv={selectConversation}
-          onRenameConv={renameConversation}
-          onDeleteConv={deleteConversation}
-        />
-      </div>
+    <div className="relative z-10 flex h-screen flex-col overflow-hidden">
       {hideUI && (
         <div
           className="pointer-events-none absolute bottom-3 right-4 z-20 text-[11px] tracking-wide"
@@ -201,7 +184,7 @@ export default function AppShell() {
 ekrana tıkla: tam ekran · Boşluk: konuş · fareyi oynat: menüler
         </div>
       )}
-      <main className="flex-1 overflow-hidden">
+      <main className="min-h-0 flex-1 overflow-hidden">
         {view === "harita" ? (
           <Workspace
             conversationId={activeConv}
@@ -224,6 +207,25 @@ ekrana tıkla: tam ekran · Boşluk: konuş · fareyi oynat: menüler
           <Placeholder title={TITLES[view]} />
         )}
       </main>
+
+      {/* alt menü barı */}
+      <div
+        className={`shrink-0 overflow-hidden transition-all duration-700 ${
+          hideUI ? "h-0 opacity-0" : "h-14 opacity-100"
+        }`}
+      >
+        <Sidebar
+          active={view}
+          onSelect={setView}
+          pendingCount={pending}
+          conversations={convs}
+          activeConv={activeConv}
+          onNewConv={newConversation}
+          onSelectConv={selectConversation}
+          onRenameConv={renameConversation}
+          onDeleteConv={deleteConversation}
+        />
+      </div>
     </div>
   );
 }
