@@ -72,6 +72,15 @@ export async function getProject(id: string): Promise<Project | null> {
   return (await load()).projects.find((p) => p.id === id) ?? null;
 }
 
+export async function getProjectByConversation(
+  conversationId: string,
+): Promise<Project | null> {
+  return (
+    (await load()).projects.find((p) => p.conversationId === conversationId) ??
+    null
+  );
+}
+
 export async function setProjectConversation(
   id: string,
   conversationId: string,

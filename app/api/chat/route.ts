@@ -18,7 +18,11 @@ import {
   runReadTool,
 } from "@/lib/tools/projectFiles";
 import { createTask } from "@/lib/tasks/store";
-import { getActiveProject } from "@/lib/projects/store";
+import {
+  getActiveId,
+  getProjectByConversation,
+  setActive,
+} from "@/lib/projects/store";
 import { getSkillsForAgent } from "@/lib/skills/store";
 
 export const runtime = "nodejs";
@@ -50,10 +54,12 @@ export async function POST(req: Request) {
 
   let messages: IncomingMessage[];
   let pinned = false; // "ne var ne yok" sabit sohbeti → Fable
+  let conversationId = ""; // proje bağlamını sohbete göre çöz
   try {
     const body = await req.json();
     messages = Array.isArray(body?.messages) ? body.messages : [];
     pinned = Boolean(body?.pinned);
+    conversationId = typeof body?.conversationId === "string" ? body.conversationId : "";
   } catch {
     return new Response("Geçersiz istek gövdesi.", { status: 400 });
   }
@@ -79,8 +85,14 @@ export async function POST(req: Request) {
       relevant.map((m) => `- ${m.summary}`).join("\n");
   }
 
-  // 3) Aktif proje
-  const project = await getActiveProject();
+  // 3) Proje bağlamı — bulunduğun SOHBETE bağlı proje (global aktif değil)
+  const project = conversationId
+    ? await getProjectByConversation(conversationId)
+    : null;
+  // UI tutarlılığı için global aktifi de senkronla
+  if (project && (await getActiveId()) !== project.id) {
+    await setActive(project.id);
+  }
   if (project) {
     system +=
       `\n\n## Aktif proje: ${project.name}\nYerel yol: ${project.path}\n` +
