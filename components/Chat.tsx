@@ -211,8 +211,16 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       try {
         const r = await fetch(`/api/conversations/${conversationId}`);
         const d = await r.json();
-        if (!cancelled)
+        if (!cancelled) {
           setMessages((d.conversation?.messages ?? []) as Message[]);
+          // Sohbete girince en alta (son mesaja) in — DOM hazır olunca anında
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => {
+              const el = scrollRef.current;
+              if (el) el.scrollTop = el.scrollHeight;
+            }),
+          );
+        }
       } catch {
         if (!cancelled) setMessages([]);
       }
