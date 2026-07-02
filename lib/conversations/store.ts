@@ -13,12 +13,14 @@ export type Conversation = {
   title: string;
   createdAt: number;
   updatedAt: number;
+  pinned?: boolean; // sabit sohbet (silinemez, listede üstte)
   messages: ConvMessage[];
 };
 
 const DIR = path.join(process.cwd(), "data");
 const FILE = path.join(DIR, "conversations.json");
 const DEFAULT_TITLE = "Yeni sohbet";
+const PINNED_TITLE = "ne var ne yok";
 
 function truncate(s: string, n = 42): string {
   const clean = s.replace(/\s+/g, " ").trim();
@@ -41,12 +43,39 @@ async function persist(all: Conversation[]): Promise<void> {
 }
 
 export async function listConversations(): Promise<
-  { id: string; title: string; updatedAt: number }[]
+  { id: string; title: string; updatedAt: number; pinned?: boolean }[]
 > {
   const all = await loadConversations();
   return all
-    .map((c) => ({ id: c.id, title: c.title, updatedAt: c.updatedAt }))
-    .sort((a, b) => b.updatedAt - a.updatedAt);
+    .map((c) => ({
+      id: c.id,
+      title: c.title,
+      updatedAt: c.updatedAt,
+      pinned: c.pinned,
+    }))
+    .sort(
+      (a, b) =>
+        (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.updatedAt - a.updatedAt,
+    );
+}
+
+// Sabit "ne var ne yok" sohbetini garantiler (yoksa oluşturur)
+export async function ensurePinnedConversation(): Promise<Conversation> {
+  const all = await loadConversations();
+  const existing = all.find((c) => c.pinned);
+  if (existing) return existing;
+  const now = Date.now();
+  const conv: Conversation = {
+    id: crypto.randomUUID(),
+    title: PINNED_TITLE,
+    createdAt: now,
+    updatedAt: now,
+    pinned: true,
+    messages: [],
+  };
+  all.push(conv);
+  await persist(all);
+  return conv;
 }
 
 export async function getConversation(
@@ -97,8 +126,10 @@ export async function updateConversation(
 
 export async function deleteConversation(id: string): Promise<boolean> {
   const all = await loadConversations();
+  const target = all.find((c) => c.id === id);
+  if (!target) return false;
+  if (target.pinned) return false; // sabit sohbet silinemez
   const next = all.filter((c) => c.id !== id);
-  if (next.length === all.length) return false;
   await persist(next);
   return true;
 }

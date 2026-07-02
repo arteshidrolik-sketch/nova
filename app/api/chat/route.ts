@@ -49,9 +49,11 @@ export async function POST(req: Request) {
   }
 
   let messages: IncomingMessage[];
+  let pinned = false; // "ne var ne yok" sabit sohbeti → Fable
   try {
     const body = await req.json();
     messages = Array.isArray(body?.messages) ? body.messages : [];
+    pinned = Boolean(body?.pinned);
   } catch {
     return new Response("Geçersiz istek gövdesi.", { status: 400 });
   }
@@ -63,7 +65,8 @@ export async function POST(req: Request) {
 
   // 1) Orkestratör
   const agent = await selectAgent(client, ROUTER_MODEL, messages);
-  const answerModel = modelForAgent(agent); // ajana göre model (genel→fable, kodlama→opus)
+  // Ajana göre model; ama sabit "ne var ne yok" sohbeti her zaman Fable
+  const answerModel = pinned ? "claude-fable-5" : modelForAgent(agent);
 
   // 2) Hafıza
   const lastUser =

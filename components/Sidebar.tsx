@@ -12,7 +12,12 @@ export type ViewKey =
   | "loops"
   | "ayarlar";
 
-export type ConvMeta = { id: string; title: string; updatedAt: number };
+export type ConvMeta = {
+  id: string;
+  title: string;
+  updatedAt: number;
+  pinned?: boolean;
+};
 
 const MENU: { key: ViewKey; label: string; icon: string }[] = [
   { key: "harita", label: "Çalışma Alanı", icon: "🕸️" },
@@ -161,7 +166,7 @@ export default function Sidebar({
                 style={{ color: isActive ? "var(--text)" : "var(--text-muted)" }}
                 title={c.title}
               >
-                💬 {c.title}
+                {c.pinned ? "📌" : "💬"} {c.title}
               </button>
               <button
                 onClick={() => startEdit(c)}
@@ -171,16 +176,18 @@ export default function Sidebar({
               >
                 ✎
               </button>
-              <button
-                onClick={() => {
-                  if (confirm(`"${c.title}" silinsin mi?`)) onDeleteConv(c.id);
-                }}
-                title="Sil"
-                className="px-1 text-xs opacity-0 transition-opacity group-hover:opacity-100"
-                style={{ color: "#ef4444" }}
-              >
-                🗑
-              </button>
+              {!c.pinned && (
+                <button
+                  onClick={() => {
+                    if (confirm(`"${c.title}" silinsin mi?`)) onDeleteConv(c.id);
+                  }}
+                  title="Sil"
+                  className="px-1 text-xs opacity-0 transition-opacity group-hover:opacity-100"
+                  style={{ color: "#ef4444" }}
+                >
+                  🗑
+                </button>
+              )}
             </div>
           );
         })}

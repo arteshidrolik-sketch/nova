@@ -15,6 +15,7 @@ export default function Workspace({
   onBusyChange,
   autoSend,
   onAutoSent,
+  pinnedChat = false,
 }: {
   conversationId: string | null;
   onConversationUpdated?: () => void;
@@ -23,6 +24,7 @@ export default function Workspace({
   onBusyChange?: (busy: boolean) => void;
   autoSend?: Kickoff;
   onAutoSent?: () => void;
+  pinnedChat?: boolean;
 }) {
   const [active, setActive] = useState<AgentActivity>(null);
   const [voice, setVoice] = useState<VoiceState>("idle");
@@ -86,6 +88,7 @@ export default function Workspace({
             onBusy={onBusyChange}
             autoSend={autoSend}
             onAutoSent={onAutoSent}
+            pinned={pinnedChat}
           />
         </div>
 

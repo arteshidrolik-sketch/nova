@@ -11,7 +11,12 @@ import Projects from "./Projects";
 import Skills from "./Skills";
 import type { Kickoff } from "./Chat";
 
-export type ConvMeta = { id: string; title: string; updatedAt: number };
+export type ConvMeta = {
+  id: string;
+  title: string;
+  updatedAt: number;
+  pinned?: boolean;
+};
 
 function Placeholder({ title }: { title: string }) {
   return (
@@ -243,6 +248,9 @@ ekrana tıkla: tam ekran · Boşluk: konuş · fareyi oynat: menüler
             onBusyChange={setChatBusy}
             autoSend={kickoff}
             onAutoSent={() => setKickoff(null)}
+            pinnedChat={
+              convs.find((c) => c.id === activeConv)?.pinned ?? false
+            }
           />
         ) : view === "tasks" ? (
           <Tasks onChange={refreshPending} />
