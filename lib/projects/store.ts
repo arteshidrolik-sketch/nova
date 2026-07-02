@@ -7,6 +7,7 @@ export type Project = {
   name: string;
   path: string; // mutlak yerel yol
   repoUrl?: string;
+  conversationId?: string; // projeye ait sohbet
   createdAt: number;
 };
 
@@ -50,6 +51,7 @@ export async function addProject(input: {
   name: string;
   path: string;
   repoUrl?: string;
+  conversationId?: string;
 }): Promise<Project> {
   const d = await load();
   const proj: Project = {
@@ -57,12 +59,29 @@ export async function addProject(input: {
     name: input.name.trim(),
     path: input.path.trim(),
     repoUrl: input.repoUrl?.trim() || undefined,
+    conversationId: input.conversationId,
     createdAt: Date.now(),
   };
   d.projects.push(proj);
   if (!d.activeId) d.activeId = proj.id; // ilk proje otomatik aktif
   await persist(d);
   return proj;
+}
+
+export async function getProject(id: string): Promise<Project | null> {
+  return (await load()).projects.find((p) => p.id === id) ?? null;
+}
+
+export async function setProjectConversation(
+  id: string,
+  conversationId: string,
+): Promise<void> {
+  const d = await load();
+  const proj = d.projects.find((p) => p.id === id);
+  if (proj) {
+    proj.conversationId = conversationId;
+    await persist(d);
+  }
 }
 
 export async function setActive(id: string | null): Promise<void> {

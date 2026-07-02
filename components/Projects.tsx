@@ -8,12 +8,15 @@ type Project = {
   name: string;
   path: string;
   repoUrl?: string;
+  conversationId?: string;
 };
 
 export default function Projects({
   onStart,
+  onActivate,
 }: {
-  onStart?: (k: Kickoff) => void;
+  onStart?: (project: Project, k: Kickoff) => void;
+  onActivate?: (id: string) => void;
 }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -69,7 +72,7 @@ export default function Projects({
       setName("");
       setPromptText("");
       setPromptPdf(null);
-      onStart?.({ text: parts.join("\n"), attachments: atts });
+      onStart?.(d.project, { text: parts.join("\n"), attachments: atts });
     } finally {
       setBusy(false);
     }
@@ -355,11 +358,11 @@ export default function Projects({
                   <div className="ml-auto flex gap-2">
                     {!isActive && (
                       <button
-                        onClick={() => op(p.id, "activate")}
+                        onClick={() => onActivate?.(p.id)}
                         className="rounded-lg px-3 py-1 text-xs font-medium text-black"
                         style={{ background: "var(--accent)" }}
                       >
-                        Aktif yap
+                        Aktif yap & sohbeti aç
                       </button>
                     )}
                     <button

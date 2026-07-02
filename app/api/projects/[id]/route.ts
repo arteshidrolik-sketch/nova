@@ -1,4 +1,14 @@
-import { removeProject, setActive } from "@/lib/projects/store";
+import {
+  getProject,
+  removeProject,
+  setActive,
+  setProjectConversation,
+} from "@/lib/projects/store";
+import {
+  createConversation,
+  getConversation,
+  updateConversation,
+} from "@/lib/conversations/store";
 
 export const runtime = "nodejs";
 
@@ -12,7 +22,17 @@ export async function POST(
 
   if (op === "activate") {
     await setActive(id);
-    return Response.json({ ok: true });
+    // Projeye ait sohbeti aç; yoksa (veya silinmişse) proje adıyla oluştur
+    const proj = await getProject(id);
+    let convId = proj?.conversationId;
+    if (convId && !(await getConversation(convId))) convId = undefined;
+    if (!convId) {
+      const conv = await createConversation();
+      await updateConversation(conv.id, { title: proj?.name || "Proje" });
+      await setProjectConversation(id, conv.id);
+      convId = conv.id;
+    }
+    return Response.json({ ok: true, conversationId: convId });
   }
   if (op === "remove") {
     await removeProject(id);

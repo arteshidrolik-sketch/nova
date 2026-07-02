@@ -175,13 +175,27 @@ export default function AppShell() {
     setView("harita");
   }
 
-  // Yeni proje başlatıldı: yeni sohbet aç, Çalışma Alanı'na geç, prompt'u otomatik gönder
-  async function startProject(payload: Kickoff) {
-    const r = await fetch("/api/conversations", { method: "POST" });
-    const d = await r.json();
+  // Yeni proje başlatıldı: projeye ait sohbeti aç, Çalışma Alanı'na geç, prompt'u otomatik gönder
+  async function startProject(
+    project: { conversationId?: string },
+    payload: Kickoff,
+  ) {
     setConvs(await refreshConvs());
-    setActiveConv(d.conversation.id);
+    if (project.conversationId) setActiveConv(project.conversationId);
     setKickoff(payload);
+    setView("harita");
+  }
+
+  // Proje aktifleştirildi: projenin sohbetini aç (yoksa sunucu oluşturur)
+  async function activateProject(id: string) {
+    const r = await fetch(`/api/projects/${id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ op: "activate" }),
+    });
+    const d = await r.json().catch(() => ({}));
+    setConvs(await refreshConvs());
+    if (d?.conversationId) setActiveConv(d.conversationId);
     setView("harita");
   }
 
@@ -239,7 +253,7 @@ ekrana tıkla: tam ekran · Boşluk: konuş · fareyi oynat: menüler
         ) : view === "surumler" ? (
           <Releases onChange={refreshPending} />
         ) : view === "projeler" ? (
-          <Projects onStart={startProject} />
+          <Projects onStart={startProject} onActivate={activateProject} />
         ) : view === "beceriler" ? (
           <Skills />
         ) : (

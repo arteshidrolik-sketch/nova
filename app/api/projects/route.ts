@@ -4,7 +4,12 @@ import {
   listProjects,
   projectExists,
   setActive,
+  setProjectConversation,
 } from "@/lib/projects/store";
+import {
+  createConversation,
+  updateConversation,
+} from "@/lib/conversations/store";
 import { promises as fs } from "fs";
 import path from "path";
 
@@ -67,7 +72,11 @@ export async function POST(req: Request) {
     }
     const project = await addProject({ name, path: dir, repoUrl });
     await setActive(project.id);
-    return Response.json({ project });
+    // Projeye özel sohbet (proje adıyla)
+    const conv = await createConversation();
+    await updateConversation(conv.id, { title: name });
+    await setProjectConversation(project.id, conv.id);
+    return Response.json({ project: { ...project, conversationId: conv.id } });
   }
 
   // Mevcut klasör modu (eski davranış)
