@@ -27,10 +27,11 @@ export default function Projects({
   const [error, setError] = useState("");
 
   // Ekleme modları
-  const [mode, setMode] = useState<"new" | "zip" | "existing">("new");
+  const [mode, setMode] = useState<"new" | "folder" | "existing">("new");
   const [promptText, setPromptText] = useState("");
   const [promptPdf, setPromptPdf] = useState<{ name: string; data: string } | null>(null);
-  const [zipFile, setZipFile] = useState<File | null>(null);
+  const [folderFiles, setFolderFiles] = useState<File[]>([]);
+  const [folderName, setFolderName] = useState("");
 
   async function onPromptFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -79,30 +80,47 @@ export default function Projects({
     }
   }
 
-  function onZipFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (f) setZipFile(f);
+  // Klasör seçimi (webkitdirectory) — junk klasörleri ele
+  function onFolderPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const list = e.target.files ? Array.from(e.target.files) : [];
+    const skip =
+      /(^|\/)(node_modules|\.git|\.next|dist|build|out|coverage|\.DS_Store|__MACOSX)(\/|$)/;
+    const rel = (f: File) => f.webkitRelativePath || f.name;
+    const files = list.filter((f) => !skip.test(rel(f)));
+    setFolderFiles(files);
+    setFolderName((list[0]?.webkitRelativePath || "").split("/")[0] || "");
   }
 
-  async function uploadZip() {
-    if (!name.trim() || !zipFile) return;
+  async function uploadFolder() {
+    if (!name.trim() || folderFiles.length === 0) return;
     setBusy(true);
     setError("");
     try {
       const fd = new FormData();
       fd.append("name", name);
-      fd.append("file", zipFile);
-      const r = await fetch("/api/projects/upload", { method: "POST", body: fd });
+      // en üstteki klasör adını at (çift iç içe olmasın)
+      const rels = folderFiles.map(
+        (f) =>
+          (f.webkitRelativePath || f.name).split("/").slice(1).join("/") ||
+          f.name,
+      );
+      fd.append("paths", JSON.stringify(rels));
+      for (const f of folderFiles) fd.append("file", f);
+      const r = await fetch("/api/projects/upload-folder", {
+        method: "POST",
+        body: fd,
+      });
       const d = await r.json();
       if (!r.ok) {
-        setError(d?.message || "ZIP yüklenemedi");
+        setError(d?.message || "Klasör yüklenemedi");
         return;
       }
       await refresh();
       const nm = name.trim();
-      const text = `"${nm}" projesini bir ZIP'ten yükledim — başka bir platformda geliştirilmiş, yarım kalmış bir uygulama. Önce dosya yapısını incele (list_files ile başla, sonra önemli dosyaları read_file ile oku), ne olduğunu, hangi teknolojiyle yapıldığını ve nerede kaldığını kısaca özetle; sonra nasıl devam edebileceğimize dair bir yol planı öner.`;
+      const text = `"${nm}" projesini bilgisayarımdan bir klasör olarak yükledim — başka bir platformda geliştirilmiş, yarım kalmış bir uygulama. Önce dosya yapısını incele (list_files ile başla, sonra önemli dosyaları read_file ile oku), ne olduğunu, hangi teknolojiyle yapıldığını ve nerede kaldığını kısaca özetle; sonra nasıl devam edebileceğimize dair bir yol planı öner.`;
       setName("");
-      setZipFile(null);
+      setFolderFiles([]);
+      setFolderName("");
       onStart?.(d.project, { text, attachments: [] });
     } finally {
       setBusy(false);
@@ -223,7 +241,7 @@ export default function Projects({
               {(
                 [
                   ["new", "🆕 Prompt'tan başla"],
-                  ["zip", "📦 ZIP yükle"],
+                  ["folder", "📁 Klasör yükle"],
                   ["existing", "📂 Mevcut klasör"],
                 ] as const
               ).map(([m, label]) => (
@@ -305,24 +323,34 @@ export default function Projects({
                   başlar. (Prompt boşsa Nova senden ister.)
                 </p>
               </>
-            ) : mode === "zip" ? (
+            ) : mode === "folder" ? (
               <>
                 <label
                   className="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm"
                   style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
                 >
-                  📦 {zipFile ? zipFile.name : "Uygulama ZIP dosyasını seç"}
+                  📁{" "}
+                  {folderFiles.length > 0
+                    ? `${folderName || "klasör"} (${folderFiles.length} dosya)`
+                    : "Uygulama klasörünü seç"}
                   <input
                     type="file"
-                    accept=".zip,application/zip,application/x-zip-compressed"
+                    multiple
+                    ref={(node) => {
+                      if (node) {
+                        node.setAttribute("webkitdirectory", "");
+                        node.setAttribute("directory", "");
+                      }
+                    }}
                     className="hidden"
-                    onChange={onZipFile}
+                    onChange={onFolderPick}
                   />
-                  {zipFile && (
+                  {folderFiles.length > 0 && (
                     <span
                       onClick={(e) => {
                         e.preventDefault();
-                        setZipFile(null);
+                        setFolderFiles([]);
+                        setFolderName("");
                       }}
                       className="ml-auto text-xs"
                       style={{ color: "#ef4444" }}
@@ -337,17 +365,18 @@ export default function Projects({
                   </div>
                 )}
                 <button
-                  onClick={uploadZip}
-                  disabled={busy || !name.trim() || !zipFile}
+                  onClick={uploadFolder}
+                  disabled={busy || !name.trim() || folderFiles.length === 0}
                   className="btn-grad rounded-lg px-4 py-2 text-sm font-medium text-black disabled:opacity-40"
                   style={{ background: "var(--grad)" }}
                 >
-                  {busy ? "Yükleniyor…" : "📦 Yükle ve başlat"}
+                  {busy ? "Yükleniyor…" : "📁 Yükle ve başlat"}
                 </button>
                 <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                  Başka platformda geliştirilmiş, ZIP olarak kaydettiğin (yarım) bir
-                  uygulamayı yükler. Nova sunucuda açar, dosyaları inceler, nerede
-                  kaldığını özetler ve nasıl devam edeceğini önerir.
+                  Bilgisayarından normal bir uygulama klasörü seç (zip gerekmez).
+                  Nova dosyaları sunucuya taşır, inceler, nerede kaldığını özetler
+                  ve nasıl devam edeceğini önerir. (node_modules, .git gibi ağır
+                  klasörler otomatik atlanır.)
                 </p>
               </>
             ) : (
