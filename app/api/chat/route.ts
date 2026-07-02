@@ -29,7 +29,7 @@ export const runtime = "nodejs";
 
 // Router: hızlı ve ucuz model yeterli (sadece ajan seçer)
 const ROUTER_MODEL = process.env.NOVA_ROUTER_MODEL || "claude-fable-5";
-const MAX_TOOL_ITERATIONS = 8;
+const MAX_TOOL_ITERATIONS = 12;
 
 type Attach = {
   kind: "image" | "pdf" | "text";
@@ -123,7 +123,15 @@ export async function POST(req: Request) {
 
   // Araç kullanım talimatı (genel)
   system +=
-    "\n\n## Araç kullanımı\nGO-onaylı aksiyonları (git_commit_push, write_project_file, edit_project_file, github_create_issue, generate_document, write_file) kullanıcıya ÖNCE SORMADAN doğrudan çağır. Bir aracı çağırmak işi ÇALIŞTIRMAZ — sadece 'öneri/görev' olarak kaydeder; kullanıcı Görevler ekranından GO ile onaylar. 'GO bekliyorum' yazıp durma; uygun aracı hemen çağır. Salt-okuma araçlarını (list_files, read_file, search_files, github_lookup) gerektiğinde serbestçe kullan." +
+    "\n\n## Araç kullanımı — HAYATİ ÖNEMDE\n" +
+    "Dosya yazmanın/düzenlemenin/komut çalıştırmanın TEK YOLU ilgili aracı ÇAĞIRMAKTIR " +
+    "(write_project_file, edit_project_file, run_command, git_commit_push, github_create_issue, generate_document, write_file).\n" +
+    "- Bir değişiklik yapacaksan, o mesajda AÇIKLAMA YAZMADAN doğrudan aracı ÇAĞIR.\n" +
+    "- ASLA 'şimdi aracı çağırıyorum', 'GO'ya gönderiyorum', 'kuyruğa atıyorum', 'dosyayı yazıyorum' gibi cümle yazıp turu BİTİRME. Aracı fiilen çağırmazsan HİÇBİR ŞEY OLMAZ ve kullanıcıya yalan söylemiş olursun — bu KESİNLİKLE YASAK.\n" +
+    "- Niyetini anlatmak = işi yapmak DEĞİLDİR. Sadece aracı çağırmak işi kaydeder.\n" +
+    "- Aracı çağırmak işi hemen ÇALIŞTIRMAZ; 'öneri/görev' olarak kaydeder, kullanıcı Görevler'de GO ile onaylar. O yüzden ÇEKİNMEDEN çağır, izin isteme.\n" +
+    "- Akış: gerekiyorsa önce oku (list_files/read_file/search_files) → SONRA aynı konuşmada değişiklik aracını ÇAĞIR. Okuyup durma, mutlaka aksiyonu çağır.\n" +
+    "- Birden çok dosya değişecekse her biri için ayrı ayrı aracı çağır (birini atlama)." +
     "\n\n## İnternet\nİNTERNETE ERİŞİMİN VAR. Güncel bilgi, haber, fiyat, sürüm, dokümantasyon veya emin olmadığın her şey için web_search aracını kullan. ASLA 'internete bağlı değilim', 'erişemiyorum' veya 'gerçek zamanlı bilgiye ulaşamam' DEME — bunun yerine hemen web_search yap, sonra kaynaklı cevap ver.";
 
   // Araçlar
@@ -195,8 +203,11 @@ export async function POST(req: Request) {
 
           const final = await stream.finalMessage();
 
-          // Sunucu aracı (web arama) tur sınırına takıldı → devam ettir
-          if (final.stop_reason === "pause_turn") {
+          // Web arama tur sınırı VEYA token sınırında yarıda kaldı → devam ettir
+          if (
+            final.stop_reason === "pause_turn" ||
+            final.stop_reason === "max_tokens"
+          ) {
             convo.push({ role: "assistant", content: final.content });
             continue;
           }
