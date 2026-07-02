@@ -88,11 +88,25 @@ export default function Projects({
     const rel = (f: File) => f.webkitRelativePath || f.name;
     const files = list.filter((f) => !skip.test(rel(f)));
     setFolderFiles(files);
-    setFolderName((list[0]?.webkitRelativePath || "").split("/")[0] || "");
+    const top = (list[0]?.webkitRelativePath || "").split("/")[0] || "";
+    setFolderName(top);
+    if (top && !name.trim()) setName(top); // proje adını otomatik doldur
+    setError(
+      list.length > 0 && files.length === 0
+        ? "Bu klasörde yüklenecek dosya bulunamadı."
+        : "",
+    );
   }
 
   async function uploadFolder() {
-    if (!name.trim() || folderFiles.length === 0) return;
+    if (!name.trim()) {
+      setError("Önce proje adı yaz.");
+      return;
+    }
+    if (folderFiles.length === 0) {
+      setError("Önce bir klasör seç.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -110,9 +124,11 @@ export default function Projects({
         method: "POST",
         body: fd,
       });
-      const d = await r.json();
+      const d = await r.json().catch(() => ({}));
       if (!r.ok) {
-        setError(d?.message || "Klasör yüklenemedi");
+        setError(
+          d?.message || `Klasör yüklenemedi (HTTP ${r.status}).`,
+        );
         return;
       }
       await refresh();
@@ -122,6 +138,12 @@ export default function Projects({
       setFolderFiles([]);
       setFolderName("");
       onStart?.(d.project, { text, attachments: [] });
+    } catch (err) {
+      setError(
+        "Yükleme hatası: " +
+          (err instanceof Error ? err.message : "bilinmeyen hata") +
+          " (klasör çok büyükse dosya sayısını azaltmayı dene)",
+      );
     } finally {
       setBusy(false);
     }
