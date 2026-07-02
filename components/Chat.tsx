@@ -29,8 +29,19 @@ type Message = {
   role: "user" | "assistant";
   content: string;
   agent?: AgentKey;
+  model?: string;
   attachments?: Attachment[];
 };
+
+// Model kimliğini kısa okunur ada çevir
+function modelLabel(id?: string): string {
+  if (!id) return "";
+  if (id.includes("opus")) return "Opus 4.8";
+  if (id.includes("fable")) return "Fable 5";
+  if (id.includes("sonnet")) return "Sonnet 5";
+  if (id.includes("haiku")) return "Haiku 4.5";
+  return id;
+}
 
 function readAsDataURL(file: File): Promise<string> {
   return new Promise((res, rej) => {
@@ -640,24 +651,25 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
 
       const headerAgent = res.headers.get("X-Nova-Agent");
       const agent: AgentKey = isAgentKey(headerAgent) ? headerAgent : "general";
+      const model = res.headers.get("X-Nova-Model") || undefined;
       onAgentActivity?.(agent); // haritada seçilen ajan parlasın
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let acc = "";
-      setMessages([...next, { role: "assistant", content: "", agent }]);
+      setMessages([...next, { role: "assistant", content: "", agent, model }]);
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         acc += decoder.decode(value, { stream: true });
-        setMessages([...next, { role: "assistant", content: acc, agent }]);
+        setMessages([...next, { role: "assistant", content: acc, agent, model }]);
         scrollToBottom();
       }
 
       const finalMsgs: Message[] = [
         ...next,
-        { role: "assistant", content: acc, agent },
+        { role: "assistant", content: acc, agent, model },
       ];
       persist(finalMsgs);
 
@@ -877,7 +889,22 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
             }
             return (
               <div key={i} className="msg-in flex flex-col items-start">
-                {m.agent && <AgentBadge agent={m.agent} />}
+                <div className="mb-1 flex items-center gap-1.5">
+                  {m.agent && <AgentBadge agent={m.agent} />}
+                  {m.model && (
+                    <span
+                      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
+                      style={{
+                        color: "var(--text-muted)",
+                        background: "rgba(255,255,255,0.06)",
+                        border: "1px solid var(--border)",
+                      }}
+                      title={`Bu yanıt ${modelLabel(m.model)} ile üretildi`}
+                    >
+                      🧠 {modelLabel(m.model)}
+                    </span>
+                  )}
+                </div>
                 <div className="flex max-w-[85%] items-start gap-2">
                   <span
                     className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold text-black"

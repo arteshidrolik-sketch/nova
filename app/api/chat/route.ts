@@ -69,9 +69,10 @@ export async function POST(req: Request) {
 
   const client = new Anthropic();
 
-  // 1) Orkestratör
-  const agent = await selectAgent(client, ROUTER_MODEL, messages);
-  // Ajana göre model; ama sabit "ne var ne yok" sohbeti her zaman Fable
+  // 1) Orkestratör — sabit "ne var ne yok" sohbetinde yönlendirme YOK: hep genel + Fable
+  const agent = pinned
+    ? "general"
+    : await selectAgent(client, ROUTER_MODEL, messages);
   const answerModel = pinned ? "claude-fable-5" : modelForAgent(agent);
 
   // 2) Hafıza
@@ -295,6 +296,7 @@ export async function POST(req: Request) {
       "Content-Type": "text/plain; charset=utf-8",
       "Cache-Control": "no-cache, no-transform",
       "X-Nova-Agent": agent,
+      "X-Nova-Model": answerModel,
     },
   });
 }
