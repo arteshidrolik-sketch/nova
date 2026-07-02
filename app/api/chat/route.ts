@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { selectAgent } from "@/lib/agents/orchestrator";
 import { SYSTEM_PROMPTS } from "@/lib/agents/prompts";
+import { modelForAgent } from "@/lib/agents/models";
 import { searchMemories } from "@/lib/memory/store";
 import { GITHUB_TOOL, runGithubLookup } from "@/lib/tools/github";
 import {
@@ -22,8 +23,8 @@ import { getSkillsForAgent } from "@/lib/skills/store";
 
 export const runtime = "nodejs";
 
-const MODEL = process.env.NOVA_MODEL || "claude-opus-4-8";
-const ROUTER_MODEL = process.env.NOVA_ROUTER_MODEL || MODEL;
+// Router: hızlı ve ucuz model yeterli (sadece ajan seçer)
+const ROUTER_MODEL = process.env.NOVA_ROUTER_MODEL || "claude-fable-5";
 const MAX_TOOL_ITERATIONS = 8;
 
 type Attach = {
@@ -62,6 +63,7 @@ export async function POST(req: Request) {
 
   // 1) Orkestratör
   const agent = await selectAgent(client, ROUTER_MODEL, messages);
+  const answerModel = modelForAgent(agent); // ajana göre model (genel→fable, kodlama→opus)
 
   // 2) Hafıza
   const lastUser =
@@ -143,7 +145,7 @@ export async function POST(req: Request) {
       try {
         for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
           const stream = client.messages.stream({
-            model: MODEL,
+            model: answerModel,
             max_tokens: 4096,
             system,
             tools,

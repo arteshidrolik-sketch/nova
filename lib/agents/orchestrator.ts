@@ -21,6 +21,12 @@ export async function selectAgent(
   model: string,
   messages: ChatMessage[],
 ): Promise<AgentKey> {
+  // API mesajlarda ekstra alan (agent/attachments) kabul etmez → sadece role+content bırak
+  const clean = messages.map((m) => ({
+    role: m.role === "assistant" ? ("assistant" as const) : ("user" as const),
+    content: typeof m.content === "string" ? m.content : "",
+  }));
+
   try {
     const res = await client.messages.create({
       model,
@@ -48,7 +54,7 @@ export async function selectAgent(
         },
       ],
       tool_choice: { type: "tool", name: "select_agent" },
-      messages,
+      messages: clean,
     });
 
     const toolUse = res.content.find((b) => b.type === "tool_use");
