@@ -218,8 +218,12 @@ export const ACTIONS: Record<string, ActionDef> = {
       const root = String(p.projectPath ?? "");
       if (!root) return "Hata: aktif proje yok.";
       const target = resolveIn(root, String(p.path));
-      await fs.mkdir(path.dirname(target), { recursive: true });
       const content = String(p.content ?? "");
+      // Boş içerikle var olan dosyayı ezme / 0 baytlık dosya yazma (içerik kesilmiş olabilir)
+      if (content.trim() === "") {
+        return `Hata: içerik BOŞ — dosya yazılmadı (${String(p.path)}). İçerik büyük olduğunda kesilmiş olabilir; dosyayı daha küçük parçalar halinde ya da yeniden, içeriğiyle birlikte yaz.`;
+      }
+      await fs.mkdir(path.dirname(target), { recursive: true });
       await fs.writeFile(target, content, "utf8");
       return `Yazıldı: ${String(p.path)} (${Buffer.byteLength(content)} bayt)`;
     },

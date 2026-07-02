@@ -71,6 +71,8 @@ export async function POST(req: Request) {
   // 1) Orkestratör — soru/isteğe göre uzman ajan + ajana göre model
   const agent = await selectAgent(client, ROUTER_MODEL, messages);
   const answerModel = modelForAgent(agent);
+  // Büyük dosya yazımı kesilmesin diye güçlü modellerde daha yüksek çıktı limiti
+  const maxTokens = /opus|sonnet/.test(answerModel) ? 16000 : 8000;
 
   // 2) Hafıza
   const lastUser =
@@ -180,7 +182,7 @@ export async function POST(req: Request) {
         for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
           const stream = client.messages.stream({
             model: answerModel,
-            max_tokens: 4096,
+            max_tokens: maxTokens, // büyük dosya içerikleri tek araç çağrısına sığsın (kesilme=0 bayt önlenir)
             system,
             tools,
             messages: convo,
