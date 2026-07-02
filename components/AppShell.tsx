@@ -9,6 +9,7 @@ import Briefing from "./Briefing";
 import Releases from "./Releases";
 import Projects from "./Projects";
 import Skills from "./Skills";
+import type { Kickoff } from "./Chat";
 
 export type ConvMeta = { id: string; title: string; updatedAt: number };
 
@@ -51,6 +52,7 @@ export default function AppShell() {
   const [activeConv, setActiveConv] = useState<string | null>(null);
   const [immersive, setImmersive] = useState(false);
   const [chatBusy, setChatBusy] = useState(false);
+  const [kickoff, setKickoff] = useState<Kickoff>(null);
 
   const refreshPending = useCallback(async () => {
     try {
@@ -173,6 +175,16 @@ export default function AppShell() {
     setView("harita");
   }
 
+  // Yeni proje başlatıldı: yeni sohbet aç, Çalışma Alanı'na geç, prompt'u otomatik gönder
+  async function startProject(payload: Kickoff) {
+    const r = await fetch("/api/conversations", { method: "POST" });
+    const d = await r.json();
+    setConvs(await refreshConvs());
+    setActiveConv(d.conversation.id);
+    setKickoff(payload);
+    setView("harita");
+  }
+
   async function renameConversation(id: string, title: string) {
     await fetch(`/api/conversations/${id}`, {
       method: "POST",
@@ -215,6 +227,8 @@ ekrana tıkla: tam ekran · Boşluk: konuş · fareyi oynat: menüler
             immersive={hideUI}
             menuBar={menuBarNode}
             onBusyChange={setChatBusy}
+            autoSend={kickoff}
+            onAutoSent={() => setKickoff(null)}
           />
         ) : view === "tasks" ? (
           <Tasks onChange={refreshPending} />
@@ -225,7 +239,7 @@ ekrana tıkla: tam ekran · Boşluk: konuş · fareyi oynat: menüler
         ) : view === "surumler" ? (
           <Releases onChange={refreshPending} />
         ) : view === "projeler" ? (
-          <Projects />
+          <Projects onStart={startProject} />
         ) : view === "beceriler" ? (
           <Skills />
         ) : (

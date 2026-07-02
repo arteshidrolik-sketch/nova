@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import AgentGraph, { type VoiceState } from "./AgentMap";
-import Chat, { type ChatHandle } from "./Chat";
+import Chat, { type ChatHandle, type Kickoff } from "./Chat";
 import Dashboard from "./Dashboard";
 import type { AgentActivity } from "@/lib/agents/meta";
 
@@ -13,12 +13,16 @@ export default function Workspace({
   immersive = false,
   menuBar,
   onBusyChange,
+  autoSend,
+  onAutoSent,
 }: {
   conversationId: string | null;
   onConversationUpdated?: () => void;
   immersive?: boolean;
   menuBar?: ReactNode;
   onBusyChange?: (busy: boolean) => void;
+  autoSend?: Kickoff;
+  onAutoSent?: () => void;
 }) {
   const [active, setActive] = useState<AgentActivity>(null);
   const [voice, setVoice] = useState<VoiceState>("idle");
@@ -80,6 +84,8 @@ export default function Workspace({
             onVoiceState={setVoice}
             onWakeState={setWakeOn}
             onBusy={onBusyChange}
+            autoSend={autoSend}
+            onAutoSent={onAutoSent}
           />
         </div>
 

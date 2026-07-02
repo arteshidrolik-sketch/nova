@@ -14,7 +14,7 @@ import {
   type AgentKey,
 } from "@/lib/agents/meta";
 
-type Attachment = {
+export type Attachment = {
   kind: "image" | "pdf" | "text";
   name: string;
   mediaType?: string;
@@ -22,6 +22,8 @@ type Attachment = {
   text?: string; // metin dosyaları
   previewUrl?: string; // görsel önizleme (yalnız oturum)
 };
+
+export type Kickoff = { text: string; attachments?: Attachment[] } | null;
 
 type Message = {
   role: "user" | "assistant";
@@ -111,6 +113,8 @@ type ChatProps = {
   onVoiceState?: (s: "idle" | "listening" | "speaking") => void;
   onWakeState?: (enabled: boolean) => void;
   onBusy?: (busy: boolean) => void;
+  autoSend?: Kickoff;
+  onAutoSent?: () => void;
 };
 
 const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
@@ -121,6 +125,8 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     onVoiceState,
     onWakeState,
     onBusy,
+    autoSend,
+    onAutoSent,
   },
   ref,
 ) {
@@ -230,6 +236,23 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
+
+  // Yeni proje başlatıldığında: prompt'u otomatik ilk mesaj olarak gönder
+  const autoSentRef = useRef(false);
+  useEffect(() => {
+    if (!autoSend) {
+      autoSentRef.current = false;
+      return;
+    }
+    if (!conversationId || autoSentRef.current) return;
+    autoSentRef.current = true;
+    const t = setTimeout(() => {
+      send(autoSend.text, autoSend.attachments ?? []);
+      onAutoSent?.();
+    }, 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSend, conversationId]);
 
   function persist(msgs: Message[]) {
     if (!conversationId) return;
@@ -574,9 +597,10 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     [],
   );
 
-  async function send(textArg?: string) {
+  async function send(textArg?: string, attsArg?: Attachment[]) {
     const text = (typeof textArg === "string" ? textArg : input).trim();
-    const atts = typeof textArg === "string" ? [] : attachments;
+    const atts =
+      attsArg ?? (typeof textArg === "string" ? [] : attachments);
     if ((!text && atts.length === 0) || loading) return;
 
     const base = messagesRef.current;

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import type { Attachment, Kickoff } from "./Chat";
 
 type Project = {
   id: string;
@@ -9,7 +10,11 @@ type Project = {
   repoUrl?: string;
 };
 
-export default function Projects() {
+export default function Projects({
+  onStart,
+}: {
+  onStart?: (k: Kickoff) => void;
+}) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -17,6 +22,58 @@ export default function Projects() {
   const [repoUrl, setRepoUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  // Prompt'tan başla modu
+  const [mode, setMode] = useState<"new" | "existing">("new");
+  const [promptText, setPromptText] = useState("");
+  const [promptPdf, setPromptPdf] = useState<{ name: string; data: string } | null>(null);
+
+  async function onPromptFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const url: string = await new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(String(r.result));
+      r.onerror = rej;
+      r.readAsDataURL(f);
+    });
+    setPromptPdf({ name: f.name, data: url.split(",")[1] });
+  }
+
+  async function createNew() {
+    if (!name.trim()) return;
+    setBusy(true);
+    setError("");
+    try {
+      const r = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, prompt: promptText, newProject: true }),
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        setError(d?.message || "Proje oluşturulamadı");
+        return;
+      }
+      await refresh();
+      const nm = name.trim();
+      const parts = [`Yeni bir projeye başlıyoruz: "${nm}".`];
+      if (promptText.trim()) parts.push(`\nProje promptu:\n${promptText.trim()}`);
+      if (promptPdf) parts.push(`\nEkteki PDF proje promptudur.`);
+      parts.push(
+        `\nÖnce promptu iyice oku, kısa bir yol planı çıkar ve ilk adımı öner. Hazırsan başlayalım.`,
+      );
+      const atts: Attachment[] = promptPdf
+        ? [{ kind: "pdf", name: promptPdf.name, data: promptPdf.data }]
+        : [];
+      setName("");
+      setPromptText("");
+      setPromptPdf(null);
+      onStart?.({ text: parts.join("\n"), attachments: atts });
+    } finally {
+      setBusy(false);
+    }
+  }
 
   // Gözat (sunucu klasör gezgini)
   const [browseOpen, setBrowseOpen] = useState(false);
@@ -127,56 +184,138 @@ export default function Projects() {
             className="space-y-2 rounded-xl border p-4"
             style={{ borderColor: "var(--border)", background: "var(--bg-panel)" }}
           >
-            <div className="text-sm font-medium">Proje ekle</div>
+            {/* mod seçici */}
+            <div className="flex gap-2">
+              {(
+                [
+                  ["new", "🆕 Prompt'tan başla"],
+                  ["existing", "📂 Mevcut klasör"],
+                ] as const
+              ).map(([m, label]) => (
+                <button
+                  key={m}
+                  onClick={() => {
+                    setMode(m);
+                    setError("");
+                  }}
+                  className="rounded-lg px-3 py-1.5 text-sm"
+                  style={
+                    mode === m
+                      ? { background: "var(--accent)", color: "#000", fontWeight: 600 }
+                      : { border: "1px solid var(--border)", color: "var(--text-muted)" }
+                  }
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Proje adı (örn. GetDriver)"
+              placeholder="Proje adı (örn. Vyvo)"
               className="w-full rounded-lg border px-3 py-2 text-sm outline-none"
               style={inputStyle}
             />
-            <div className="flex gap-2">
-              <input
-                value={path}
-                onChange={(e) => setPath(e.target.value)}
-                placeholder="Sunucu klasör yolu (örn. /srv/projects/getdriver)"
-                className="flex-1 rounded-lg border px-3 py-2 font-mono text-xs outline-none"
-                style={inputStyle}
-              />
-              <button
-                onClick={openBrowse}
-                type="button"
-                className="shrink-0 whitespace-nowrap rounded-lg border px-3 py-2 text-sm"
-                style={{ borderColor: "var(--border)", color: "var(--text)" }}
-                title="Sunucudan klasör seç"
-              >
-                📂 Gözat
-              </button>
-            </div>
-            <input
-              value={repoUrl}
-              onChange={(e) => setRepoUrl(e.target.value)}
-              placeholder="(Opsiyonel) GitHub URL"
-              className="w-full rounded-lg border px-3 py-2 text-xs outline-none"
-              style={inputStyle}
-            />
-            {error && (
-              <div className="text-xs" style={{ color: "#ef4444" }}>
-                {error}
-              </div>
+
+            {mode === "new" ? (
+              <>
+                <textarea
+                  value={promptText}
+                  onChange={(e) => setPromptText(e.target.value)}
+                  placeholder="Proje promptunu buraya yapıştır (opsiyonel — ya da aşağıdan PDF yükle)"
+                  rows={5}
+                  className="w-full resize-y rounded-lg border px-3 py-2 text-sm outline-none"
+                  style={inputStyle}
+                />
+                <label
+                  className="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm"
+                  style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+                >
+                  📄 {promptPdf ? promptPdf.name : "Prompt PDF yükle (opsiyonel)"}
+                  <input
+                    type="file"
+                    accept=".pdf,application/pdf"
+                    className="hidden"
+                    onChange={onPromptFile}
+                  />
+                  {promptPdf && (
+                    <span
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setPromptPdf(null);
+                      }}
+                      className="ml-auto text-xs"
+                      style={{ color: "#ef4444" }}
+                    >
+                      ✕ kaldır
+                    </span>
+                  )}
+                </label>
+                {error && (
+                  <div className="text-xs" style={{ color: "#ef4444" }}>
+                    {error}
+                  </div>
+                )}
+                <button
+                  onClick={createNew}
+                  disabled={busy || !name.trim()}
+                  className="btn-grad rounded-lg px-4 py-2 text-sm font-medium text-black disabled:opacity-40"
+                  style={{ background: "var(--grad)" }}
+                >
+                  {busy ? "Oluşturuluyor…" : "🚀 Oluştur ve başlat"}
+                </button>
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  Nova sunucuda proje klasörünü açar, promptu okur, plan çıkarıp
+                  başlar. (Prompt boşsa Nova senden ister.)
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="flex gap-2">
+                  <input
+                    value={path}
+                    onChange={(e) => setPath(e.target.value)}
+                    placeholder="Sunucu klasör yolu (örn. /srv/projects/getdriver)"
+                    className="flex-1 rounded-lg border px-3 py-2 font-mono text-xs outline-none"
+                    style={inputStyle}
+                  />
+                  <button
+                    onClick={openBrowse}
+                    type="button"
+                    className="shrink-0 whitespace-nowrap rounded-lg border px-3 py-2 text-sm"
+                    style={{ borderColor: "var(--border)", color: "var(--text)" }}
+                    title="Sunucudan klasör seç"
+                  >
+                    📂 Gözat
+                  </button>
+                </div>
+                <input
+                  value={repoUrl}
+                  onChange={(e) => setRepoUrl(e.target.value)}
+                  placeholder="(Opsiyonel) GitHub URL"
+                  className="w-full rounded-lg border px-3 py-2 text-xs outline-none"
+                  style={inputStyle}
+                />
+                {error && (
+                  <div className="text-xs" style={{ color: "#ef4444" }}>
+                    {error}
+                  </div>
+                )}
+                <button
+                  onClick={addProject}
+                  disabled={busy || !name.trim() || !path.trim()}
+                  className="btn-grad rounded-lg px-4 py-2 text-sm font-medium text-black disabled:opacity-40"
+                  style={{ background: "var(--grad)" }}
+                >
+                  {busy ? "Ekleniyor…" : "+ Ekle"}
+                </button>
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  Sunucudaki mevcut bir kod klasörünü bağlar. GitHub repon
+                  sunucuya klonlanmadıysa bana URL&apos;ini söyle, klonlayayım.
+                </p>
+              </>
             )}
-            <button
-              onClick={addProject}
-              disabled={busy || !name.trim() || !path.trim()}
-              className="btn-grad rounded-lg px-4 py-2 text-sm font-medium text-black disabled:opacity-40"
-              style={{ background: "var(--grad)" }}
-            >
-              {busy ? "Ekleniyor…" : "+ Ekle"}
-            </button>
-            <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-              GitHub repon önce lokale klonlanmalı. Klonlamadıysan bana repo
-              URL&apos;ini söyle, ben klonlayıp buraya ekleyeyim.
-            </p>
           </div>
 
           {projects.length === 0 && (
