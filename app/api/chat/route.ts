@@ -53,13 +53,12 @@ export async function POST(req: Request) {
   }
 
   let messages: IncomingMessage[];
-  let pinned = false; // "ne var ne yok" sabit sohbeti → Fable
   let conversationId = ""; // proje bağlamını sohbete göre çöz
   try {
     const body = await req.json();
     messages = Array.isArray(body?.messages) ? body.messages : [];
-    pinned = Boolean(body?.pinned);
-    conversationId = typeof body?.conversationId === "string" ? body.conversationId : "";
+    conversationId =
+      typeof body?.conversationId === "string" ? body.conversationId : "";
   } catch {
     return new Response("Geçersiz istek gövdesi.", { status: 400 });
   }
@@ -69,11 +68,9 @@ export async function POST(req: Request) {
 
   const client = new Anthropic();
 
-  // 1) Orkestratör — sabit "ne var ne yok" sohbetinde yönlendirme YOK: hep genel + Fable
-  const agent = pinned
-    ? "general"
-    : await selectAgent(client, ROUTER_MODEL, messages);
-  const answerModel = pinned ? "claude-fable-5" : modelForAgent(agent);
+  // 1) Orkestratör — soru/isteğe göre uzman ajan + ajana göre model
+  const agent = await selectAgent(client, ROUTER_MODEL, messages);
+  const answerModel = modelForAgent(agent);
 
   // 2) Hafıza
   const lastUser =
@@ -101,6 +98,19 @@ export async function POST(req: Request) {
       `önce list_files ile yapıyı gör, search_files ile ilgili yeri bul, read_file ile oku. ` +
       `Tahmin etme. Değişiklik gerekiyorsa write_project_file (yeni/tam dosya) veya ` +
       `edit_project_file (metin değişikliği) öner — bunlar kullanıcı onayı (GO) gerektirir.`;
+
+    if (project.self) {
+      system +=
+        `\n\n## ⚠️ ÖZEL: BU SENİN KENDİ KAYNAK KODUN (Nova)\n` +
+        `"${project.path}" senin çalışan uygulamanın koddur — kendini geliştiriyorsun. ` +
+        `Bu güçlü ama riskli; şu kurallara MUTLAKA uy:\n` +
+        `- Değişiklikleri KÜÇÜK ve ODAKLI tut; tek seferde çok yeri değiştirme.\n` +
+        `- ÖNCE ilgili dosyaları oku (list_files/read_file), varsayım yapma.\n` +
+        `- Her mantıklı adımı git_commit_push ile COMMIT'le — her commit bir GERİ DÖNÜŞ (yedek) noktasıdır.\n` +
+        `- TypeScript/derleme hatası bırakma; değişiklik build'i bozarsa canlı ekran gelmez.\n` +
+        `- Riskli/geniş değişikliklerde önce kullanıcıya kısaca planı anlat, sonra GO-onaylı araçlarla öner.\n` +
+        `- Değişiklik commit'lenince sunucuda güvenli otomatik-deploy devreye girer: yeni sürüm sağlıksızsa otomatik olarak bir önceki çalışan sürüme döner.`;
+    }
   }
 
   // 4) Bu role yüklenmiş beceriler

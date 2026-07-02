@@ -8,6 +8,7 @@ export type Project = {
   path: string; // mutlak yerel yol
   repoUrl?: string;
   conversationId?: string; // projeye ait sohbet
+  self?: boolean; // Nova'nın kendi kaynak kodu (beyin)
   createdAt: number;
 };
 
@@ -79,6 +80,40 @@ export async function getProjectByConversation(
     (await load()).projects.find((p) => p.conversationId === conversationId) ??
     null
   );
+}
+
+// Nova'nın kendi kaynak kodunu "beyin" projesi olarak garantiler ve verilen
+// (sabit "ne var ne yok") sohbetine bağlar. Kaynak yolu mount edilmemişse oluşturmaz.
+export async function ensureNovaProject(
+  conversationId: string,
+): Promise<Project | null> {
+  const selfPath = process.env.NOVA_SELF_PATH || "/srv/nova-src";
+  const d = await load();
+  const existing = d.projects.find((p) => p.self);
+  if (existing) {
+    if (existing.conversationId !== conversationId) {
+      existing.conversationId = conversationId;
+      await persist(d);
+    }
+    return existing;
+  }
+  try {
+    const st = await fs.stat(selfPath);
+    if (!st.isDirectory()) return null;
+  } catch {
+    return null; // kaynak mount edilmemiş (ör. lokal) → oluşturma
+  }
+  const proj: Project = {
+    id: crypto.randomUUID(),
+    name: "Nova (beyin)",
+    path: selfPath,
+    self: true,
+    conversationId,
+    createdAt: Date.now(),
+  };
+  d.projects.push(proj);
+  await persist(d);
+  return proj;
 }
 
 export async function setProjectConversation(

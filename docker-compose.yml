@@ -10,6 +10,19 @@ services:
       - nova-data:/app/data
       - nova-workspace:/app/workspace
       - /srv/projects:/srv/projects
+      - /docker/nova:/srv/nova-src
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3000/').then(()=>process.exit(0)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 6s
+      retries: 3
+      start_period: 45s
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.nova.entrypoints=websecure"
