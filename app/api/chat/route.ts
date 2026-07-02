@@ -203,15 +203,19 @@ export async function POST(req: Request) {
 
           const final = await stream.finalMessage();
 
-          // Web arama tur sınırı VEYA token sınırında yarıda kaldı → devam ettir
-          if (
-            final.stop_reason === "pause_turn" ||
-            final.stop_reason === "max_tokens"
-          ) {
-            convo.push({ role: "assistant", content: final.content });
-            continue;
+          // Araç çağrısı içeriyor mu? İçeriyorsa HER tool_use için tool_result üretmeliyiz.
+          const hasToolUse = final.content.some((b) => b.type === "tool_use");
+          if (!hasToolUse) {
+            // Araç yok: web-arama/token sınırında yarıda kaldıysa devam ettir, değilse bitir
+            if (
+              final.stop_reason === "pause_turn" ||
+              final.stop_reason === "max_tokens"
+            ) {
+              convo.push({ role: "assistant", content: final.content });
+              continue;
+            }
+            break;
           }
-          if (final.stop_reason !== "tool_use") break;
 
           convo.push({ role: "assistant", content: final.content });
 
