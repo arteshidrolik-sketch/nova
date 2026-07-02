@@ -26,10 +26,11 @@ export default function Projects({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  // Prompt'tan başla modu
-  const [mode, setMode] = useState<"new" | "existing">("new");
+  // Ekleme modları
+  const [mode, setMode] = useState<"new" | "zip" | "existing">("new");
   const [promptText, setPromptText] = useState("");
   const [promptPdf, setPromptPdf] = useState<{ name: string; data: string } | null>(null);
+  const [zipFile, setZipFile] = useState<File | null>(null);
 
   async function onPromptFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -73,6 +74,36 @@ export default function Projects({
       setPromptText("");
       setPromptPdf(null);
       onStart?.(d.project, { text: parts.join("\n"), attachments: atts });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function onZipFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (f) setZipFile(f);
+  }
+
+  async function uploadZip() {
+    if (!name.trim() || !zipFile) return;
+    setBusy(true);
+    setError("");
+    try {
+      const fd = new FormData();
+      fd.append("name", name);
+      fd.append("file", zipFile);
+      const r = await fetch("/api/projects/upload", { method: "POST", body: fd });
+      const d = await r.json();
+      if (!r.ok) {
+        setError(d?.message || "ZIP yüklenemedi");
+        return;
+      }
+      await refresh();
+      const nm = name.trim();
+      const text = `"${nm}" projesini bir ZIP'ten yükledim — başka bir platformda geliştirilmiş, yarım kalmış bir uygulama. Önce dosya yapısını incele (list_files ile başla, sonra önemli dosyaları read_file ile oku), ne olduğunu, hangi teknolojiyle yapıldığını ve nerede kaldığını kısaca özetle; sonra nasıl devam edebileceğimize dair bir yol planı öner.`;
+      setName("");
+      setZipFile(null);
+      onStart?.(d.project, { text, attachments: [] });
     } finally {
       setBusy(false);
     }
@@ -192,6 +223,7 @@ export default function Projects({
               {(
                 [
                   ["new", "🆕 Prompt'tan başla"],
+                  ["zip", "📦 ZIP yükle"],
                   ["existing", "📂 Mevcut klasör"],
                 ] as const
               ).map(([m, label]) => (
@@ -271,6 +303,51 @@ export default function Projects({
                 <p className="text-xs" style={{ color: "var(--text-muted)" }}>
                   Nova sunucuda proje klasörünü açar, promptu okur, plan çıkarıp
                   başlar. (Prompt boşsa Nova senden ister.)
+                </p>
+              </>
+            ) : mode === "zip" ? (
+              <>
+                <label
+                  className="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm"
+                  style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+                >
+                  📦 {zipFile ? zipFile.name : "Uygulama ZIP dosyasını seç"}
+                  <input
+                    type="file"
+                    accept=".zip,application/zip,application/x-zip-compressed"
+                    className="hidden"
+                    onChange={onZipFile}
+                  />
+                  {zipFile && (
+                    <span
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setZipFile(null);
+                      }}
+                      className="ml-auto text-xs"
+                      style={{ color: "#ef4444" }}
+                    >
+                      ✕ kaldır
+                    </span>
+                  )}
+                </label>
+                {error && (
+                  <div className="text-xs" style={{ color: "#ef4444" }}>
+                    {error}
+                  </div>
+                )}
+                <button
+                  onClick={uploadZip}
+                  disabled={busy || !name.trim() || !zipFile}
+                  className="btn-grad rounded-lg px-4 py-2 text-sm font-medium text-black disabled:opacity-40"
+                  style={{ background: "var(--grad)" }}
+                >
+                  {busy ? "Yükleniyor…" : "📦 Yükle ve başlat"}
+                </button>
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  Başka platformda geliştirilmiş, ZIP olarak kaydettiğin (yarım) bir
+                  uygulamayı yükler. Nova sunucuda açar, dosyaları inceler, nerede
+                  kaldığını özetler ve nasıl devam edeceğini önerir.
                 </p>
               </>
             ) : (
