@@ -319,8 +319,8 @@ export const ACTIONS: Record<string, ActionDef> = {
       try {
         const { stdout, stderr } = await execAsync(cmd, {
           cwd: root,
-          timeout: 180000,
-          maxBuffer: 4 * 1024 * 1024,
+          timeout: 300000,
+          maxBuffer: 8 * 1024 * 1024,
           env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
         });
         const out =

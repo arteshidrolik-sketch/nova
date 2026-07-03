@@ -9,6 +9,7 @@ import {
   PROJECT_ACTION_TOOLS,
   actionDangerous,
   actionTitle,
+  executeAction,
   isActionTool,
   isProjectAction,
 } from "@/lib/tools/actions";
@@ -103,15 +104,26 @@ export async function POST(req: Request) {
 
     if (project.self) {
       system +=
-        `\n\n## ⚠️ ÖZEL: BU SENİN KENDİ KAYNAK KODUN (Nova)\n` +
-        `"${project.path}" senin çalışan uygulamanın koddur — kendini geliştiriyorsun. ` +
-        `Bu güçlü ama riskli; şu kurallara MUTLAKA uy:\n` +
-        `- Değişiklikleri KÜÇÜK ve ODAKLI tut; tek seferde çok yeri değiştirme.\n` +
-        `- ÖNCE ilgili dosyaları oku (list_files/read_file), varsayım yapma.\n` +
-        `- Her mantıklı adımı git_commit_push ile COMMIT'le — her commit bir GERİ DÖNÜŞ (yedek) noktasıdır.\n` +
-        `- TypeScript/derleme hatası bırakma; değişiklik build'i bozarsa canlı ekran gelmez.\n` +
-        `- Riskli/geniş değişikliklerde önce kullanıcıya kısaca planı anlat, sonra GO-onaylı araçlarla öner.\n` +
-        `- Değişiklik commit'lenince sunucuda güvenli otomatik-deploy devreye girer: yeni sürüm sağlıksızsa otomatik olarak bir önceki çalışan sürüme döner.`;
+        `\n\n## 🧠 BU SENİN KENDİ KAYNAK KODUN (Nova) — KIDEMLİ YAZILIM MÜHENDİSİ GİBİ ÇALIŞ\n` +
+        `"${project.path}" senin çalışan uygulamanın kaynağı. Burada araçların GO BEKLEMEDEN OTOMATİK çalışır ` +
+        `(write_project_file, edit_project_file, run_command, git_commit_push) — özgürce, adım adım iterasyon yap. İzin isteme, YAP.\n\n` +
+        `### Çalışma yöntemi (harfiyen uy — ben böyle çalışıyorum):\n` +
+        `1. **OKU:** Değiştireceğin dosyaları önce list_files/search_files/read_file ile TAM oku. Asla tahmin etme.\n` +
+        `2. **KÜÇÜK DEĞİŞTİR:** edit_project_file ile küçük, kesin düzenlemeler yap (old_str dosyada BİREBİR geçmeli). Yeni dosyada write_project_file (içeriğin TAMAMINI ver, boş bırakma).\n` +
+        `3. **DOĞRULA:** Her değişiklikten sonra MUTLAKA \`run_command\` ile \`npm run build\` çalıştır. Derleme hatası çıkarsa hata mesajını oku → ilgili dosyayı düzelt → tekrar build. HATASIZ olana kadar bu döngüyü sürdür.\n` +
+        `4. **COMMIT:** build GEÇTİKTEN SONRA git_commit_push ile commit'le (anlamlı mesajla). Commit güvenli otomatik-deploy'u tetikler; sağlıksızsa sistem bir önceki sürüme döner.\n` +
+        `5. **ÖZETLE:** Kullanıcıya ne yaptığını 1-2 cümleyle söyle.\n\n` +
+        `### Katı kurallar:\n` +
+        `- Niyet anlatma, ARACI ÇAĞIR. "build alıyorum / düzeltiyorum" deyip durma — run_command'ı FİİLEN çağır.\n` +
+        `- Build GEÇMEDEN ASLA commit etme. Bozuk kod commit'lersen ekran gelmez.\n` +
+        `- Değişiklikleri küçük ve odaklı tut; ana görseli/çalışan akışı bozma.\n\n` +
+        `### Mimari harita (nerede ne var):\n` +
+        `- app/api/chat/route.ts → sohbet orkestrasyonu (ajan seçimi, araçlar, akış döngüsü)\n` +
+        `- lib/agents/ → orchestrator.ts (yönlendirme), prompts.ts (sistem promptları), models.ts (ajan→model), meta.ts (ajan tanımları)\n` +
+        `- lib/tools/ → actions.ts (aksiyonlar: write/edit/run_command/git), projectFiles.ts (okuma araçları)\n` +
+        `- components/ → AppShell (kabuk), Sidebar (alt menü barı), Workspace (harita+sohbet), Chat (sohbet+ses), AgentMap (uzay/ajan haritası), Dashboard (yan pano), Projects\n` +
+        `- lib/projects/store.ts, lib/conversations/store.ts, data/*.json (yerel JSON depo)\n` +
+        `- Doğrulama: \`npm run build\` · Yayına alma: commit → otomatik güvenli deploy`;
     }
   }
 
@@ -135,6 +147,9 @@ export async function POST(req: Request) {
     "- Akış: gerekiyorsa önce oku (list_files/read_file/search_files) → SONRA aynı konuşmada değişiklik aracını ÇAĞIR. Okuyup durma, mutlaka aksiyonu çağır.\n" +
     "- Birden çok dosya değişecekse her biri için ayrı ayrı aracı çağır (birini atlama)." +
     "\n\n## İnternet\nİNTERNETE ERİŞİMİN VAR. Güncel bilgi, haber, fiyat, sürüm, dokümantasyon veya emin olmadığın her şey için web_search aracını kullan. ASLA 'internete bağlı değilim', 'erişemiyorum' veya 'gerçek zamanlı bilgiye ulaşamam' DEME — bunun yerine hemen web_search yap, sonra kaynaklı cevap ver.";
+
+  // Beyin otonom build-düzelt döngüsü için daha fazla tur
+  const maxIter = project?.self ? 30 : MAX_TOOL_ITERATIONS;
 
   // Araçlar
   const tools = [
@@ -179,7 +194,7 @@ export async function POST(req: Request) {
   const readable = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
-        for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
+        for (let i = 0; i < maxIter; i++) {
           const stream = client.messages.stream({
             model: answerModel,
             max_tokens: maxTokens, // büyük dosya içerikleri tek araç çağrısına sığsın (kesilme=0 bayt önlenir)
@@ -278,6 +293,24 @@ export async function POST(req: Request) {
                 payload.projectPath = project.path;
                 payload.projectName = project.name;
               }
+
+              // Beyin (kendi kodu): GO beklemeden OTONOM çalıştır — oku/düzenle/build/düzelt/commit döngüsü
+              if (project?.self) {
+                controller.enqueue(encoder.encode(`\n\n⚙️ ${block.name}…\n`));
+                let result: string;
+                try {
+                  result = await executeAction(block.name, payload);
+                } catch (e) {
+                  result = `Aksiyon hatası: ${e instanceof Error ? e.message : "bilinmeyen"}`;
+                }
+                toolResults.push({
+                  type: "tool_result",
+                  tool_use_id: block.id,
+                  content: result.slice(0, 12000),
+                });
+                continue;
+              }
+
               const task = await createTask({
                 agent,
                 actionType: block.name,
