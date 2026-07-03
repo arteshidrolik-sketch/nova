@@ -1,6 +1,7 @@
 "use client";
 
 import { AGENT_META, AGENT_KEYS, type AgentActivity } from "@/lib/agents/meta";
+import NovaPlayground from "./NovaPlayground";
 
 export type VoiceState = "idle" | "listening" | "speaking";
 
@@ -127,6 +128,8 @@ export default function AgentGraph({
             "radial-gradient(120% 90% at 50% 45%, rgba(2,4,10,0.08) 0%, rgba(2,4,10,0.48) 66%, rgba(2,4,10,0.82) 100%)",
         }}
       />
+      {/* 3D yıldız tüneli + mini oyun (foto üstünde, UI altında) */}
+      <NovaPlayground />
       <svg
         viewBox="0 0 1000 680"
         preserveAspectRatio="xMidYMid slice"

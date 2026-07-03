@@ -5,7 +5,9 @@ import { useEffect, useRef, useState, useCallback } from "react";
 /**
  * NovaPlayground
  * -----------------
- * Sıfır bağımlılıklı, canvas tabanlı 3D arka plan + mini oyun.
+ * Sıfır bağımlılıklı, canvas tabanlı 3D katman + mini oyun.
+ * - AgentMap'in İÇİNE mount edilir (relative parent şart).
+ * - Uzay fotoğrafının ÜSTÜNDE, ajan haritası UI'ının ALTINDA çizilir.
  * - Normalde pointer-events:none => ana arayüzü ASLA bloklamaz.
  * - Sağ alttaki buton "Oyun Modu"nu açar: orb patlatma + combo + skor.
  * - prefers-reduced-motion, sekme gizliyken duraklatma, DPR sınırı.
@@ -71,6 +73,8 @@ export default function NovaPlayground() {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const host = canvas.parentElement as HTMLElement | null;
+    if (!host) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
@@ -107,22 +111,16 @@ export default function NovaPlayground() {
       return orb;
     }
 
-    for (let i = 0; i < STAR_COUNT; i++) {
-      const s: Star = { x: 0, y: 0, z: 0 };
-      resetStar(s);
-      stars.push(s);
-    }
-    for (let i = 0; i < ORB_COUNT; i++) orbs.push(spawnOrb());
-
     let mx = 0;
     let my = 0;
     let tmx = 0;
     let tmy = 0;
 
     function resize() {
+      const rect = host!.getBoundingClientRect();
       dpr = Math.min(window.devicePixelRatio || 1, 2); // performans için sınırlı
-      w = window.innerWidth;
-      h = window.innerHeight;
+      w = Math.max(1, rect.width);
+      h = Math.max(1, rect.height);
       cx = w / 2;
       cy = h / 2;
       canvas!.width = Math.floor(w * dpr);
@@ -132,11 +130,23 @@ export default function NovaPlayground() {
       ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
     resize();
+
+    // ilk boyuttan SONRA doğur (yoksa hepsi 0,0'da başlar)
+    for (let i = 0; i < STAR_COUNT; i++) {
+      const s: Star = { x: 0, y: 0, z: 0 };
+      resetStar(s);
+      stars.push(s);
+    }
+    for (let i = 0; i < ORB_COUNT; i++) orbs.push(spawnOrb());
+
+    const ro = new ResizeObserver(resize);
+    ro.observe(host);
     window.addEventListener("resize", resize);
 
     function onMove(e: MouseEvent) {
-      tmx = (e.clientX - cx) / cx;
-      tmy = (e.clientY - cy) / cy;
+      const rect = host!.getBoundingClientRect();
+      tmx = (e.clientX - rect.left - cx) / cx;
+      tmy = (e.clientY - rect.top - cy) / cy;
     }
     window.addEventListener("mousemove", onMove);
 
@@ -151,8 +161,11 @@ export default function NovaPlayground() {
 
     function onClick(e: MouseEvent) {
       if (!playModeRef.current) return;
-      const px = e.clientX;
-      const py = e.clientY;
+      // oyun modunda tıklama tam ekranı tetiklemesin
+      e.stopPropagation();
+      const rect = host!.getBoundingClientRect();
+      const px = e.clientX - rect.left;
+      const py = e.clientY - rect.top;
       let hit = false;
       // en yakın (en büyük) orb önce
       const sorted = [...orbs]
@@ -176,7 +189,7 @@ export default function NovaPlayground() {
         setCombo(0);
       }
     }
-    window.addEventListener("click", onClick);
+    canvas.addEventListener("click", onClick);
 
     let raf = 0;
     let running = true;
@@ -290,24 +303,24 @@ export default function NovaPlayground() {
     return () => {
       running = false;
       cancelAnimationFrame(raf);
+      ro.disconnect();
       window.removeEventListener("resize", resize);
       window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("click", onClick);
+      canvas.removeEventListener("click", onClick);
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [bump]);
 
   return (
     <>
+      {/* foto arka planın ÜSTÜNDE (z-5), harita UI'ının (z-10+) ALTINDA */}
       <canvas
         ref={canvasRef}
         aria-hidden="true"
         style={{
-          position: "fixed",
+          position: "absolute",
           inset: 0,
-          width: "100%",
-          height: "100%",
-          zIndex: 0,
+          zIndex: 5,
           pointerEvents: playMode ? "auto" : "none",
           cursor: playMode ? "crosshair" : "default",
         }}
@@ -317,11 +330,11 @@ export default function NovaPlayground() {
       {playMode && (
         <div
           style={{
-            position: "fixed",
-            top: 16,
+            position: "absolute",
+            top: 12,
             left: "50%",
             transform: "translateX(-50%)",
-            zIndex: 40,
+            zIndex: 30,
             pointerEvents: "none",
             display: "flex",
             gap: 12,
@@ -351,7 +364,8 @@ export default function NovaPlayground() {
       {/* Aç/kapa butonu */}
       <button
         type="button"
-        onClick={() => {
+        onClick={(e) => {
+          e.stopPropagation(); // tam ekranı tetikleme
           if (playMode) {
             // kapatırken combo/skor sıfırla
             scoreRef.current = 0;
@@ -364,14 +378,14 @@ export default function NovaPlayground() {
         aria-pressed={playMode}
         title={playMode ? "Oyunu kapat" : "Beklerken oyna: orb'lara tıkla!"}
         style={{
-          position: "fixed",
-          right: 16,
-          bottom: 16,
-          zIndex: 40,
+          position: "absolute",
+          right: 14,
+          bottom: 14,
+          zIndex: 30,
           display: "inline-flex",
           alignItems: "center",
           gap: 8,
-          height: 40,
+          height: 36,
           padding: "0 14px",
           borderRadius: 999,
           border: "1px solid rgba(150,140,255,0.35)",

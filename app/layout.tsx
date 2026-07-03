@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import NovaPlayground from "@/components/NovaPlayground";
 
 export const metadata: Metadata = {
   title: "Nova",
@@ -16,7 +15,6 @@ export default function RootLayout({
     <html lang="tr">
       <body>
         <div className="aurora" />
-        <NovaPlayground />
         {children}
       </body>
     </html>
