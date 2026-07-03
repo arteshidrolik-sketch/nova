@@ -297,11 +297,21 @@ export async function POST(req: Request) {
               // Beyin (kendi kodu): GO beklemeden OTONOM çalıştır — oku/düzenle/build/düzelt/commit döngüsü
               if (project?.self) {
                 controller.enqueue(encoder.encode(`\n\n⚙️ ${block.name}…\n`));
+                // Uzun komutlarda (npm run build ~dk) bağlantı düşmesin diye görünmez kalp atışı
+                const hb = setInterval(() => {
+                  try {
+                    controller.enqueue(encoder.encode("​"));
+                  } catch {
+                    /* kapandıysa yoksay */
+                  }
+                }, 15000);
                 let result: string;
                 try {
                   result = await executeAction(block.name, payload);
                 } catch (e) {
                   result = `Aksiyon hatası: ${e instanceof Error ? e.message : "bilinmeyen"}`;
+                } finally {
+                  clearInterval(hb);
                 }
                 toolResults.push({
                   type: "tool_result",
