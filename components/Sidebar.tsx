@@ -65,7 +65,7 @@ export default function Sidebar({
 
   return (
     <aside
-      className="flex h-full w-full shrink-0 items-center gap-2 border-t px-3"
+      className="flex h-full w-full shrink-0 items-center gap-2 overflow-x-auto border-t px-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       style={{
         background: "rgba(14,20,34,0.82)",
         backdropFilter: "blur(12px)",
@@ -129,8 +129,8 @@ export default function Sidebar({
         + Yeni
       </button>
 
-      {/* sohbetler — yatay kaydırılır */}
-      <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+      {/* sohbetler — barın parçası (tüm bar yatay kaydırılır) */}
+      <div className="flex shrink-0 items-center gap-1">
         {conversations.map((c) => {
           const isActive = c.id === activeConv;
           if (editingId === c.id) {
