@@ -712,7 +712,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   return (
     <div className="flex h-full flex-col">
       <header
-        className="flex items-center justify-between border-b px-6 py-4"
+        className="flex items-center justify-between border-b px-4 py-3 sm:px-6 sm:py-4"
         style={{ borderColor: "var(--border)", ...glass }}
       >
         <div>
@@ -796,7 +796,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         </div>
       </header>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-6">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6">
         <div className="mx-auto max-w-3xl space-y-5">
           {messages.length === 0 && (
             <div className="pop-in flex flex-col items-center gap-4 py-16 text-center">
@@ -928,7 +928,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         </div>
       </div>
 
-      <div className="border-t px-6 py-4" style={{ borderColor: "var(--border)" }}>
+      <div className="border-t px-4 py-3 sm:px-6 sm:py-4" style={{ borderColor: "var(--border)" }}>
         <div className="mx-auto max-w-3xl">
           {/* ek önizlemeleri */}
           {attachments.length > 0 && (

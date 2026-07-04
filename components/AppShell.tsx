@@ -229,7 +229,7 @@ export default function AppShell() {
   }, [refreshConvs]);
 
   return (
-    <div className="relative z-10 flex h-screen flex-col overflow-hidden">
+    <div className="relative z-10 flex h-dvh flex-col overflow-hidden">
       {hideUI && (
         <div
           className="pointer-events-none absolute bottom-3 right-4 z-20 text-[11px] tracking-wide"
