@@ -30,6 +30,22 @@ export const runtime = "nodejs";
 
 // Router: hızlı ve ucuz model yeterli (sadece ajan seçer)
 const ROUTER_MODEL = process.env.NOVA_ROUTER_MODEL || "claude-fable-5";
+
+// Asistan mesajı bir `thinking` bloğuyla BİTEMEZ (API 400). Sondaki düşünme
+// bloklarını at (öncekiler tool_use imzası için korunur).
+function trimTrailingThinking(
+  content: Anthropic.ContentBlock[],
+): Anthropic.ContentBlock[] {
+  const arr = [...content];
+  while (
+    arr.length > 0 &&
+    (arr[arr.length - 1].type === "thinking" ||
+      arr[arr.length - 1].type === "redacted_thinking")
+  ) {
+    arr.pop();
+  }
+  return arr;
+}
 const MAX_TOOL_ITERATIONS = 12;
 
 type Attach = {
@@ -69,9 +85,20 @@ export async function POST(req: Request) {
 
   const client = new Anthropic();
 
-  // 1) Orkestratör — soru/isteğe göre uzman ajan + ajana göre model
-  const agent = await selectAgent(client, ROUTER_MODEL, messages);
-  const answerModel = modelForAgent(agent);
+  // Proje bağlamı — bulunduğun SOHBETE bağlı proje (global aktif değil)
+  const project = conversationId
+    ? await getProjectByConversation(conversationId)
+    : null;
+  // UI tutarlılığı için global aktifi de senkronla
+  if (project && (await getActiveId()) !== project.id) {
+    await setActive(project.id);
+  }
+
+  // 1) Orkestratör — beyin (kendi kodu) HER ZAMAN developer + Opus 4.8; değilse router
+  const agent = project?.self
+    ? "developer"
+    : await selectAgent(client, ROUTER_MODEL, messages);
+  const answerModel = project?.self ? "claude-opus-4-8" : modelForAgent(agent);
   // Büyük dosya yazımı kesilmesin diye güçlü modellerde daha yüksek çıktı limiti
   const maxTokens = /opus|sonnet/.test(answerModel) ? 16000 : 8000;
 
@@ -86,14 +113,6 @@ export async function POST(req: Request) {
       relevant.map((m) => `- ${m.summary}`).join("\n");
   }
 
-  // 3) Proje bağlamı — bulunduğun SOHBETE bağlı proje (global aktif değil)
-  const project = conversationId
-    ? await getProjectByConversation(conversationId)
-    : null;
-  // UI tutarlılığı için global aktifi de senkronla
-  if (project && (await getActiveId()) !== project.id) {
-    await setActive(project.id);
-  }
   if (project) {
     system +=
       `\n\n## Aktif proje: ${project.name}\nYerel yol: ${project.path}\n` +
@@ -228,13 +247,18 @@ export async function POST(req: Request) {
               final.stop_reason === "pause_turn" ||
               final.stop_reason === "max_tokens"
             ) {
-              convo.push({ role: "assistant", content: final.content });
+              const trimmed = trimTrailingThinking(final.content);
+              if (trimmed.length === 0) break;
+              convo.push({ role: "assistant", content: trimmed });
               continue;
             }
             break;
           }
 
-          convo.push({ role: "assistant", content: final.content });
+          convo.push({
+            role: "assistant",
+            content: trimTrailingThinking(final.content),
+          });
 
           const toolResults: Anthropic.ToolResultBlockParam[] = [];
           for (const block of final.content) {
