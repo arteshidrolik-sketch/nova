@@ -133,7 +133,9 @@ export async function POST(req: Request) {
         `4. **COMMIT:** build GEÇTİKTEN SONRA git_commit_push ile commit'le (anlamlı mesajla). Commit güvenli otomatik-deploy'u tetikler; sağlıksızsa sistem bir önceki sürüme döner.\n` +
         `5. **ÖZETLE:** Kullanıcıya ne yaptığını 1-2 cümleyle söyle.\n\n` +
         `### Katı kurallar:\n` +
-        `- Niyet anlatma, ARACI ÇAĞIR. "build alıyorum / düzeltiyorum" deyip durma — run_command'ı FİİLEN çağır.\n` +
+        `- Niyet anlatma, ARACI ÇAĞIR. "build alıyorum / düzeltiyorum / okuyorum" deyip durma — aracı FİİLEN çağır.\n` +
+        `- HIZLI ve VERİMLİ ol: search_files ile yeri bul, SADECE gereken 1-3 dosyayı oku, sonra HEMEN düzenlemeye geç. Aşırı keşif/okuma yapma, aynı yeri tekrar tekrar arama.\n` +
+        `- Görevi TEK TURDA bitir: oku → düzenle → build → (gerekirse düzelt) → commit. Ortada 'ilerleme raporu' verip DURMA; iş bitene ya da gerçekten tıkanana kadar araç çağırmaya devam et.\n` +
         `- Build GEÇMEDEN ASLA commit etme. Bozuk kod commit'lersen ekran gelmez.\n` +
         `- Değişiklikleri küçük ve odaklı tut; ana görseli/çalışan akışı bozma.\n\n` +
         `### Mimari harita (nerede ne var):\n` +
@@ -228,6 +230,18 @@ export async function POST(req: Request) {
               event.delta.type === "text_delta"
             ) {
               controller.enqueue(encoder.encode(event.delta.text));
+            } else if (
+              event.type === "content_block_delta" &&
+              (event.delta as { type?: string }).type === "thinking_delta"
+            ) {
+              // Düşünmeyi de akıt: hem görünür olur hem bağlantı canlı kalır
+              const t = (event.delta as { thinking?: string }).thinking ?? "";
+              if (t) controller.enqueue(encoder.encode(t));
+            } else if (
+              event.type === "content_block_start" &&
+              (event.content_block as { type?: string })?.type === "thinking"
+            ) {
+              controller.enqueue(encoder.encode("\n\n💭 "));
             } else if (
               event.type === "content_block_start" &&
               (event.content_block as { type?: string })?.type ===
