@@ -215,21 +215,6 @@ body {
   }
 }
 
-/* NASA foto arka plan — yavaş canlı zoom/pan (Ken Burns) */
-.nova-space-bg {
-  background: #02040a url("/space.jpg?v=2") center / cover no-repeat;
-  animation: spaceDrift 80s ease-in-out infinite alternate;
-  will-change: transform;
-}
-@keyframes spaceDrift {
-  from {
-    transform: scale(1.06) translate(0, 0);
-  }
-  to {
-    transform: scale(1.16) translate(-2.5%, -2%);
-  }
-}
-
 /* yıldız parıltısı (uzay teması) */
 @keyframes twinkle {
   0%,

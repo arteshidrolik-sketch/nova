@@ -2,6 +2,7 @@
 
 import { AGENT_META, AGENT_KEYS, type AgentActivity } from "@/lib/agents/meta";
 import NovaPlayground from "./NovaPlayground";
+import SpaceBackground from "./SpaceBackground";
 
 export type VoiceState = "idle" | "listening" | "speaking";
 
@@ -117,15 +118,15 @@ export default function AgentGraph({
       onClick={onBgClick}
       title="Tam ekran için ekrana tıkla"
     >
-      {/* NASA foto arka plan (yavaş canlı zoom) */}
-      <div className="nova-space-bg absolute inset-0" style={{ zIndex: 0 }} />
-      {/* okunabilirlik için karartma */}
+      {/* hareketli 3B uzay arka planı (parallax nebula + yıldız + atom) */}
+      <SpaceBackground />
+      {/* okunabilirlik için hafif kenar karartma (vinyet) */}
       <div
         className="absolute inset-0"
         style={{
-          zIndex: 0,
+          zIndex: 1,
           background:
-            "radial-gradient(120% 90% at 50% 45%, rgba(2,4,10,0.08) 0%, rgba(2,4,10,0.48) 66%, rgba(2,4,10,0.82) 100%)",
+            "radial-gradient(130% 100% at 50% 42%, transparent 0%, transparent 52%, rgba(2,4,10,0.35) 80%, rgba(2,4,10,0.62) 100%)",
         }}
       />
       {/* 3D yıldız tüneli + mini oyun (foto üstünde, UI altında) */}
