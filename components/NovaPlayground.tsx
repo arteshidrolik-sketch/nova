@@ -54,6 +54,21 @@ export default function NovaPlayground() {
     } catch {}
   }, []);
 
+  // Tam ekrandan çıkılınca (ESC dahil) oyun modunu kapat
+  useEffect(() => {
+    const onFsChange = () => {
+      if (!document.fullscreenElement && playModeRef.current) {
+        setPlayMode(false);
+        scoreRef.current = 0;
+        comboRef.current = 0;
+        setScore(0);
+        setCombo(0);
+      }
+    };
+    document.addEventListener("fullscreenchange", onFsChange);
+    return () => document.removeEventListener("fullscreenchange", onFsChange);
+  }, []);
+
   const bump = useCallback((points: number) => {
     comboRef.current += 1;
     comboTimer.current = 90; // ~1.5s @60fps
@@ -365,15 +380,25 @@ export default function NovaPlayground() {
       <button
         type="button"
         onClick={(e) => {
-          e.stopPropagation(); // tam ekranı tetikleme
-          if (playMode) {
-            // kapatırken combo/skor sıfırla
+          e.stopPropagation(); // haritanın kendi tam ekranını tetikleme
+          const next = !playMode;
+          if (next) {
+            // Oyna → oyun/harita alanını gerçek tam ekrana al
+            const host = canvasRef.current?.parentElement;
+            if (host && !document.fullscreenElement) {
+              host.requestFullscreen?.().catch(() => {});
+            }
+          } else {
+            // kapatırken combo/skor sıfırla + tam ekrandan çık
             scoreRef.current = 0;
             comboRef.current = 0;
             setScore(0);
             setCombo(0);
+            if (document.fullscreenElement) {
+              document.exitFullscreen?.().catch(() => {});
+            }
           }
-          setPlayMode((v) => !v);
+          setPlayMode(next);
         }}
         aria-pressed={playMode}
         title={playMode ? "Oyunu kapat" : "Beklerken oyna: orb'lara tıkla!"}
