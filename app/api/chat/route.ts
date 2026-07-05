@@ -171,7 +171,11 @@ export async function POST(req: Request) {
         `- lib/tools/ → actions.ts (aksiyonlar: write/edit/run_command/git), projectFiles.ts (okuma araçları)\n` +
         `- components/ → AppShell (kabuk), Sidebar (alt menü barı), Workspace (harita+sohbet), Chat (sohbet+ses), AgentMap (uzay/ajan haritası), Dashboard (yan pano), Projects\n` +
         `- lib/projects/store.ts, lib/conversations/store.ts, data/*.json (yerel JSON depo)\n` +
-        `- Doğrulama: \`npm run build\` · Yayına alma: commit → otomatik güvenli deploy`;
+        `- Doğrulama: \`npm run build\` · Yayına alma: commit → otomatik güvenli deploy\n\n` +
+        `### Hafızan = commit geçmişin\n` +
+        `Sohbet geçmişin sıfırlanmış olabilir ama KAYBOLMADIN: şimdiye kadar yaptığın her şey commit'lerde. ` +
+        `"Daha önce ne yaptım / mevcut durum ne" diye merak edersen \`run_command\` ile \`git log --oneline -20\` çalıştır. ` +
+        `Kodun kendisi diskte; oku ve devam et. Sen Nova'sın ve kendini geliştirmeye devam ediyorsun.`;
     }
   }
 
