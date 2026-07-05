@@ -108,16 +108,16 @@ export async function POST(req: Request) {
   // Büyük dosya yazımı kesilmesin diye güçlü modellerde daha yüksek çıktı limiti
   const maxTokens = /opus|sonnet/.test(answerModel) ? 16000 : 8000;
 
-  // 2) Hafıza
+  // 2) Hafıza — sona ayrı eklenir; güvenlik reddi (refusal) olursa hafızasız tekrar denenir
   const lastUser =
     [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
   const relevant = await searchMemories(lastUser, 3);
+  const memNote =
+    relevant.length > 0
+      ? "\n\n## İlgili geçmiş notlar (hafıza)\nBunları gerektiğinde kullan, gereksizse görmezden gel:\n" +
+        relevant.map((m) => `- ${m.summary}`).join("\n")
+      : "";
   let system = SYSTEM_PROMPTS[agent];
-  if (relevant.length > 0) {
-    system +=
-      "\n\n## İlgili geçmiş notlar (hafıza)\nBunları gerektiğinde kullan, gereksizse görmezden gel:\n" +
-      relevant.map((m) => `- ${m.summary}`).join("\n");
-  }
 
   if (project) {
     system +=
@@ -175,6 +175,10 @@ export async function POST(req: Request) {
     "- Birden çok dosya değişecekse her biri için ayrı ayrı aracı çağır (birini atlama)." +
     "\n\n## İnternet\nİNTERNETE ERİŞİMİN VAR. Güncel bilgi, haber, fiyat, sürüm, dokümantasyon veya emin olmadığın her şey için web_search aracını kullan. ASLA 'internete bağlı değilim', 'erişemiyorum' veya 'gerçek zamanlı bilgiye ulaşamam' DEME — bunun yerine hemen web_search yap, sonra kaynaklı cevap ver.";
 
+  // Hafızasız sürüm (refusal olursa buna düşülür)
+  const systemNoMem = system;
+  let useMemory = memNote.length > 0;
+
   // Beyin otonom build-düzelt döngüsü için daha fazla tur
   const maxIter = project?.self ? 30 : MAX_TOOL_ITERATIONS;
 
@@ -224,12 +228,11 @@ export async function POST(req: Request) {
 
   (async () => {
     try {
-      emit("[dbg:basladi]\n");
       for (let i = 0; i < maxIter; i++) {
           const stream = client.messages.stream({
             model: answerModel,
-            max_tokens: maxTokens, // büyük dosya içerikleri tek araç çağrısına sığsın (kesilme=0 bayt önlenir)
-            system,
+            max_tokens: maxTokens, // büyük dosya içeriği tek araç çağrısına sığsın
+            system: useMemory ? systemNoMem + memNote : systemNoMem,
             tools,
             messages: convo,
           });
@@ -261,11 +264,18 @@ export async function POST(req: Request) {
           }
 
           const final = await stream.finalMessage();
-          emit(
-            `[dbg:stop=${final.stop_reason} blocks=${final.content
-              .map((b) => b.type)
-              .join("+")}]\n`,
-          );
+
+          // Güvenlik reddi (refusal): önce HAFIZASIZ tekrar dene (hafıza notu tetiklemiş olabilir), yine olursa açıkla
+          if (final.stop_reason === "refusal") {
+            if (useMemory) {
+              useMemory = false;
+              continue;
+            }
+            emit(
+              "\n\n⚠️ Bu isteğe yanıt güvenlik filtresine takıldı. Farklı/daha açık ifade edersen yardımcı olurum.",
+            );
+            break;
+          }
 
           // Araç çağrısı içeriyor mu? İçeriyorsa HER tool_use için tool_result üretmeliyiz.
           const hasToolUse = final.content.some((b) => b.type === "tool_use");
