@@ -224,6 +224,7 @@ export async function POST(req: Request) {
 
   (async () => {
     try {
+      emit("[dbg:basladi]\n");
       for (let i = 0; i < maxIter; i++) {
           const stream = client.messages.stream({
             model: answerModel,
@@ -260,6 +261,11 @@ export async function POST(req: Request) {
           }
 
           const final = await stream.finalMessage();
+          emit(
+            `[dbg:stop=${final.stop_reason} blocks=${final.content
+              .map((b) => b.type)
+              .join("+")}]\n`,
+          );
 
           // Araç çağrısı içeriyor mu? İçeriyorsa HER tool_use için tool_result üretmeliyiz.
           const hasToolUse = final.content.some((b) => b.type === "tool_use");
