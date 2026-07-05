@@ -634,37 +634,65 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     scrollToBottom();
 
     try {
+      // 1) İşi başlat — sunucu arka planda çalıştırır, hemen runId döner
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: next,
-          pinned: !!pinned,
           conversationId: conversationId ?? "",
         }),
       });
-
-      if (!res.ok || !res.body) {
+      if (!res.ok) {
         const errText = await res.text().catch(() => "");
         throw new Error(errText || `Sunucu hatası (${res.status})`);
       }
-
-      const headerAgent = res.headers.get("X-Nova-Agent");
-      const agent: AgentKey = isAgentKey(headerAgent) ? headerAgent : "general";
-      const model = res.headers.get("X-Nova-Model") || undefined;
+      const startData = await res.json();
+      const runId: string = startData?.runId;
+      const agent: AgentKey = isAgentKey(startData?.agent)
+        ? startData.agent
+        : "general";
+      let model: string | undefined = startData?.model;
       onAgentActivity?.(agent); // haritada seçilen ajan parlasın
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let acc = "";
       setMessages([...next, { role: "assistant", content: "", agent, model }]);
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        acc += decoder.decode(value, { stream: true });
-        setMessages([...next, { role: "assistant", content: acc, agent, model }]);
-        scrollToBottom();
+      // 2) Poll ile takip et — bağlantı kopsa bile iş sunucuda sürer, ASLA takılmaz
+      let acc = "";
+      let offset = 0;
+      let status = "running";
+      const startedAt = Date.now();
+      while (status === "running") {
+        await new Promise((r) => setTimeout(r, 700));
+        if (Date.now() - startedAt > 20 * 60 * 1000) {
+          acc += "\n\n⚠️ Zaman aşımı (20 dk).";
+          break;
+        }
+        let p: {
+          status?: string;
+          chunk?: string;
+          len?: number;
+          model?: string;
+          error?: string;
+        };
+        try {
+          p = await fetch(
+            `/api/chat?id=${encodeURIComponent(runId)}&from=${offset}`,
+          ).then((r) => r.json());
+        } catch {
+          continue; // geçici ağ hatası → tekrar dene, takılma
+        }
+        if (typeof p.chunk === "string" && p.chunk.length > 0) {
+          acc += p.chunk;
+          offset = p.len ?? offset;
+          if (p.model) model = p.model;
+          setMessages([...next, { role: "assistant", content: acc, agent, model }]);
+          scrollToBottom();
+        }
+        status = p.status ?? "running";
+        if (status === "error" && p.error) {
+          acc += `\n\n⚠️ ${p.error}`;
+          setMessages([...next, { role: "assistant", content: acc, agent, model }]);
+        }
       }
 
       const finalMsgs: Message[] = [

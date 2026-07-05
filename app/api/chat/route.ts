@@ -20,6 +20,12 @@ import {
 } from "@/lib/tools/projectFiles";
 import { createTask } from "@/lib/tasks/store";
 import {
+  appendRun,
+  createRun,
+  finishRun,
+  getRun,
+} from "@/lib/runs/store";
+import {
   getActiveId,
   getProjectByConversation,
   setActive,
@@ -211,11 +217,14 @@ export async function POST(req: Request) {
     return { role: m.role, content: m.content };
   });
 
-  const encoder = new TextEncoder();
-  const readable = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      try {
-        for (let i = 0; i < maxIter; i++) {
+  // İşi bağlantıdan AYIR: arka planda çalıştır, istemci poll ile takip eder.
+  const runId = crypto.randomUUID();
+  createRun(runId, agent, answerModel);
+  const emit = (s: string) => appendRun(runId, s);
+
+  (async () => {
+    try {
+      for (let i = 0; i < maxIter; i++) {
           const stream = client.messages.stream({
             model: answerModel,
             max_tokens: maxTokens, // büyük dosya içerikleri tek araç çağrısına sığsın (kesilme=0 bayt önlenir)
@@ -229,25 +238,24 @@ export async function POST(req: Request) {
               event.type === "content_block_delta" &&
               event.delta.type === "text_delta"
             ) {
-              controller.enqueue(encoder.encode(event.delta.text));
+              emit(event.delta.text);
             } else if (
               event.type === "content_block_delta" &&
               (event.delta as { type?: string }).type === "thinking_delta"
             ) {
-              // Düşünmeyi de akıt: hem görünür olur hem bağlantı canlı kalır
               const t = (event.delta as { thinking?: string }).thinking ?? "";
-              if (t) controller.enqueue(encoder.encode(t));
+              if (t) emit(t);
             } else if (
               event.type === "content_block_start" &&
               (event.content_block as { type?: string })?.type === "thinking"
             ) {
-              controller.enqueue(encoder.encode("\n\n💭 "));
+              emit("\n\n💭 ");
             } else if (
               event.type === "content_block_start" &&
               (event.content_block as { type?: string })?.type ===
                 "server_tool_use"
             ) {
-              controller.enqueue(encoder.encode("\n\n🌐 web araması…\n"));
+              emit("\n\n🌐 web araması…\n");
             }
           }
 
@@ -281,9 +289,7 @@ export async function POST(req: Request) {
 
             // Proje salt-okuma araçları: hemen çalışır
             if (project && READ_TOOL_NAMES.has(block.name)) {
-              controller.enqueue(
-                encoder.encode(`\n\n📂 ${block.name}…\n`),
-              );
+              emit(`\n\n📂 ${block.name}…\n`);
               const result = await runReadTool(block.name, input, project.path);
               toolResults.push({
                 type: "tool_result",
@@ -296,11 +302,7 @@ export async function POST(req: Request) {
             // GitHub salt-okuma: hemen çalışır
             if (block.name === "github_lookup") {
               const inp = input as { owner?: string; repo?: string; kind?: string };
-              controller.enqueue(
-                encoder.encode(
-                  `\n\n🔧 GitHub: ${inp.owner}/${inp.repo} · ${inp.kind}…\n`,
-                ),
-              );
+              emit(`\n\n🔧 GitHub: ${inp.owner}/${inp.repo} · ${inp.kind}…\n`);
               let result: string;
               try {
                 result = await runGithubLookup(input as never);
@@ -334,22 +336,12 @@ export async function POST(req: Request) {
 
               // Beyin (kendi kodu): GO beklemeden OTONOM çalıştır — oku/düzenle/build/düzelt/commit döngüsü
               if (project?.self) {
-                controller.enqueue(encoder.encode(`\n\n⚙️ ${block.name}…\n`));
-                // Uzun komutlarda (npm run build ~dk) bağlantı düşmesin diye görünmez kalp atışı
-                const hb = setInterval(() => {
-                  try {
-                    controller.enqueue(encoder.encode("​"));
-                  } catch {
-                    /* kapandıysa yoksay */
-                  }
-                }, 15000);
+                emit(`\n\n⚙️ ${block.name}…\n`);
                 let result: string;
                 try {
                   result = await executeAction(block.name, payload);
                 } catch (e) {
                   result = `Aksiyon hatası: ${e instanceof Error ? e.message : "bilinmeyen"}`;
-                } finally {
-                  clearInterval(hb);
                 }
                 toolResults.push({
                   type: "tool_result",
@@ -366,10 +358,8 @@ export async function POST(req: Request) {
                 payload,
                 dangerous: actionDangerous(block.name),
               });
-              controller.enqueue(
-                encoder.encode(
-                  `\n\n📋 Öneri oluşturuldu: ${task.title} — "Görevler"de onayını (GO) bekliyor.\n`,
-                ),
+              emit(
+                `\n\n📋 Öneri oluşturuldu: ${task.title} — "Görevler"de onayını (GO) bekliyor.\n`,
               );
               toolResults.push({
                 type: "tool_result",
@@ -390,21 +380,37 @@ export async function POST(req: Request) {
           if (toolResults.length === 0) break;
           convo.push({ role: "user", content: toolResults });
         }
-        controller.close();
+        finishRun(runId, "done");
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Model hatası";
-        controller.enqueue(encoder.encode(`\n\n⚠️ ${msg}`));
-        controller.close();
+        emit(`\n\n⚠️ ${msg}`);
+        finishRun(runId, "error", msg);
       }
-    },
-  });
+    })();
 
-  return new Response(readable, {
-    headers: {
-      "Content-Type": "text/plain; charset=utf-8",
-      "Cache-Control": "no-cache, no-transform",
-      "X-Nova-Agent": agent,
-      "X-Nova-Model": answerModel,
-    },
+  return Response.json({ runId, agent, model: answerModel });
+}
+
+// İstemci poll: çalışan işin o ana kadarki çıktısını (offset'ten sonrasını) döndürür.
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const id = url.searchParams.get("id") || "";
+  const from = Number(url.searchParams.get("from") || "0") || 0;
+  const run = getRun(id);
+  if (!run) {
+    return Response.json({
+      status: "error",
+      error: "Oturum bulunamadı (sunucu yeniden başlamış olabilir).",
+      chunk: "",
+      len: from,
+    });
+  }
+  return Response.json({
+    status: run.status,
+    chunk: run.output.slice(from),
+    len: run.output.length,
+    agent: run.agent,
+    model: run.model,
+    error: run.error ?? null,
   });
 }
