@@ -1,5 +1,6 @@
 import { getTask, updateTask } from "@/lib/tasks/store";
 import { actionTitle, executeAction } from "@/lib/tools/actions";
+import { logToVault } from "@/lib/vault/journal";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -46,6 +47,13 @@ export async function POST(
     try {
       const result = await executeAction(task.actionType, task.payload);
       const t = await updateTask(id, { status: "done", result, error: undefined });
+      // Obsidian kasasına iş günlüğü yaz (köprü açıksa). Fire-and-forget:
+      // uzun süren git push GO yanıtını bekletmesin; hata kullanıcıyı etkilemez.
+      logToVault({
+        project: (task.payload.projectName as string) || "Genel",
+        summary: task.summary || task.title,
+        result,
+      }).catch(() => {});
       return Response.json({ task: t });
     } catch (e) {
       const t = await updateTask(id, {
