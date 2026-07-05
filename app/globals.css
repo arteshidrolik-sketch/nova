@@ -59,16 +59,21 @@ body {
   opacity: 0.22;
 }
 .aurora::before {
-  background: radial-gradient(circle, var(--accent) 0%, transparent 70%);
+  background: radial-gradient(circle, #f472b6 0%, transparent 70%);
   top: -15%;
   left: -10%;
   animation: auroraA 18s ease-in-out infinite alternate;
 }
 .aurora::after {
-  background: radial-gradient(circle, var(--accent-3) 0%, transparent 70%);
+  background: radial-gradient(circle, #a855f7 0%, transparent 70%);
   bottom: -20%;
   right: -12%;
   animation: auroraB 22s ease-in-out infinite alternate;
+}
+/* üçüncü sıcak katman — mavi baskınlığını kırar */
+.aurora::before,
+.aurora::after {
+  mix-blend-mode: screen;
 }
 @keyframes auroraA {
   from {

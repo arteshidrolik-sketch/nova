@@ -20,6 +20,7 @@ type Neb = {
   h: number; s: number; l: number;
   a: number; dx: number; dy: number;
   ph: number; ps: number; depth: number;
+  hd: number; // renk kayma hızı (hue drift)
 };
 type Dust = {
   x: number; y: number; r: number;
@@ -35,14 +36,21 @@ type Comet = {
   life: number; max: number; len: number; hue: number;
 };
 
+// Çok renkli, mavi baskın olmayan palet (mor, pembe, turuncu, altın, yeşil, mercan)
 const NEB_COLORS = [
-  [190, 90, 60],  // cyan
-  [217, 85, 58],  // mavi
-  [275, 80, 62],  // mor
-  [330, 78, 58],  // magenta
-  [190, 70, 50],  // teal
+  [280, 82, 62],  // mor
+  [330, 85, 60],  // pembe / magenta
+  [22, 92, 58],   // turuncu
+  [45, 92, 58],   // altın / amber
+  [150, 75, 52],  // yeşil
+  [350, 85, 60],  // mercan / kırmızı-pembe
+  [190, 85, 58],  // camgöbeği (denge için tek)
 ];
-const STAR_TINT = ["#ffffff", "#dbeafe", "#bfdbfe", "#fde68a", "#fecaca", "#c7f9ff"];
+const STAR_TINT = [
+  "#ffffff", "#fde68a", "#fecaca", "#c7f9ff",
+  "#e9d5ff", "#fbcfe8", "#bbf7d0", "#fed7aa",
+];
+const ATOM_HUES = [280, 330, 22, 150, 45, 350];
 
 const R = () => Math.random();
 
@@ -82,10 +90,11 @@ export default function SpaceBackground() {
           x: R() * w, y: R() * h,
           r: Math.max(w, h) * (0.28 + R() * 0.34),
           h: c[0] + (R() * 20 - 10), s: c[1], l: c[2],
-          a: 0.1 + R() * 0.16,
+          a: 0.12 + R() * 0.16,
           dx: (R() - 0.5) * 0.06, dy: (R() - 0.5) * 0.05,
           ph: R() * Math.PI * 2, ps: 0.0006 + R() * 0.0008,
           depth: 0.15 + R() * 0.35,
+          hd: (R() - 0.5) * 0.12, // yavaşça renk değiştir
         });
       }
       // Toz yıldızlar — çok katmanlı parallax
@@ -106,7 +115,7 @@ export default function SpaceBackground() {
         atoms.push({
           x: R() * w, y: R() * h,
           r: 16 + R() * 26,
-          hue: [190, 217, 275, 330, 160][i % 5],
+          hue: ATOM_HUES[i % ATOM_HUES.length],
           rot: R() * Math.PI * 2, spin: (R() - 0.5) * 0.02,
           tilt: R() * Math.PI, depth: 0.2 + R() * 0.5,
           e: 2 + Math.floor(R() * 2), // elektron sayısı
@@ -163,11 +172,11 @@ export default function SpaceBackground() {
       mx += (tmx - mx) * 0.04;
       my += (tmy - my) * 0.04;
 
-      // --- Derin uzay taban gradyanı (opak) ---
-      const base = ctx!.createLinearGradient(0, 0, w * 0.3, h);
-      base.addColorStop(0, "#05070f");
-      base.addColorStop(0.5, "#070914");
-      base.addColorStop(1, "#03040b");
+      // --- Derin uzay taban gradyanı (opak, nötr koyu — mavi baskın değil) ---
+      const base = ctx!.createLinearGradient(0, 0, w, h);
+      base.addColorStop(0, "#0a0710");
+      base.addColorStop(0.5, "#080611");
+      base.addColorStop(1, "#0b0509");
       ctx!.globalCompositeOperation = "source-over";
       ctx!.fillStyle = base;
       ctx!.fillRect(0, 0, w, h);
@@ -177,6 +186,7 @@ export default function SpaceBackground() {
       for (const n of nebs) {
         if (!reduced) {
           n.x += n.dx; n.y += n.dy;
+          n.h = (n.h + n.hd + 360) % 360; // renk yavaşça kayar
           if (n.x < -n.r) n.x = w + n.r;
           if (n.x > w + n.r) n.x = -n.r;
           if (n.y < -n.r) n.y = h + n.r;

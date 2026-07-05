@@ -1,10 +1,36 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { AGENT_META, AGENT_KEYS, type AgentActivity } from "@/lib/agents/meta";
 import NovaPlayground from "./NovaPlayground";
 import SpaceBackground from "./SpaceBackground";
 
 export type VoiceState = "idle" | "listening" | "speaking";
+
+// Vendor-prefix'li tam ekran yardımcıları (Safari/eski tarayıcılar dahil)
+function nativeFsElement(): Element | null {
+  const d = document as Document & {
+    webkitFullscreenElement?: Element;
+    msFullscreenElement?: Element;
+  };
+  return d.fullscreenElement || d.webkitFullscreenElement || d.msFullscreenElement || null;
+}
+function nativeRequestFs(): Promise<void> {
+  const el = document.documentElement as HTMLElement & {
+    webkitRequestFullscreen?: () => Promise<void>;
+    msRequestFullscreen?: () => Promise<void>;
+  };
+  const fn = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+  return fn ? Promise.resolve(fn.call(el)) : Promise.reject(new Error("no-fs-api"));
+}
+function nativeExitFs(): Promise<void> {
+  const d = document as Document & {
+    webkitExitFullscreen?: () => Promise<void>;
+    msExitFullscreen?: () => Promise<void>;
+  };
+  const fn = d.exitFullscreen || d.webkitExitFullscreen || d.msExitFullscreen;
+  return fn ? Promise.resolve(fn.call(d)) : Promise.reject(new Error("no-fs-api"));
+}
 
 const CX = 500;
 const CY = 330;
@@ -91,17 +117,43 @@ export default function AgentGraph({
   const speaking = voice === "speaking";
   const listening = voice === "listening";
 
+  // Native tam ekran yoksa (ör. iPad/iOS) haritayı tüm ekranı kaplayacak
+  // şekilde CSS ile "tam ekran" yaparız — her cihazda görünür sonuç.
+  const [pseudoFs, setPseudoFs] = useState(false);
+
+  // Native tam ekran açılırsa CSS yedeğini kapat; ESC ile CSS modundan çık
+  useEffect(() => {
+    const onFsChange = () => {
+      if (nativeFsElement()) setPseudoFs(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPseudoFs(false);
+    };
+    document.addEventListener("fullscreenchange", onFsChange);
+    document.addEventListener("webkitfullscreenchange", onFsChange);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFsChange);
+      document.removeEventListener("webkitfullscreenchange", onFsChange);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, []);
+
   function enterFullscreen() {
-    if (typeof document === "undefined" || document.fullscreenElement) return;
-    document.documentElement.requestFullscreen?.().catch(() => {});
+    if (typeof document === "undefined" || nativeFsElement() || pseudoFs) return;
+    // native dene; olmazsa CSS tam ekrana düş
+    nativeRequestFs().catch(() => setPseudoFs(true));
   }
 
-  function toggleFullscreen() {
+  function toggleFullscreen(e?: React.MouseEvent) {
+    e?.stopPropagation();
     if (typeof document === "undefined") return;
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen?.().catch(() => {});
+    const isFs = !!nativeFsElement();
+    if (!isFs && !pseudoFs) {
+      nativeRequestFs().catch(() => setPseudoFs(true));
     } else {
-      document.exitFullscreen?.().catch(() => {});
+      if (isFs) nativeExitFs().catch(() => {});
+      setPseudoFs(false);
     }
   }
 
@@ -113,7 +165,11 @@ export default function AgentGraph({
 
   return (
     <div
-      className="relative h-full w-full overflow-hidden"
+      className={
+        pseudoFs
+          ? "fixed inset-0 z-[9999] overflow-hidden"
+          : "relative h-full w-full overflow-hidden"
+      }
       style={{ background: "#02040a", cursor: "pointer" }}
       onClick={onBgClick}
       title="Tam ekran için ekrana tıkla"
@@ -385,7 +441,7 @@ export default function AgentGraph({
           color: "var(--text-muted)",
         }}
       >
-        ⛶
+        {pseudoFs ? "🗕" : "⛶"}
       </button>
 
       {/* ses kontrolü — tıklanabilir mikrofon + dalga */}
