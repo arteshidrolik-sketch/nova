@@ -8,9 +8,11 @@ import { ensureNovaProject } from "@/lib/projects/store";
 export const runtime = "nodejs";
 
 export async function GET() {
-  // "ne var ne yok" her zaman var olsun + Nova'nın kendi kodu ona bağlı (beyin)
-  const pinned = await ensurePinnedConversation();
-  await ensureNovaProject(pinned.id);
+  // Beyin (kendini geliştirme) şimdilik kapalı; NOVA_BRAIN=1 ile geri açılır.
+  if (process.env.NOVA_BRAIN === "1") {
+    const pinned = await ensurePinnedConversation();
+    await ensureNovaProject(pinned.id);
+  }
   const conversations = await listConversations();
   return Response.json({ conversations });
 }
