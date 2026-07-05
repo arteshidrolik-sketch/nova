@@ -13,6 +13,7 @@ type Task = {
   agent: string;
   actionType: string;
   title: string;
+  summary?: string;
   payload: Record<string, unknown>;
   dangerous: boolean;
   result?: string;
@@ -32,6 +33,7 @@ export default function Tasks({ onChange }: { onChange?: () => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [showTech, setShowTech] = useState<Record<string, boolean>>({});
 
   const refresh = useCallback(async () => {
     try {
@@ -166,12 +168,51 @@ export default function Tasks({ onChange }: { onChange?: () => void }) {
                     }}
                   />
                 ) : (
-                  <pre
-                    className="mb-2 max-h-40 overflow-auto rounded-lg p-2 text-xs"
-                    style={{ background: "var(--bg)", color: "var(--text-muted)" }}
-                  >
-                    {JSON.stringify(t.payload, null, 2)}
-                  </pre>
+                  <>
+                    {/* Sade "ne yapılacak" özeti — GO öncesi kullanıcı bunu okur */}
+                    <div
+                      className="mb-2 rounded-lg border p-3 text-sm leading-relaxed whitespace-pre-wrap"
+                      style={{
+                        borderColor: "var(--border)",
+                        background: "var(--bg)",
+                        color: "var(--text)",
+                      }}
+                    >
+                      <div
+                        className="mb-1 text-xs font-semibold"
+                        style={{ color: "var(--accent)" }}
+                      >
+                        ✨ Ne yapılacak?
+                      </div>
+                      {t.summary?.trim()
+                        ? t.summary
+                        : "Bu görev için açıklama üretilmedi. Aşağıdan teknik ayrıntıya bakabilirsin."}
+                    </div>
+
+                    {/* Teknik ayrıntı (ham JSON) — varsayılan gizli */}
+                    <button
+                      onClick={() =>
+                        setShowTech((m) => ({ ...m, [t.id]: !m[t.id] }))
+                      }
+                      className="mb-2 text-xs underline"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      {showTech[t.id]
+                        ? "▾ Teknik ayrıntıyı gizle"
+                        : "▸ Teknik ayrıntı (geliştirici)"}
+                    </button>
+                    {showTech[t.id] && (
+                      <pre
+                        className="mb-2 max-h-40 overflow-auto rounded-lg p-2 text-xs"
+                        style={{
+                          background: "var(--bg)",
+                          color: "var(--text-muted)",
+                        }}
+                      >
+                        {JSON.stringify(t.payload, null, 2)}
+                      </pre>
+                    )}
+                  </>
                 )}
 
                 {t.result && (

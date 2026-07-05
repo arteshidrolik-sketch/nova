@@ -9,6 +9,7 @@ import {
   PROJECT_ACTION_TOOLS,
   actionDangerous,
   actionTitle,
+  actionSummary,
   executeAction,
   isActionTool,
   isProjectAction,
@@ -396,6 +397,7 @@ export async function POST(req: Request) {
                 agent,
                 actionType: block.name,
                 title: actionTitle(block.name, payload),
+                summary: actionSummary(block.name, payload),
                 payload,
                 dangerous: actionDangerous(block.name),
               });

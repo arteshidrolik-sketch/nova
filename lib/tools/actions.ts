@@ -10,6 +10,16 @@ import { resolveIn } from "./projectFiles";
 const execAsync = promisify(exec);
 type Payload = Record<string, unknown>;
 
+// Özet yardımcıları — kullanıcının "ne yapılacak?"ı anlaması için sade Türkçe metin
+function shorten(s: string, max = 240): string {
+  const t = String(s ?? "").trim();
+  return t.length > max ? t.slice(0, max) + "…" : t;
+}
+function lineCount(s: string): number {
+  const t = String(s ?? "");
+  return t ? t.split("\n").length : 0;
+}
+
 // response.content içinde geçen tüm file_id'leri topla
 function collectFileIds(obj: unknown, acc: Set<string>): void {
   if (!obj || typeof obj !== "object") return;
@@ -33,6 +43,8 @@ type ActionDef = {
     required: string[];
   };
   makeTitle: (p: Payload) => string;
+  // Sade Türkçe "ne yapılacak" özeti (Görevler ekranında GO öncesi gösterilir)
+  makeSummary: (p: Payload) => string;
   execute: (p: Payload) => Promise<string>;
 };
 
@@ -63,6 +75,8 @@ export const ACTIONS: Record<string, ActionDef> = {
       required: ["path", "content"],
     },
     makeTitle: (p) => `Dosya yaz: workspace/${String(p.path)}`,
+    makeSummary: (p) =>
+      `Bilgisayardaki "workspace" klasörüne "${String(p.path)}" adlı bir dosya yazılacak (${lineCount(String(p.content))} satır).\n\nİçeriğin başı:\n${shorten(String(p.content), 200)}`,
     execute: async (p) => {
       const target = safeWorkspacePath(String(p.path));
       await fs.mkdir(path.dirname(target), { recursive: true });
@@ -89,6 +103,8 @@ export const ACTIONS: Record<string, ActionDef> = {
     },
     makeTitle: (p) =>
       `GitHub issue: ${String(p.owner)}/${String(p.repo)} — ${String(p.title)}`,
+    makeSummary: (p) =>
+      `GitHub'da "${String(p.owner)}/${String(p.repo)}" deposunda yeni bir konu (issue) açılacak.\nBaşlık: ${String(p.title)}${p.body ? `\nAçıklama: ${shorten(String(p.body), 200)}` : ""}`,
     execute: async (p) => {
       const token = process.env.GITHUB_TOKEN;
       if (!token) return "Hata: Yazma yetkili GITHUB_TOKEN tanımlı değil.";
@@ -134,6 +150,16 @@ export const ACTIONS: Record<string, ActionDef> = {
     },
     makeTitle: (p) =>
       `Belge üret (${String(p.kind)}): ${String(p.filename || "nova")}`,
+    makeSummary: (p) => {
+      const tur: Record<string, string> = {
+        docx: "Word (docx)",
+        xlsx: "Excel (xlsx)",
+        pptx: "PowerPoint (pptx)",
+        pdf: "PDF",
+      };
+      const t = tur[String(p.kind)] || String(p.kind);
+      return `"${String(p.filename || "nova")}" adında bir ${t} belgesi hazırlanıp "workspace" klasörüne kaydedilecek.\n\nİçerik:\n${shorten(String(p.instruction), 240)}`;
+    },
     execute: async (p) => {
       const kind = ["docx", "xlsx", "pptx", "pdf"].includes(String(p.kind))
         ? String(p.kind)
@@ -214,6 +240,8 @@ export const ACTIONS: Record<string, ActionDef> = {
     },
     makeTitle: (p) =>
       `[${String(p.projectName ?? "proje")}] Dosya yaz: ${String(p.path)}`,
+    makeSummary: (p) =>
+      `"${String(p.projectName ?? "proje")}" projesinde "${String(p.path)}" dosyası oluşturulacak / üzerine yazılacak (${lineCount(String(p.content))} satır).\n\nİçeriğin başı:\n${shorten(String(p.content), 220)}`,
     execute: async (p) => {
       const root = String(p.projectPath ?? "");
       if (!root) return "Hata: aktif proje yok.";
@@ -245,6 +273,8 @@ export const ACTIONS: Record<string, ActionDef> = {
     },
     makeTitle: (p) =>
       `[${String(p.projectName ?? "proje")}] Düzenle: ${String(p.path)}`,
+    makeSummary: (p) =>
+      `"${String(p.projectName ?? "proje")}" projesinde "${String(p.path)}" dosyasında bir bölüm değiştirilecek.\n\nESKİ HALİ:\n${shorten(String(p.old_str), 200)}\n\nYENİ HALİ:\n${shorten(String(p.new_str), 200)}`,
     execute: async (p) => {
       const root = String(p.projectPath ?? "");
       if (!root) return "Hata: aktif proje yok.";
@@ -275,6 +305,8 @@ export const ACTIONS: Record<string, ActionDef> = {
     },
     makeTitle: (p) =>
       `[${String(p.projectName ?? "proje")}] commit & push: ${String(p.message)}`,
+    makeSummary: (p) =>
+      `"${String(p.projectName ?? "proje")}" projesindeki tüm değişiklikler kaydedilip (commit) GitHub'a gönderilecek (push).\nKayıt mesajı: "${String(p.message)}"`,
     execute: async (p) => {
       const root = String(p.projectPath ?? "");
       if (!root) return "Hata: aktif proje yok.";
@@ -311,6 +343,8 @@ export const ACTIONS: Record<string, ActionDef> = {
     },
     makeTitle: (p) =>
       `[${String(p.projectName ?? "proje")}] çalıştır: ${String(p.command).slice(0, 90)}`,
+    makeSummary: (p) =>
+      `"${String(p.projectName ?? "proje")}" projesinin klasöründe şu terminal komutu çalıştırılacak (test / build / kurulum gibi bir işlem olabilir):\n\n${String(p.command)}`,
     execute: async (p) => {
       const root = String(p.projectPath ?? "");
       if (!root) return "Hata: aktif proje yok.";
@@ -355,6 +389,13 @@ export function isProjectAction(name: string): boolean {
 }
 export function actionTitle(name: string, payload: Payload): string {
   return ACTIONS[name] ? ACTIONS[name].makeTitle(payload) : name;
+}
+export function actionSummary(name: string, payload: Payload): string {
+  try {
+    return ACTIONS[name] ? ACTIONS[name].makeSummary(payload) : "";
+  } catch {
+    return "";
+  }
 }
 export function actionDangerous(name: string): boolean {
   return ACTIONS[name]?.dangerous ?? true;

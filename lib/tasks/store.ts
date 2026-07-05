@@ -18,6 +18,7 @@ export type Task = {
   agent: AgentKey;
   actionType: string;
   title: string;
+  summary?: string; // sade Türkçe "ne yapılacak" açıklaması (GO öncesi gösterilir)
   payload: Record<string, unknown>;
   dangerous: boolean;
   result?: string;
@@ -46,6 +47,7 @@ export async function createTask(input: {
   agent: AgentKey;
   actionType: string;
   title: string;
+  summary?: string;
   payload: Record<string, unknown>;
   dangerous: boolean;
 }): Promise<Task> {
@@ -59,6 +61,7 @@ export async function createTask(input: {
     agent: input.agent,
     actionType: input.actionType,
     title: input.title,
+    summary: input.summary,
     payload: input.payload,
     dangerous: input.dangerous,
   };
