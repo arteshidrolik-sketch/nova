@@ -67,6 +67,27 @@ type IncomingMessage = {
   attachments?: Attach[];
 };
 
+// Modele gönderilen geçmişi sınırla (uzun sohbetlerde bağlam şişip yavaşlamasın).
+// Sondan başa doğru karakter bütçesi dolana kadar mesaj tut; ilk mesaj user olsun.
+function trimHistory(
+  msgs: IncomingMessage[],
+  maxChars = 40000,
+): IncomingMessage[] {
+  const kept: IncomingMessage[] = [];
+  let total = 0;
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i];
+    const len =
+      (typeof m.content === "string" ? m.content.length : 0) +
+      (m.attachments?.length ? 4000 : 0);
+    if (total + len > maxChars && kept.length > 0) break;
+    kept.unshift(m);
+    total += len;
+  }
+  while (kept.length > 1 && kept[0].role !== "user") kept.shift();
+  return kept.length ? kept : msgs.slice(-1);
+}
+
 export async function POST(req: Request) {
   if (!process.env.ANTHROPIC_API_KEY) {
     return new Response(
@@ -190,7 +211,7 @@ export async function POST(req: Request) {
     ...(project ? [...READ_TOOLS, ...PROJECT_ACTION_TOOLS] : []),
   ] as unknown as Anthropic.Tool[];
 
-  const convo: Anthropic.MessageParam[] = messages.map((m) => {
+  const convo: Anthropic.MessageParam[] = trimHistory(messages).map((m) => {
     if (m.role === "user" && m.attachments && m.attachments.length > 0) {
       const blocks: unknown[] = [];
       for (const a of m.attachments) {
