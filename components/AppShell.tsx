@@ -150,7 +150,7 @@ export default function AppShell() {
   const menuBarNode = (
     <div
       className={`shrink-0 overflow-hidden transition-all duration-500 ${
-        hideUI ? "h-0 opacity-0" : "h-14 opacity-100"
+        hideUI ? "h-0 opacity-0" : "h-24 opacity-100"
       }`}
     >
       <Sidebar

@@ -65,72 +65,76 @@ export default function Sidebar({
 
   return (
     <aside
-      className="flex h-full w-full shrink-0 items-center gap-2 overflow-x-auto border-t px-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className="flex h-full w-full shrink-0 flex-col border-t"
       style={{
         background: "rgba(14,20,34,0.82)",
         backdropFilter: "blur(12px)",
         borderColor: "var(--border)",
       }}
     >
-      {/* logo */}
-      <div className="flex shrink-0 items-center gap-2 pr-1">
-        <span className="relative flex h-8 w-8 items-center justify-center rounded-xl">
-          <span className="nova-orb absolute inset-0 rounded-xl" />
-          <span className="relative text-sm font-bold text-black">N</span>
-        </span>
-        <span className="hidden font-semibold tracking-wide xl:block">Nova</span>
+      {/* 1. satır: logo + ana menü — ekrana yayılmış */}
+      <div className="flex flex-1 items-center gap-2 px-3">
+        {/* logo */}
+        <div className="flex shrink-0 items-center gap-2 pr-1">
+          <span className="relative flex h-8 w-8 items-center justify-center rounded-xl">
+            <span className="nova-orb absolute inset-0 rounded-xl" />
+            <span className="relative text-sm font-bold text-black">N</span>
+          </span>
+          <span className="hidden font-semibold tracking-wide xl:block">Nova</span>
+        </div>
+
+        {/* ana menü — kalan genişliğe eşit yayılır */}
+        <nav className="flex flex-1 items-stretch gap-1">
+          {MENU.map((item) => {
+            const isActive = item.key === active;
+            return (
+              <button
+                key={item.key}
+                onClick={() => onSelect(item.key)}
+                title={item.label}
+                className="nav-item flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2 py-1.5 text-sm"
+                style={
+                  isActive
+                    ? {
+                        background: "linear-gradient(180deg, #22d3ee22, transparent)",
+                        color: "var(--text)",
+                        boxShadow: "inset 0 -2px 0 var(--accent)",
+                      }
+                    : { color: "var(--text-muted)" }
+                }
+              >
+                <span className="text-base">{item.icon}</span>
+                <span className="hidden lg:inline">{item.label}</span>
+                {item.key === "tasks" && pendingCount > 0 && (
+                  <span
+                    className="rounded-full px-1.5 py-0.5 text-xs font-semibold text-black"
+                    style={{ background: "var(--accent)" }}
+                  >
+                    {pendingCount}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
       </div>
 
-      {/* ana menü — yatay */}
-      <nav className="flex shrink-0 items-center gap-1">
-        {MENU.map((item) => {
-          const isActive = item.key === active;
-          return (
-            <button
-              key={item.key}
-              onClick={() => onSelect(item.key)}
-              title={item.label}
-              className="nav-item flex items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-sm"
-              style={
-                isActive
-                  ? {
-                      background: "linear-gradient(180deg, #22d3ee22, transparent)",
-                      color: "var(--text)",
-                      boxShadow: "inset 0 -2px 0 var(--accent)",
-                    }
-                  : { color: "var(--text-muted)" }
-              }
-            >
-              <span className="text-base">{item.icon}</span>
-              <span className="hidden lg:inline">{item.label}</span>
-              {item.key === "tasks" && pendingCount > 0 && (
-                <span
-                  className="rounded-full px-1.5 py-0.5 text-xs font-semibold text-black"
-                  style={{ background: "var(--accent)" }}
-                >
-                  {pendingCount}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </nav>
+      {/* satır ayracı */}
+      <div className="h-px w-full shrink-0" style={{ background: "var(--border)" }} />
 
-      {/* ayraç */}
-      <div className="mx-1 h-8 w-px shrink-0" style={{ background: "var(--border)" }} />
+      {/* 2. satır: yeni sohbet + sohbetler — yatay kaydırılır */}
+      <div className="flex flex-1 items-center gap-1 overflow-x-auto px-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {/* yeni sohbet */}
+        <button
+          onClick={onNewConv}
+          title="Yeni sohbet"
+          className="btn-grad shrink-0 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium text-black"
+          style={{ background: "var(--grad)" }}
+        >
+          + Yeni
+        </button>
 
-      {/* yeni sohbet */}
-      <button
-        onClick={onNewConv}
-        title="Yeni sohbet"
-        className="btn-grad shrink-0 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium text-black"
-        style={{ background: "var(--grad)" }}
-      >
-        + Yeni
-      </button>
-
-      {/* sohbetler — barın parçası (tüm bar yatay kaydırılır) */}
-      <div className="flex shrink-0 items-center gap-1">
+        {/* sohbetler */}
         {conversations.map((c) => {
           const isActive = c.id === activeConv;
           if (editingId === c.id) {
