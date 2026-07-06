@@ -90,7 +90,7 @@ export default function Tasks({ onChange }: { onChange?: () => void }) {
         <div>
           <h1 className="text-lg font-semibold">Görevler</h1>
           <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-            Ajanların önerdiği aksiyonlar — GO ile uygula
+            Otomatik çalıştırılan aksiyonların geçmişi (GO onayı kaldırıldı)
           </p>
         </div>
         <button
@@ -113,8 +113,8 @@ export default function Tasks({ onChange }: { onChange?: () => void }) {
                 color: "var(--text-muted)",
               }}
             >
-              Henüz görev yok. Sohbette bir ajana yazma işi ver (örn. &quot;workspace&apos;e
-              todo.md oluştur&quot;) — öneri buraya düşer.
+              Henüz görev yok. Sohbette bir ajana bir iş ver (örn. &quot;workspace&apos;e
+              todo.md oluştur&quot;) — aksiyon otomatik çalışır ve sonucu buraya düşer.
             </div>
           )}
 

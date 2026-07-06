@@ -50,6 +50,9 @@ export async function createTask(input: {
   summary?: string;
   payload: Record<string, unknown>;
   dangerous: boolean;
+  status?: TaskStatus; // otomatik çalıştırılan aksiyonlar "done"/"failed" kaydedilir
+  result?: string;
+  error?: string;
 }): Promise<Task> {
   const all = await loadTasks();
   const now = Date.now();
@@ -57,13 +60,15 @@ export async function createTask(input: {
     id: crypto.randomUUID(),
     ts: now,
     updatedAt: now,
-    status: "proposed",
+    status: input.status ?? "proposed",
     agent: input.agent,
     actionType: input.actionType,
     title: input.title,
     summary: input.summary,
     payload: input.payload,
     dangerous: input.dangerous,
+    result: input.result,
+    error: input.error,
   };
   all.push(task);
   await persist(all);

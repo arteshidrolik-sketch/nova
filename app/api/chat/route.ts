@@ -32,6 +32,7 @@ import {
   setActive,
 } from "@/lib/projects/store";
 import { getSkillsForAgent } from "@/lib/skills/store";
+import { logToVault } from "@/lib/vault/journal";
 
 export const runtime = "nodejs";
 
@@ -154,7 +155,7 @@ export async function POST(req: Request) {
       `Bu proje üzerinde çalışıyorsun. Bir şey söylemeden ÖNCE dosyaları incele: ` +
       `önce list_files ile yapıyı gör, search_files ile ilgili yeri bul, read_file ile oku. ` +
       `Tahmin etme. Değişiklik gerekiyorsa write_project_file (yeni/tam dosya) veya ` +
-      `edit_project_file (metin değişikliği) öner — bunlar kullanıcı onayı (GO) gerektirir.`;
+      `edit_project_file (metin değişikliği) çağır — araçlar GO beklemeden ANINDA çalışır.`;
 
     if (project.self) {
       system +=
@@ -203,7 +204,7 @@ export async function POST(req: Request) {
     "- Bir değişiklik yapacaksan, o mesajda AÇIKLAMA YAZMADAN doğrudan aracı ÇAĞIR.\n" +
     "- ASLA 'şimdi aracı çağırıyorum', 'GO'ya gönderiyorum', 'kuyruğa atıyorum', 'dosyayı yazıyorum' gibi cümle yazıp turu BİTİRME. Aracı fiilen çağırmazsan HİÇBİR ŞEY OLMAZ ve kullanıcıya yalan söylemiş olursun — bu KESİNLİKLE YASAK.\n" +
     "- Niyetini anlatmak = işi yapmak DEĞİLDİR. Sadece aracı çağırmak işi kaydeder.\n" +
-    "- Aracı çağırmak işi hemen ÇALIŞTIRMAZ; 'öneri/görev' olarak kaydeder, kullanıcı Görevler'de GO ile onaylar. O yüzden ÇEKİNMEDEN çağır, izin isteme.\n" +
+    "- Aracı çağırınca iş HEMEN çalışır (GO onayı KALDIRILDI; artık elle onay yok). Yaptığın iş anında uygulanır ve Görevler'e 'tamamlandı' olarak düşer. O yüzden çekinmeden çağır ama ne yaptığına DİKKAT ET — geri alınması zor işlerde (komut çalıştırma, git push, dosya silme) emin ol.\n" +
     "- Akış: gerekiyorsa önce oku (list_files/read_file/search_files) → SONRA aynı konuşmada değişiklik aracını ÇAĞIR. Okuyup durma, mutlaka aksiyonu çağır.\n" +
     "- Birden çok dosya değişecekse her biri için ayrı ayrı aracı çağır (birini atlama)." +
     "\n\n## İnternet\nİNTERNETE ERİŞİMİN VAR. Güncel bilgi, haber, fiyat, sürüm, dokümantasyon veya emin olmadığın her şey için web_search aracını kullan. ASLA 'internete bağlı değilim', 'erişemiyorum' veya 'gerçek zamanlı bilgiye ulaşamam' DEME — bunun yerine hemen web_search yap, sonra kaynaklı cevap ver.";
@@ -366,7 +367,7 @@ export async function POST(req: Request) {
               continue;
             }
 
-            // Yazma/tehlikeli: GO-onaylı görev
+            // Aksiyonlar GO beklemeden OTOMATİK çalışır (kullanıcı tercihi: GO kaldırıldı)
             if (isActionTool(block.name)) {
               const payload: Record<string, unknown> = { ...input };
               if (isProjectAction(block.name)) {
@@ -383,38 +384,48 @@ export async function POST(req: Request) {
                 payload.projectName = project.name;
               }
 
-              // Beyin (kendi kodu): GO beklemeden OTONOM çalıştır — oku/düzenle/build/düzelt/commit döngüsü
-              if (project?.self) {
-                emit(`\n\n⚙️ ${block.name}…\n`);
-                let result: string;
-                try {
-                  result = await executeAction(block.name, payload);
-                } catch (e) {
-                  result = `Aksiyon hatası: ${e instanceof Error ? e.message : "bilinmeyen"}`;
-                }
-                toolResults.push({
-                  type: "tool_result",
-                  tool_use_id: block.id,
-                  content: result.slice(0, 12000),
-                });
-                continue;
+              const title = actionTitle(block.name, payload);
+              emit(`\n\n⚙️ ${title}…\n`);
+              let result: string;
+              let ok = true;
+              try {
+                result = await executeAction(block.name, payload);
+              } catch (e) {
+                ok = false;
+                result = `Aksiyon hatası: ${e instanceof Error ? e.message : "bilinmeyen"}`;
               }
 
-              const task = await createTask({
-                agent,
-                actionType: block.name,
-                title: actionTitle(block.name, payload),
-                summary: actionSummary(block.name, payload),
-                payload,
-                dangerous: actionDangerous(block.name),
-              });
-              emit(
-                `\n\n📋 Öneri oluşturuldu: ${task.title} — "Görevler"de onayını (GO) bekliyor.\n`,
-              );
+              // Beyin dışı aksiyonları Görevler'e TAMAMLANMIŞ kayıt olarak düş (geçmiş/iz)
+              if (!project?.self) {
+                try {
+                  await createTask({
+                    agent,
+                    actionType: block.name,
+                    title,
+                    summary: actionSummary(block.name, payload),
+                    payload,
+                    dangerous: actionDangerous(block.name),
+                    status: ok ? "done" : "failed",
+                    result: ok ? result : undefined,
+                    error: ok ? undefined : result,
+                  });
+                  if (ok) {
+                    logToVault({
+                      project: (payload.projectName as string) || "Genel",
+                      summary: actionSummary(block.name, payload) || title,
+                      result,
+                    }).catch(() => {});
+                  }
+                } catch {
+                  /* kayıt hatası akışı bozmasın */
+                }
+              }
+
+              emit(ok ? `\n\n✅ Yapıldı.\n` : `\n\n⚠️ ${result}\n`);
               toolResults.push({
                 type: "tool_result",
                 tool_use_id: block.id,
-                content: `Aksiyon onaya gönderildi (görev ${task.id.slice(0, 8)}). Kullanıcı GO dediğinde uygulanacak. Kullanıcıya bunu kısaca bildir.`,
+                content: result.slice(0, 12000),
               });
               continue;
             }

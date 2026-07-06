@@ -1,5 +1,5 @@
-// GO-onaylı aksiyonlar (yazma/tehlikeli). Model "önerir"; sunucu çalıştırmaz,
-// görev olarak kaydeder. Kullanıcı GO deyince execute() çalışır.
+// Aksiyonlar (yazma/komut). Model aracı çağırır; sunucu HEMEN execute() çalıştırır
+// (GO onayı kaldırıldı) ve sonucu Görevler'e "tamamlandı" olarak kaydeder.
 import { promises as fs } from "fs";
 import path from "path";
 import { exec } from "child_process";
@@ -65,7 +65,7 @@ export const ACTIONS: Record<string, ActionDef> = {
     dangerous: true,
     project: false,
     description:
-      "Yerel 'workspace/' klasörüne bir dosya yazar. Proje dışı genel notlar/taslaklar için. Kullanıcı onayı (GO) gerektirir.",
+      "Yerel 'workspace/' klasörüne bir dosya yazar. Proje dışı genel notlar/taslaklar için. Çağrılınca hemen çalışır (GO onayı gerekmez).",
     input_schema: {
       type: "object",
       properties: {
@@ -90,7 +90,7 @@ export const ACTIONS: Record<string, ActionDef> = {
     dangerous: true,
     project: false,
     description:
-      "Bir GitHub deposunda yeni issue açar. Yazma yetkili GITHUB_TOKEN gerekir. Kullanıcı onayı (GO) gerektirir.",
+      "Bir GitHub deposunda yeni issue açar. Yazma yetkili GITHUB_TOKEN gerekir. Çağrılınca hemen çalışır (GO onayı gerekmez).",
     input_schema: {
       type: "object",
       properties: {
@@ -131,7 +131,7 @@ export const ACTIONS: Record<string, ActionDef> = {
     dangerous: true,
     project: false,
     description:
-      "Word (docx), Excel (xlsx), PowerPoint (pptx) veya PDF belgesi üretir ve workspace'e kaydeder. Kullanıcı 'bunu word/excel/sunum/pdf yap' gibi bir belge istediğinde BU ARACI DOĞRUDAN ÇAĞIR — kullanıcıya ayrıca onay sorma. Araç çağrısı hemen çalışmaz, otomatik olarak GO onay kuyruğuna düşer.",
+      "Word (docx), Excel (xlsx), PowerPoint (pptx) veya PDF belgesi üretir ve workspace'e kaydeder. Kullanıcı 'bunu word/excel/sunum/pdf yap' gibi bir belge istediğinde BU ARACI DOĞRUDAN ÇAĞIR — kullanıcıya ayrıca onay sorma. Çağrılınca hemen çalışır ve belge workspace'e kaydedilir.",
     input_schema: {
       type: "object",
       properties: {
@@ -229,7 +229,7 @@ export const ACTIONS: Record<string, ActionDef> = {
     dangerous: true,
     project: true,
     description:
-      "Aktif projede bir dosya oluşturur/üzerine yazar. Yeni dosya eklemek için. Kullanıcı onayı (GO) gerektirir.",
+      "Aktif projede bir dosya oluşturur/üzerine yazar. Yeni dosya eklemek için. Çağrılınca hemen çalışır (GO onayı gerekmez).",
     input_schema: {
       type: "object",
       properties: {
@@ -261,7 +261,7 @@ export const ACTIONS: Record<string, ActionDef> = {
     dangerous: true,
     project: true,
     description:
-      "Aktif projedeki bir dosyada metin değişikliği yapar (old_str → new_str). Önce read_file ile içeriği gör. Kullanıcı onayı (GO) gerektirir.",
+      "Aktif projedeki bir dosyada metin değişikliği yapar (old_str → new_str). Önce read_file ile içeriği gör. Çağrılınca hemen çalışır (GO onayı gerekmez).",
     input_schema: {
       type: "object",
       properties: {
@@ -295,7 +295,7 @@ export const ACTIONS: Record<string, ActionDef> = {
     dangerous: true,
     project: true,
     description:
-      "Aktif projede değişiklikleri commit'leyip uzak depoya (GitHub) push eder. Kullanıcı onayı (GO) gerektirir.",
+      "Aktif projede değişiklikleri commit'leyip uzak depoya (GitHub) push eder. Çağrılınca hemen çalışır (GO onayı gerekmez).",
     input_schema: {
       type: "object",
       properties: {
@@ -330,7 +330,7 @@ export const ACTIONS: Record<string, ActionDef> = {
     dangerous: true,
     project: true,
     description:
-      "Aktif projede bir terminal komutu çalıştırır (test, build, script, npm/yarn, git, lint vb.). Kullanıcı bir şeyi çalıştırmanı/test etmeni/kurmanı istediğinde kullan. Kullanıcı onayı (GO) gerektirir; çıktıyı (stdout/stderr) döndürür.",
+      "Aktif projede bir terminal komutu çalıştırır (test, build, script, npm/yarn, git, lint vb.). Kullanıcı bir şeyi çalıştırmanı/test etmeni/kurmanı istediğinde kullan. Çağrılınca hemen çalışır (GO onayı gerekmez); çıktıyı (stdout/stderr) döndürür.",
     input_schema: {
       type: "object",
       properties: {
