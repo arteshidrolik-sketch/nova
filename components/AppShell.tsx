@@ -9,6 +9,7 @@ import Briefing from "./Briefing";
 import Releases from "./Releases";
 import Projects from "./Projects";
 import Skills from "./Skills";
+import Guardrail from "./Guardrail";
 import type { Kickoff } from "./Chat";
 
 export type ConvMeta = {
@@ -46,6 +47,7 @@ const TITLES: Record<ViewKey, string> = {
   beceriler: "Beceriler",
   surumler: "Sürümler",
   loops: "Loops",
+  guardrail: "Kontrol",
   ayarlar: "Ayarlar",
 };
 
@@ -264,6 +266,8 @@ ekrana tıkla: tam ekran · Boşluk: konuş · fareyi oynat: menüler
           <Projects onStart={startProject} onActivate={activateProject} />
         ) : view === "beceriler" ? (
           <Skills />
+        ) : view === "guardrail" ? (
+          <Guardrail />
         ) : (
           <Placeholder title={TITLES[view]} />
         )}

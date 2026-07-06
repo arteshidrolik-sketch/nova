@@ -34,6 +34,7 @@ import {
 } from "@/lib/projects/store";
 import { getSkillsForAgent } from "@/lib/skills/store";
 import { logToVault } from "@/lib/vault/journal";
+import { getControl, isStopped } from "@/lib/control/store";
 
 export const runtime = "nodejs";
 
@@ -121,6 +122,9 @@ export async function POST(req: Request) {
   }
 
   const client = new Anthropic();
+
+  // Kill switch durumunu belleğe yükle (run döngüsü isStopped() ile kontrol eder)
+  await getControl();
 
   // Proje bağlamı — bulunduğun SOHBETE bağlı proje (global aktif değil)
   const project = conversationId
@@ -295,6 +299,12 @@ export async function POST(req: Request) {
   (async () => {
     try {
       for (let i = 0; i < maxIter; i++) {
+          // Kill switch: her turdan önce kontrol et (kuyruktaki turlar iptal)
+          if (isStopped()) {
+            emit("\n\n⛔ Durduruldu (kill switch aktif).");
+            finishRun(runId, "error", "kill switch");
+            return;
+          }
           const stream = client.messages.stream({
             model: answerModel,
             max_tokens: maxTokens, // büyük dosya içeriği tek araç çağrısına sığsın
@@ -303,7 +313,12 @@ export async function POST(req: Request) {
             messages: convo,
           });
 
+          let stoppedMid = false;
           for await (const event of stream) {
+            if (isStopped()) {
+              stoppedMid = true;
+              break;
+            }
             if (
               event.type === "content_block_delta" &&
               event.delta.type === "text_delta"
@@ -327,6 +342,17 @@ export async function POST(req: Request) {
             ) {
               emit("\n\n🌐 web araması…\n");
             }
+          }
+
+          if (stoppedMid) {
+            try {
+              (stream as { abort?: () => void }).abort?.();
+            } catch {
+              /* yoksay */
+            }
+            emit("\n\n⛔ Durduruldu (kill switch aktif).");
+            finishRun(runId, "error", "kill switch");
+            return;
           }
 
           const final = await stream.finalMessage();
