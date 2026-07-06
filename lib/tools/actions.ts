@@ -35,6 +35,9 @@ function collectFileIds(obj: unknown, acc: Set<string>): void {
 
 type ActionDef = {
   dangerous: boolean;
+  // Risk kademesi: true ise İNSAN ONAYI ister (git push, dış dünyaya giden /
+  // geri alınamaz aksiyonlar). false/atlanmışsa güvenli sayılır → otomatik çalışır.
+  approval?: boolean;
   project: boolean; // aktif proje yolu gerektirir mi
   description: string;
   input_schema: {
@@ -88,9 +91,10 @@ export const ACTIONS: Record<string, ActionDef> = {
 
   github_create_issue: {
     dangerous: true,
+    approval: true, // dış dünyaya gider → insan onayı ister
     project: false,
     description:
-      "Bir GitHub deposunda yeni issue açar. Yazma yetkili GITHUB_TOKEN gerekir. Çağrılınca hemen çalışır (GO onayı gerekmez).",
+      "Bir GitHub deposunda yeni issue açar. Yazma yetkili GITHUB_TOKEN gerekir. RİSKLİ: çağrılınca Görevler'de insan onayına düşer, onaylanınca çalışır.",
     input_schema: {
       type: "object",
       properties: {
@@ -297,9 +301,10 @@ export const ACTIONS: Record<string, ActionDef> = {
 
   git_commit_push: {
     dangerous: true,
+    approval: true, // uzak depoya push → geri alınması zor, insan onayı ister
     project: true,
     description:
-      "Aktif projede değişiklikleri commit'leyip uzak depoya (GitHub) push eder. Çağrılınca hemen çalışır (GO onayı gerekmez).",
+      "Aktif projede değişiklikleri commit'leyip uzak depoya (GitHub) push eder. RİSKLİ: çağrılınca Görevler'de insan onayına düşer, onaylanınca çalışır.",
     input_schema: {
       type: "object",
       properties: {
@@ -403,6 +408,10 @@ export function actionSummary(name: string, payload: Payload): string {
 }
 export function actionDangerous(name: string): boolean {
   return ACTIONS[name]?.dangerous ?? true;
+}
+// Riskli aksiyon mu? (git push, dış dünyaya giden) → İNSAN ONAYI ister.
+export function actionRequiresApproval(name: string): boolean {
+  return ACTIONS[name]?.approval ?? false;
 }
 export async function executeAction(
   name: string,

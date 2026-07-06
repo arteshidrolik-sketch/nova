@@ -90,7 +90,7 @@ export default function Tasks({ onChange }: { onChange?: () => void }) {
         <div>
           <h1 className="text-lg font-semibold">Görevler</h1>
           <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-            Otomatik çalıştırılan aksiyonların geçmişi (GO onayı kaldırıldı)
+            Güvenli aksiyonlar otomatik · riskli olanlar (git push, yayın) GO onayı bekler
           </p>
         </div>
         <button

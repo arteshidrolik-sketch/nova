@@ -8,6 +8,7 @@ import {
   GENERAL_ACTION_TOOLS,
   PROJECT_ACTION_TOOLS,
   actionDangerous,
+  actionRequiresApproval,
   actionTitle,
   actionSummary,
   executeAction,
@@ -169,10 +170,13 @@ export async function POST(req: Request) {
       `edit_project_file (metin değişikliği) çağır — araçlar GO beklemeden ANINDA çalışır.`;
 
     system +=
-      `\n\n### ⚡ Araçlar ANINDA çalışır — GO/onay adımı YOK\n` +
-      `write_project_file, edit_project_file, run_command, git_commit_push çağırınca iş HEMEN yapılır ve sonuç GERÇEKTİR ` +
-      `("✅ DİSKE YAZILDI: … N bayt" = dosya artık diskte, KESİN). ASLA "Görevler'de GO ile onayla", "onay bekliyor", ` +
-      `"yazma izni yok/kısıtlı" gibi şeyler DEME — böyle bir adım YOK, her aksiyon otomatik uygulanır.\n` +
+      `\n\n### ⚡ İki kademe: GÜVENLİ (otomatik) vs RİSKLİ (onaylı)\n` +
+      `GÜVENLİ aksiyonlar — write_project_file, edit_project_file, run_command, generate_document, write_file — ` +
+      `çağırınca HEMEN çalışır ve sonuç GERÇEKTİR ("✅ DİSKE YAZILDI: … N bayt" = dosya diskte, KESİN). ` +
+      `Bunlar için "onay bekliyor / yazma izni yok" DEME.\n` +
+      `RİSKLİ aksiyonlar — git_commit_push (push), github_create_issue — İNSAN ONAYI ister: çağırınca Görevler onay ` +
+      `kuyruğuna düşer, kullanıcı onaylayınca çalışır. Bunları çağırdığında "yaptım/push ettim" DEME; "onayına sundum, ` +
+      `Görevler'de onayla" de. Kod değişikliklerini yaz (otomatik iner) ama push'u kullanıcı onayına bırak.\n` +
       `### 🚫 HALÜSİNASYON YASAK — araç sonucuna GÜVEN\n` +
       `Bir araç "yazıldı/yapıldı" diyorsa iş OLMUŞTUR; bu yer gerçeğidir. ASLA şunları UYDURMA: "diske yansımıyor", ` +
       `"kuyruk ile dosya sistemi arasında kopukluk", "sistem arızalı", "izin sorunu", "setup.sh çalıştır", ` +
@@ -420,6 +424,33 @@ export async function POST(req: Request) {
               }
 
               const title = actionTitle(block.name, payload);
+
+              // RİSKLİ aksiyon (git push, dış dünyaya giden) → İNSAN ONAYINA düşer,
+              // çalıştırma. Beyin (kendi kodu) otonomdur → onay istemez.
+              if (!project?.self && actionRequiresApproval(block.name)) {
+                const task = await createTask({
+                  agent,
+                  actionType: block.name,
+                  title,
+                  summary: actionSummary(block.name, payload),
+                  payload,
+                  dangerous: actionDangerous(block.name),
+                  status: "proposed",
+                });
+                emit(`\n\n⏳ Onay bekliyor: ${title} — "Görevler"de onayla.\n`);
+                toolResults.push({
+                  type: "tool_result",
+                  tool_use_id: block.id,
+                  content:
+                    `Bu aksiyon RİSKLİ (dış dünyaya gider / geri alınması zor) olduğu için ` +
+                    `Görevler onay kuyruğuna alındı (görev ${task.id.slice(0, 8)}). ` +
+                    `Kullanıcı orada onaylayınca çalışacak. Kullanıcıya kısaca bunu bildir; ` +
+                    `"yapıldı" DEME, "onayına sundum" de.`,
+                });
+                continue;
+              }
+
+              // GÜVENLİ aksiyon (dosya yazma/düzenleme, komut, belge) → HEMEN çalışır
               emit(`\n\n⚙️ ${title}…\n`);
               let result: string;
               let ok = true;
