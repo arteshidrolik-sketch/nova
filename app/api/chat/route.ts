@@ -107,6 +107,13 @@ export async function POST(req: Request) {
   } catch {
     return new Response("Geçersiz istek gövdesi.", { status: 400 });
   }
+  // Boş içerikli mesajları at: eski/yarım kayıtlar (content:"") API'yi 400'e
+  // düşürüp sohbeti kalıcı kilitliyordu. Bu, kilitlenmiş sohbeti de iyileştirir.
+  messages = messages.filter(
+    (m) =>
+      (typeof m.content === "string" && m.content.trim().length > 0) ||
+      (Array.isArray(m.attachments) && m.attachments.length > 0),
+  );
   if (messages.length === 0) {
     return new Response("Mesaj bulunamadı.", { status: 400 });
   }

@@ -677,6 +677,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       },
     ];
     setMessages(next);
+    persist(next); // kullanıcı mesajını HEMEN kaydet — akış sırasında yenilenirse kaybolmasın
     setInput("");
     setAttachments([]);
     setLoading(true);
@@ -746,10 +747,15 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         }
       }
 
+      // Boş yanıtı ASLA kaydetme: boş içerikli mesaj API'yi 400'e düşürüp sohbeti kilitler
+      const replyText = acc.trim()
+        ? acc
+        : "⚠️ Yanıt alınamadı (oturum/bağlantı kesilmiş olabilir). Tekrar dener misin?";
       const finalMsgs: Message[] = [
         ...next,
-        { role: "assistant", content: acc, agent, model },
+        { role: "assistant", content: replyText, agent, model },
       ];
+      setMessages(finalMsgs);
       persist(finalMsgs);
 
       if ((speakRef.current || voiceReplyRef.current) && acc) speak(acc);
