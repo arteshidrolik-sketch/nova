@@ -130,13 +130,24 @@ export async function POST(req: Request) {
     await setActive(project.id);
   }
 
+  // Önceki yanıtın ajanı — kısa devam mesajlarında sürekliliği korumak için
+  let prevAgent: string | undefined;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === "assistant") {
+      const a = (messages[i] as { agent?: unknown }).agent;
+      if (typeof a === "string") prevAgent = a;
+      break;
+    }
+  }
+
   // 1) Orkestratör — beyin (kendi kodu) HER ZAMAN developer + Opus 4.8; değilse router
   const agent = project?.self
     ? "developer"
-    : await selectAgent(client, ROUTER_MODEL, messages);
-  const answerModel = project?.self ? "claude-opus-4-8" : modelForAgent(agent);
+    : await selectAgent(client, ROUTER_MODEL, messages, prevAgent);
+  let answerModel = project?.self ? "claude-opus-4-8" : modelForAgent(agent);
   // Büyük dosya yazımı kesilmesin diye güçlü modellerde daha yüksek çıktı limiti
-  const maxTokens = /opus|sonnet/.test(answerModel) ? 16000 : 8000;
+  let maxTokens = /opus|sonnet/.test(answerModel) ? 16000 : 8000;
+  let escalated = false; // refusal olursa bir kez daha güçlü modele yükselt
 
   // 2) Hafıza — sona ayrı eklenir; güvenlik reddi (refusal) olursa hafızasız tekrar denenir
   const lastUser =
@@ -156,6 +167,17 @@ export async function POST(req: Request) {
       `önce list_files ile yapıyı gör, search_files ile ilgili yeri bul, read_file ile oku. ` +
       `Tahmin etme. Değişiklik gerekiyorsa write_project_file (yeni/tam dosya) veya ` +
       `edit_project_file (metin değişikliği) çağır — araçlar GO beklemeden ANINDA çalışır.`;
+
+    system +=
+      `\n\n### ⚡ Araçlar ANINDA çalışır — GO/onay adımı YOK\n` +
+      `write_project_file, edit_project_file, run_command, git_commit_push çağırınca iş HEMEN yapılır ve sonuç GERÇEKTİR ` +
+      `("Yazıldı: N bayt" = dosya artık diskte). ASLA "Görevler'de GO ile onayla", "onay bekliyor", "GO düğmesine bas", ` +
+      `"yazma izni yok/kısıtlı" gibi şeyler DEME — böyle bir adım YOK, her aksiyon otomatik uygulanır. ` +
+      `Bir şey yapmadıysan sebebi GO değil; aracı gerçekten çağırmamış olmandır → o zaman FİİLEN çağır.\n` +
+      `### 📁 Doğru yolu KEŞFET (tahmin etme)\n` +
+      `Bir list_files/read_file "bulunamadı" derse YOL YANLIŞTIR. Proje kökünde backend/, frontend/, app/, src/ gibi ` +
+      `bir alt klasör olabilir ve asıl kaynak ORADA olabilir (ör. NestJS kökü backend/ altında). ` +
+      `Önce list_files ile GERÇEK yapıyı gör, sonra dosya yollarını o köke göre ver. Aynı yanlış yolu tekrar tekrar deneme.`;
 
     if (project.self) {
       system +=
@@ -299,10 +321,17 @@ export async function POST(req: Request) {
 
           const final = await stream.finalMessage();
 
-          // Güvenlik reddi (refusal): önce HAFIZASIZ tekrar dene (hafıza notu tetiklemiş olabilir), yine olursa açıkla
+          // Güvenlik reddi (refusal): önce HAFIZASIZ dene, sonra daha güçlü modele
+          // yükselt (küçük model masum istekleri gereksiz reddedebiliyor), yine olursa açıkla
           if (final.stop_reason === "refusal") {
             if (useMemory) {
               useMemory = false;
+              continue;
+            }
+            if (!escalated && answerModel !== "claude-opus-4-8") {
+              escalated = true;
+              answerModel = "claude-opus-4-8";
+              maxTokens = 16000;
               continue;
             }
             emit(

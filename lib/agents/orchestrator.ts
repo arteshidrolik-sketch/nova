@@ -20,6 +20,7 @@ export async function selectAgent(
   client: Anthropic,
   model: string,
   messages: ChatMessage[],
+  prevAgent?: string,
 ): Promise<AgentKey> {
   // API mesajlarda ekstra alan (agent/attachments) kabul etmez → sadece role+content bırak
   const clean = messages.map((m) => ({
@@ -27,11 +28,22 @@ export async function selectAgent(
     content: typeof m.content === "string" ? m.content : "",
   }));
 
+  // Süreklilik: önceki yanıt bir ajandan geldiyse, kısa devam/onay mesajlarında
+  // (evet, sen yap, güncelle, devam et…) AYNI ajanda kal — iş ortada bölünmesin.
+  const system =
+    prevAgent && isAgentKey(prevAgent)
+      ? ROUTER_SYSTEM +
+        `\n\nÖnceki yanıt "${prevAgent}" ajanındandı ve iş sürüyor olabilir. ` +
+        `Kullanıcının yeni mesajı aynı işin DEVAMI ya da kısa bir onay/yönlendirme ise ` +
+        `("evet", "sen yap", "sen güncelle", "devam et", "olur", "tamam" gibi) MUTLAKA aynı ajanı ("${prevAgent}") seç. ` +
+        `Sadece açıkça FARKLI bir uzmanlık gerektiren yeni bir iş başlıyorsa ajan değiştir.`
+      : ROUTER_SYSTEM;
+
   try {
     const res = await client.messages.create({
       model,
       max_tokens: 1024,
-      system: ROUTER_SYSTEM,
+      system,
       tools: [
         {
           name: "select_agent",
