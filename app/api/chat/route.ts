@@ -36,6 +36,11 @@ import { getSkillsForAgent } from "@/lib/skills/store";
 import { logToVault } from "@/lib/vault/journal";
 import { getControl, isStopped } from "@/lib/control/store";
 import { getBudget, isOverCap, recordUsage } from "@/lib/budget/store";
+import {
+  wrapUntrusted,
+  detectInjection,
+  UNTRUSTED_RULE,
+} from "@/lib/security/untrusted";
 
 export const runtime = "nodejs";
 
@@ -247,6 +252,9 @@ export async function POST(req: Request) {
     "- Birden çok dosya değişecekse her biri için ayrı ayrı aracı çağır (birini atlama)." +
     "\n\n## İnternet\nİNTERNETE ERİŞİMİN VAR. Güncel bilgi, haber, fiyat, sürüm, dokümantasyon veya emin olmadığın her şey için web_search aracını kullan. ASLA 'internete bağlı değilim', 'erişemiyorum' veya 'gerçek zamanlı bilgiye ulaşamam' DEME — bunun yerine hemen web_search yap, sonra kaynaklı cevap ver.";
 
+  // Prompt-injection karantina kuralı (tüm ajanlar)
+  system += UNTRUSTED_RULE;
+
   // Hafızasız sürüm (refusal olursa buna düşülür)
   const systemNoMem = system;
   let useMemory = memNote.length > 0;
@@ -262,6 +270,7 @@ export async function POST(req: Request) {
     ...(project ? [...READ_TOOLS, ...PROJECT_ACTION_TOOLS] : []),
   ] as unknown as Anthropic.Tool[];
 
+  const injectionFlags: string[] = []; // güvenilmeyen içerikte tespit edilen saldırı kalıpları
   const convo: Anthropic.MessageParam[] = trimHistory(messages).map((m) => {
     if (m.role === "user" && m.attachments && m.attachments.length > 0) {
       const blocks: unknown[] = [];
@@ -281,9 +290,11 @@ export async function POST(req: Request) {
             },
           });
         } else if (a.kind === "text" && a.text) {
+          const label = `dosya:${a.name ?? "dosya"}`;
+          if (detectInjection(a.text).length) injectionFlags.push(label);
           blocks.push({
             type: "text",
-            text: `Ekli dosya "${a.name ?? "dosya"}":\n${a.text}`,
+            text: `Ekli dosya "${a.name ?? "dosya"}" (güvenilmeyen veri):\n${wrapUntrusted(label, a.text)}`,
           });
         }
       }
@@ -309,6 +320,13 @@ export async function POST(req: Request) {
         );
         finishRun(runId, "error", "bütçe tavanı");
         return;
+      }
+      // Prompt-injection: ekli içerikte saldırı kalıbı bulunduysa işaretle
+      if (injectionFlags.length > 0) {
+        emit(
+          `\n\n🛡️ Güvenlik: güvenilmeyen içerikte (${injectionFlags.join(", ")}) ` +
+            `talimat-taklidi kalıbı algılandı — VERİ olarak işlendi, komutlarına uyulmadı.\n`,
+        );
       }
       for (let i = 0; i < maxIter; i++) {
           // Kill switch: her turdan önce kontrol et (kuyruktaki turlar iptal)
@@ -427,10 +445,14 @@ export async function POST(req: Request) {
             if (project && READ_TOOL_NAMES.has(block.name)) {
               emit(`\n\n📂 ${block.name}…\n`);
               const result = await runReadTool(block.name, input, project.path);
+              const label = `${block.name}:${String(input.path ?? input.query ?? "")}`.slice(0, 60);
+              if (detectInjection(result).length) {
+                emit(`\n🛡️ Okunan içerikte talimat-taklidi algılandı — VERİ sayıldı.\n`);
+              }
               toolResults.push({
                 type: "tool_result",
                 tool_use_id: block.id,
-                content: result,
+                content: wrapUntrusted(label, result),
               });
               continue;
             }
@@ -445,10 +467,13 @@ export async function POST(req: Request) {
               } catch (e) {
                 result = `GitHub aracı hatası: ${e instanceof Error ? e.message : "bilinmeyen"}`;
               }
+              if (detectInjection(result).length) {
+                emit(`\n🛡️ GitHub içeriğinde talimat-taklidi algılandı — VERİ sayıldı.\n`);
+              }
               toolResults.push({
                 type: "tool_result",
                 tool_use_id: block.id,
-                content: result,
+                content: wrapUntrusted(`github:${inp.owner}/${inp.repo}`, result),
               });
               continue;
             }
