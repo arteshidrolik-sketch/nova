@@ -35,6 +35,7 @@ import {
 import { getSkillsForAgent } from "@/lib/skills/store";
 import { logToVault } from "@/lib/vault/journal";
 import { getControl, isStopped } from "@/lib/control/store";
+import { getBudget, isOverCap, recordUsage } from "@/lib/budget/store";
 
 export const runtime = "nodejs";
 
@@ -123,8 +124,9 @@ export async function POST(req: Request) {
 
   const client = new Anthropic();
 
-  // Kill switch durumunu belleğe yükle (run döngüsü isStopped() ile kontrol eder)
+  // Kill switch + bütçe durumunu belleğe yükle
   await getControl();
+  await getBudget();
 
   // Proje bağlamı — bulunduğun SOHBETE bağlı proje (global aktif değil)
   const project = conversationId
@@ -298,6 +300,16 @@ export async function POST(req: Request) {
 
   (async () => {
     try {
+      // Bütçe kapısı: günlük token tavanı dolduysa YENİ iş başlamaz
+      // (çalışan işler kesilmez — Bölüm 0.2). Beyin (self) de bu kapıya tabidir.
+      if (isOverCap()) {
+        emit(
+          "\n\n💸 Günlük token bütçesi doldu — yeni iş başlatılmadı. " +
+            "Kontrol panelinden tavanı yükseltebilir ya da yarını bekleyebilirsin.",
+        );
+        finishRun(runId, "error", "bütçe tavanı");
+        return;
+      }
       for (let i = 0; i < maxIter; i++) {
           // Kill switch: her turdan önce kontrol et (kuyruktaki turlar iptal)
           if (isStopped()) {
@@ -356,6 +368,15 @@ export async function POST(req: Request) {
           }
 
           const final = await stream.finalMessage();
+
+          // Token kullanımını bütçeye kaydet (her API çağrısı)
+          if (final.usage) {
+            recordUsage(
+              answerModel,
+              final.usage.input_tokens ?? 0,
+              final.usage.output_tokens ?? 0,
+            ).catch(() => {});
+          }
 
           // Güvenlik reddi (refusal): önce HAFIZASIZ dene, sonra daha güçlü modele
           // yükselt (küçük model masum istekleri gereksiz reddedebiliyor), yine olursa açıkla

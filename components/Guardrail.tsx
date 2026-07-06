@@ -30,19 +30,58 @@ const TIERS: { label: string; color: string; items: string[] }[] = [
   },
 ];
 
+type BudgetStatus = {
+  cap: number;
+  used: number;
+  input: number;
+  output: number;
+  costUsd: number;
+  requests: number;
+  pct: number;
+  warn: boolean;
+  over: boolean;
+};
+
+function fmt(n: number): string {
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
+  return String(n);
+}
+
 export default function Guardrail() {
   const [control, setControl] = useState<Control | null>(null);
+  const [budget, setBudget] = useState<BudgetStatus | null>(null);
+  const [capInput, setCapInput] = useState("");
   const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
-      const r = await fetch("/api/control");
-      const d = await r.json();
-      setControl(d.control ?? null);
+      const [c, b] = await Promise.all([
+        fetch("/api/control").then((r) => r.json()),
+        fetch("/api/budget").then((r) => r.json()),
+      ]);
+      setControl(c.control ?? null);
+      setBudget(b.status ?? null);
     } catch {
       /* yoksay */
     }
   }, []);
+
+  async function saveCap() {
+    const cap = Number(capInput.replace(/[^\d]/g, "")) || 0;
+    setBusy(true);
+    try {
+      await fetch("/api/budget", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ op: "setCap", cap }),
+      });
+      setCapInput("");
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
 
   useEffect(() => {
     refresh();
@@ -133,6 +172,94 @@ export default function Guardrail() {
                 ⛔ TÜM AJANLARI DURDUR
               </button>
             )}
+          </section>
+
+          {/* Bütçe kapıları */}
+          <section
+            className="rounded-xl border p-5"
+            style={{
+              borderColor: budget?.over
+                ? "#ef4444"
+                : budget?.warn
+                  ? "#f59e0b"
+                  : "var(--border)",
+              background: "var(--bg-panel)",
+            }}
+          >
+            <div className="mb-1 flex items-center justify-between">
+              <span className="font-semibold">💸 Günlük token bütçesi</span>
+              {budget && (
+                <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  bugün {budget.requests} istek · ~${budget.costUsd.toFixed(2)}
+                </span>
+              )}
+            </div>
+
+            {budget && (
+              <>
+                <div className="mb-2 text-sm" style={{ color: "var(--text-muted)" }}>
+                  {fmt(budget.used)} token kullanıldı
+                  {budget.cap > 0 ? ` / ${fmt(budget.cap)} tavan` : " · tavan: sınırsız"}
+                  {budget.cap > 0 && ` (%${budget.pct})`}
+                </div>
+                {budget.cap > 0 && (
+                  <div
+                    className="mb-3 h-2 w-full overflow-hidden rounded-full"
+                    style={{ background: "var(--bg)" }}
+                  >
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${budget.pct}%`,
+                        background: budget.over
+                          ? "#ef4444"
+                          : budget.warn
+                            ? "#f59e0b"
+                            : "#10b981",
+                      }}
+                    />
+                  </div>
+                )}
+                {budget.over && (
+                  <div className="mb-2 text-sm font-medium" style={{ color: "#ef4444" }}>
+                    ⛔ Tavan doldu — yeni işler durduruldu.
+                  </div>
+                )}
+                {budget.warn && (
+                  <div className="mb-2 text-sm font-medium" style={{ color: "#f59e0b" }}>
+                    ⚠️ Tavanın %80'i aşıldı.
+                  </div>
+                )}
+              </>
+            )}
+
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                value={capInput}
+                onChange={(e) => setCapInput(e.target.value)}
+                placeholder={
+                  budget?.cap ? `Mevcut: ${budget.cap}` : "günlük token tavanı (0 = sınırsız)"
+                }
+                inputMode="numeric"
+                className="w-56 rounded-lg border px-3 py-1.5 text-sm outline-none"
+                style={{
+                  borderColor: "var(--border)",
+                  background: "var(--bg)",
+                  color: "var(--text)",
+                }}
+              />
+              <button
+                onClick={saveCap}
+                disabled={busy}
+                className="rounded-lg px-3 py-1.5 text-sm font-medium text-black disabled:opacity-40"
+                style={{ background: "var(--accent)" }}
+              >
+                Kaydet
+              </button>
+            </div>
+            <p className="mt-2 text-xs" style={{ color: "var(--text-muted)" }}>
+              Tavan dolunca çalışan iş güvenle biter, yeni iş alınmaz. Maliyet ~tahminidir.
+            </p>
           </section>
 
           {/* Risk kademeleri */}
