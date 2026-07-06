@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 // tarih-saat, hava durumu, günlük euro/dolar kuru.
 
 type Weather = { temp: number; code: number; city: string } | null;
-type Rates = { eur: number | null; usd: number | null; date: string } | null;
+type Rates = { eur: number | null; usd: number | null; date: string; source?: string } | null;
 
 // WMO hava kodu → Türkçe açıklama + emoji
 function wmo(code: number): { label: string; icon: string } {
@@ -72,20 +72,16 @@ export default function Dashboard() {
     };
   }, []);
 
-  // Günlük kur (ECB / frankfurter — anahtarsız)
+  // Günlük kur — sunucu tarafında çekilir (TCMB, erişilemezse ECB'ye düşer)
   useEffect(() => {
     (async () => {
       try {
-        const d = await fetch(
-          "https://api.frankfurter.app/latest?base=EUR&symbols=TRY",
-        ).then((r) => r.json());
-        const usd = await fetch(
-          "https://api.frankfurter.app/latest?base=USD&symbols=TRY",
-        ).then((r) => r.json());
+        const d = await fetch("/api/rates").then((r) => r.json());
         setRates({
-          eur: d?.rates?.TRY ?? null,
-          usd: usd?.rates?.TRY ?? null,
+          eur: d?.eur ?? null,
+          usd: d?.usd ?? null,
           date: d?.date ?? "",
+          source: d?.source,
         });
       } catch {}
     })();
@@ -141,7 +137,7 @@ export default function Dashboard() {
       </div>
 
       <div className="mt-auto text-center text-[11px] text-white/40">
-        Hava: open-meteo · Kur: ECB (frankfurter)
+        Hava: open-meteo · Kur: {rates?.source === "ECB" ? "ECB (frankfurter)" : "TCMB"}
       </div>
     </div>
   );
