@@ -6,6 +6,7 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import Anthropic from "@anthropic-ai/sdk";
 import { resolveIn } from "./projectFiles";
+import { scanContent, formatFindings } from "@/lib/security/scan";
 
 const execAsync = promisify(exec);
 type Payload = Record<string, unknown>;
@@ -85,7 +86,8 @@ export const ACTIONS: Record<string, ActionDef> = {
       await fs.mkdir(path.dirname(target), { recursive: true });
       const content = String(p.content ?? "");
       await fs.writeFile(target, content, "utf8");
-      return `Yazıldı: workspace/${String(p.path)} (${Buffer.byteLength(content)} bayt)`;
+      const sec = formatFindings(scanContent(String(p.path), content));
+      return `Yazıldı: workspace/${String(p.path)} (${Buffer.byteLength(content)} bayt)${sec}`;
     },
   },
 
@@ -257,10 +259,12 @@ export const ACTIONS: Record<string, ActionDef> = {
       }
       await fs.mkdir(path.dirname(target), { recursive: true });
       await fs.writeFile(target, content, "utf8");
+      const sec = formatFindings(scanContent(String(p.path), content));
       return (
         `✅ DİSKE YAZILDI: ${String(p.path)} (${Buffer.byteLength(content)} bayt). ` +
         `Dosya artık projede GERÇEKTEN mevcut — bu kesin sonuçtur. Aynı dosyayı tekrar yazma. ` +
-        `Şüphen varsa list_files/read_file ile bakabilirsin; "diske yansımadı" diye DÜŞÜNME.`
+        `Şüphen varsa list_files/read_file ile bakabilirsin; "diske yansımadı" diye DÜŞÜNME.` +
+        sec
       );
     },
   },
@@ -295,7 +299,8 @@ export const ACTIONS: Record<string, ActionDef> = {
       }
       const next = content.split(oldStr).join(String(p.new_str ?? ""));
       await fs.writeFile(target, next, "utf8");
-      return `✅ DİSKTE DÜZENLENDİ: ${String(p.path)}. Değişiklik gerçekten kaydedildi — kesin sonuçtur.`;
+      const sec = formatFindings(scanContent(String(p.path), String(p.new_str ?? "")));
+      return `✅ DİSKTE DÜZENLENDİ: ${String(p.path)}. Değişiklik gerçekten kaydedildi — kesin sonuçtur.${sec}`;
     },
   },
 
