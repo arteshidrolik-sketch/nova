@@ -143,14 +143,6 @@ export default function Tasks({ onChange }: { onChange?: () => void }) {
                       {meta.emoji} {meta.label}
                     </span>
                   )}
-                  {t.dangerous && (
-                    <span
-                      className="text-xs"
-                      style={{ color: "var(--text-muted)" }}
-                    >
-                      · onay gerekli
-                    </span>
-                  )}
                 </div>
 
                 <div className="mb-2 font-medium">{t.title}</div>
