@@ -164,6 +164,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   const voiceReplyRef = useRef(false); // sesle sorulduysa cevabı her zaman seslendir
   const wakeRef = useRef<Recognition | null>(null); // "Nova" wake-word dinleyici
   const wakeOnRef = useRef(false);
+  const ttsKeepAlive = useRef<ReturnType<typeof setInterval> | null>(null); // Edge/Chrome 15sn kesme hatası için
 
   useEffect(() => {
     setVoiceSupported(!!getRecognitionCtor());
@@ -358,8 +359,25 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     });
   }
 
+  // Chrome/Edge, TTS'i ~15 sn sonra duraklatır; resume ile canlı tut
+  function startTtsKeepAlive() {
+    stopTtsKeepAlive();
+    ttsKeepAlive.current = setInterval(() => {
+      const s = window.speechSynthesis;
+      if (s?.speaking) s.resume();
+      else stopTtsKeepAlive();
+    }, 8000);
+  }
+  function stopTtsKeepAlive() {
+    if (ttsKeepAlive.current) {
+      clearInterval(ttsKeepAlive.current);
+      ttsKeepAlive.current = null;
+    }
+  }
+
   function speak(text: string) {
-    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    const synth = typeof window !== "undefined" ? window.speechSynthesis : null;
+    if (!synth) return;
     const clean = text
       .replace(/[#*`_>~|]/g, " ")
       .replace(/\p{Extended_Pictographic}/gu, "") // emojileri okuma
@@ -367,27 +385,58 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       .replace(/[ \t]{2,}/g, " ")
       .replace(/\n{2,}/g, ". ")
       .trim();
-    const u = new SpeechSynthesisUtterance(clean);
-    const chosen = window.speechSynthesis
-      .getVoices()
-      .find((v) => v.voiceURI === voiceURIRef.current);
-    if (chosen) {
-      u.voice = chosen;
-      u.lang = chosen.lang;
-    } else {
-      u.lang = "tr-TR";
+    if (!clean) return;
+
+    // Ses seçimi: kayıtlı ses → yerel Türkçe → herhangi Türkçe → yerel → ilk ses
+    // (yerel sesi tercih et: ağ-bağımlı "Online/Natural" sesler sessiz kalabiliyor)
+    const list = synth.getVoices();
+    const tr = list.filter((v) => v.lang.toLowerCase().startsWith("tr"));
+    const chosen =
+      list.find((v) => v.voiceURI === voiceURIRef.current) ||
+      tr.find((v) => v.localService) ||
+      tr[0] ||
+      list.find((v) => v.localService) ||
+      list[0] ||
+      null;
+
+    // Uzun metni cümlelere böl: kısa parçalar 15 sn kesme hatasını önler
+    const parts =
+      clean.match(/[^.!?…\n]+[.!?…]*/g)?.map((s) => s.trim()).filter(Boolean) ?? [clean];
+    // çok uzun cümleleri de ~200 karakterde parçala
+    const chunks: string[] = [];
+    for (const p of parts) {
+      if (p.length <= 220) chunks.push(p);
+      else {
+        for (let i = 0; i < p.length; i += 200) chunks.push(p.slice(i, i + 200));
+      }
     }
-    u.onstart = () => setSpeaking(true);
-    u.onend = () => {
-      setSpeaking(false);
-      resumeWake(); // TTS bitince wake'e geri dön (kendi sesini duymaz)
+
+    synth.cancel(); // önceki kuyruğu temizle
+    setSpeaking(true);
+    startTtsKeepAlive();
+
+    let i = 0;
+    const next = () => {
+      if (i >= chunks.length) {
+        setSpeaking(false);
+        stopTtsKeepAlive();
+        resumeWake(); // TTS bitince wake'e geri dön (kendi sesini duymaz)
+        return;
+      }
+      const u = new SpeechSynthesisUtterance(chunks[i++]);
+      if (chosen) {
+        u.voice = chosen;
+        u.lang = chosen.lang;
+      } else {
+        u.lang = "tr-TR";
+      }
+      u.rate = 1;
+      u.pitch = 1;
+      u.onend = next;
+      u.onerror = next; // bir parça patlarsa sıradakine geç (takılma yok)
+      synth.speak(u);
     };
-    u.onerror = () => {
-      setSpeaking(false);
-      resumeWake();
-    };
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(u);
+    next();
   }
 
   function stopListening() {
@@ -584,7 +633,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     else startWake();
   }
 
-  // unmount'ta wake'i kapat
+  // unmount'ta wake'i kapat + TTS keepalive'i durdur
   useEffect(() => {
     return () => {
       wakeOnRef.current = false;
@@ -593,6 +642,8 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       } catch {
         /* yoksay */
       }
+      if (ttsKeepAlive.current) clearInterval(ttsKeepAlive.current);
+      if (typeof window !== "undefined") window.speechSynthesis?.cancel();
     };
   }, []);
 
