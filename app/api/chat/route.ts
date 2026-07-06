@@ -171,13 +171,19 @@ export async function POST(req: Request) {
     system +=
       `\n\n### ⚡ Araçlar ANINDA çalışır — GO/onay adımı YOK\n` +
       `write_project_file, edit_project_file, run_command, git_commit_push çağırınca iş HEMEN yapılır ve sonuç GERÇEKTİR ` +
-      `("Yazıldı: N bayt" = dosya artık diskte). ASLA "Görevler'de GO ile onayla", "onay bekliyor", "GO düğmesine bas", ` +
-      `"yazma izni yok/kısıtlı" gibi şeyler DEME — böyle bir adım YOK, her aksiyon otomatik uygulanır. ` +
-      `Bir şey yapmadıysan sebebi GO değil; aracı gerçekten çağırmamış olmandır → o zaman FİİLEN çağır.\n` +
+      `("✅ DİSKE YAZILDI: … N bayt" = dosya artık diskte, KESİN). ASLA "Görevler'de GO ile onayla", "onay bekliyor", ` +
+      `"yazma izni yok/kısıtlı" gibi şeyler DEME — böyle bir adım YOK, her aksiyon otomatik uygulanır.\n` +
+      `### 🚫 HALÜSİNASYON YASAK — araç sonucuna GÜVEN\n` +
+      `Bir araç "yazıldı/yapıldı" diyorsa iş OLMUŞTUR; bu yer gerçeğidir. ASLA şunları UYDURMA: "diske yansımıyor", ` +
+      `"kuyruk ile dosya sistemi arasında kopukluk", "sistem arızalı", "izin sorunu", "setup.sh çalıştır", ` +
+      `"hâlâ kökte sadece PROMPT.md var". Bunlar YANLIŞ ve kullanıcıyı yorar. ` +
+      `Emin değilsen SPEKÜLE ETME → list_files/read_file ÇAĞIR ve GÖR. ` +
+      `ÖNEMLİ: önceki list_files sonucun ESKİMİŞTİR (o zamandan beri dosya yazdın). Doğrulamak için list_files'ı YENİDEN çağır; ` +
+      `eski sonuca bakıp "dosya yok" deme. Kullanıcıya elle script/komut çalıştırmasını önerme — sen zaten yapabiliyorsun, YAP.\n` +
       `### 📁 Doğru yolu KEŞFET (tahmin etme)\n` +
-      `Bir list_files/read_file "bulunamadı" derse YOL YANLIŞTIR. Proje kökünde backend/, frontend/, app/, src/ gibi ` +
+      `Bir read_file "bulunamadı" derse YOL YANLIŞTIR. Proje kökünde backend/, frontend/, app/, src/ gibi ` +
       `bir alt klasör olabilir ve asıl kaynak ORADA olabilir (ör. NestJS kökü backend/ altında). ` +
-      `Önce list_files ile GERÇEK yapıyı gör, sonra dosya yollarını o köke göre ver. Aynı yanlış yolu tekrar tekrar deneme.`;
+      `Önce list_files ile GERÇEK yapıyı gör, sonra dosya yollarını o köke göre ver. Aynı yanlış yolu tekrar deneme.`;
 
     if (project.self) {
       system +=

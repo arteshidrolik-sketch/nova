@@ -253,7 +253,11 @@ export const ACTIONS: Record<string, ActionDef> = {
       }
       await fs.mkdir(path.dirname(target), { recursive: true });
       await fs.writeFile(target, content, "utf8");
-      return `Yazıldı: ${String(p.path)} (${Buffer.byteLength(content)} bayt)`;
+      return (
+        `✅ DİSKE YAZILDI: ${String(p.path)} (${Buffer.byteLength(content)} bayt). ` +
+        `Dosya artık projede GERÇEKTEN mevcut — bu kesin sonuçtur. Aynı dosyayı tekrar yazma. ` +
+        `Şüphen varsa list_files/read_file ile bakabilirsin; "diske yansımadı" diye DÜŞÜNME.`
+      );
     },
   },
 
@@ -287,7 +291,7 @@ export const ACTIONS: Record<string, ActionDef> = {
       }
       const next = content.split(oldStr).join(String(p.new_str ?? ""));
       await fs.writeFile(target, next, "utf8");
-      return `Düzenlendi: ${String(p.path)}`;
+      return `✅ DİSKTE DÜZENLENDİ: ${String(p.path)}. Değişiklik gerçekten kaydedildi — kesin sonuçtur.`;
     },
   },
 
