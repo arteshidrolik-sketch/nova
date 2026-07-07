@@ -165,6 +165,14 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   const wakeRef = useRef<Recognition | null>(null); // "Nova" wake-word dinleyici
   const wakeOnRef = useRef(false);
   const ttsKeepAlive = useRef<ReturnType<typeof setInterval> | null>(null); // Edge/Chrome 15sn kesme hatası için
+  // Tarayıcı-içi Whisper (Edge/Safari/Firefox — native STT çalışmaz)
+  const [whisperStatus, setWhisperStatus] = useState<
+    "idle" | "loading" | "recording" | "transcribing"
+  >("idle");
+  const [whisperPct, setWhisperPct] = useState(0);
+  const recorderRef = useRef<import("@/lib/voice/record").Recorder | null>(null);
+  const whisperStatusRef = useRef<"idle" | "loading" | "recording" | "transcribing">("idle");
+  whisperStatusRef.current = whisperStatus;
 
   useEffect(() => {
     setVoiceSupported(!!getRecognitionCtor());
@@ -537,6 +545,98 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     else startListening();
   }
 
+  // --- Tarayıcı-içi Whisper (native STT olmayan/çalışmayan tarayıcılar) ---
+  // Chrome native STT'yi iyi yapar; Edge/Safari/Firefox'ta Whisper'a düş.
+  function preferWhisper(): boolean {
+    if (typeof navigator === "undefined") return false;
+    const ua = navigator.userAgent;
+    const isEdge = /Edg\//.test(ua);
+    const isChrome = /Chrome\//.test(ua) && !isEdge && !/OPR\//.test(ua);
+    // Chrome (gerçek) + native destek varsa native; aksi halde Whisper
+    return !(isChrome && !!getRecognitionCtor());
+  }
+
+  async function startWhisper() {
+    if (typeof window !== "undefined" && !window.isSecureContext) {
+      alert("Ses girişi güvenli bağlam (https) ister.");
+      return;
+    }
+    try {
+      window.speechSynthesis?.cancel();
+      // Model yüklü değilse indir (ilk sefer)
+      if (whisperStatusRef.current === "idle") {
+        const { whisperReady, loadWhisper } = await import("@/lib/voice/whisper");
+        if (!whisperReady()) {
+          setWhisperStatus("loading");
+          setWhisperPct(0);
+          onBusy?.(true);
+          await loadWhisper((p) => setWhisperPct(p));
+        }
+      }
+      const { startRecording } = await import("@/lib/voice/record");
+      recorderRef.current = await startRecording();
+      setWhisperStatus("recording");
+      setListening(true);
+      onVoiceState?.("listening");
+    } catch (err) {
+      setWhisperStatus("idle");
+      setListening(false);
+      onVoiceState?.("idle");
+      onBusy?.(false);
+      const msg = err instanceof Error ? err.message : "bilinmeyen";
+      alert(
+        /Permission|NotAllowed|denied/i.test(msg)
+          ? "Mikrofon izni reddedildi. Adres çubuğundaki kamera/mikrofon simgesinden izin ver."
+          : `Ses başlatılamadı: ${msg}`,
+      );
+    }
+  }
+
+  async function stopWhisper() {
+    const rec = recorderRef.current;
+    recorderRef.current = null;
+    if (!rec) {
+      setWhisperStatus("idle");
+      setListening(false);
+      onVoiceState?.("idle");
+      return;
+    }
+    setListening(false);
+    setWhisperStatus("transcribing");
+    onVoiceState?.("idle");
+    try {
+      const audio = await rec.stop();
+      if (!audio || audio.length < 1600) {
+        // ~0.1s'den kısa → boş
+        setWhisperStatus("idle");
+        onBusy?.(false);
+        return;
+      }
+      const { transcribe } = await import("@/lib/voice/whisper");
+      const text = (await transcribe(audio)).trim();
+      setWhisperStatus("idle");
+      onBusy?.(false);
+      if (text) {
+        voiceReplyRef.current = true;
+        send(text);
+      }
+    } catch {
+      setWhisperStatus("idle");
+      onBusy?.(false);
+    }
+  }
+
+  // Mikrofon düğmesi / Boşluk tuşu için birleşik yönlendirme
+  function handleMic() {
+    if (preferWhisper()) {
+      if (whisperStatusRef.current === "recording") stopWhisper();
+      else if (whisperStatusRef.current === "idle") startWhisper();
+      // loading/transcribing sırasında yok say
+    } else {
+      startListening();
+    }
+  }
+
   function pauseWake() {
     try {
       wakeRef.current?.abort();
@@ -649,7 +749,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
 
   // Dışarıdan (mikrofon / Boşluk / wake düğmesi) tetikleme
   const micRef = useRef<() => void>(() => {});
-  micRef.current = startListening;
+  micRef.current = handleMic;
   const wakeToggleRef = useRef<() => void>(() => {});
   wakeToggleRef.current = toggleWake;
   useImperativeHandle(
@@ -803,7 +903,15 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         <div>
           <h1 className="text-lg font-semibold">Sohbet</h1>
           <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-            {speaking ? (
+            {whisperStatus === "loading" ? (
+              <span style={{ color: "var(--accent)" }}>
+                🎧 Ses modeli indiriliyor… %{whisperPct} (ilk sefer)
+              </span>
+            ) : whisperStatus === "recording" ? (
+              <span style={{ color: "#ef4444" }}>🔴 Kaydediyor — bitirmek için mikrofona tekrar bas</span>
+            ) : whisperStatus === "transcribing" ? (
+              <span style={{ color: "var(--accent)" }}>✍️ Çözümleniyor…</span>
+            ) : speaking ? (
               <span className="inline-flex items-center gap-2">
                 <span className="bars">
                   <i />
