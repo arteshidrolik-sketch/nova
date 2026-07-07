@@ -1,6 +1,7 @@
 import { getTask, updateTask } from "@/lib/tasks/store";
 import { actionTitle, executeAction } from "@/lib/tools/actions";
 import { logToVault } from "@/lib/vault/journal";
+import { appendAudit } from "@/lib/audit/store";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -47,6 +48,15 @@ export async function POST(
     try {
       const result = await executeAction(task.actionType, task.payload);
       const t = await updateTask(id, { status: "done", result, error: undefined });
+      appendAudit({
+        agent: task.agent,
+        action: task.actionType,
+        tier: "approval",
+        summary: `GO onaylandı: ${task.summary || task.title}`,
+        ok: true,
+        result,
+        project: task.payload.projectName as string | undefined,
+      }).catch(() => {});
       // Obsidian kasasına iş günlüğü yaz (köprü açıksa). Fire-and-forget:
       // uzun süren git push GO yanıtını bekletmesin; hata kullanıcıyı etkilemez.
       logToVault({

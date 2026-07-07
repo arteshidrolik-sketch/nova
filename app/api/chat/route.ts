@@ -41,6 +41,7 @@ import {
   detectInjection,
   UNTRUSTED_RULE,
 } from "@/lib/security/untrusted";
+import { appendAudit } from "@/lib/audit/store";
 
 export const runtime = "nodejs";
 
@@ -510,6 +511,15 @@ export async function POST(req: Request) {
                   status: "proposed",
                 });
                 emit(`\n\n⏳ Onay bekliyor: ${title} — "Görevler"de onayla.\n`);
+                appendAudit({
+                  agent,
+                  model: answerModel,
+                  action: block.name,
+                  tier: "approval",
+                  summary: `Onaya sunuldu: ${actionSummary(block.name, payload) || title}`,
+                  ok: true,
+                  project: project?.name,
+                }).catch(() => {});
                 toolResults.push({
                   type: "tool_result",
                   tool_use_id: block.id,
@@ -558,6 +568,17 @@ export async function POST(req: Request) {
                   /* kayıt hatası akışı bozmasın */
                 }
               }
+
+              appendAudit({
+                agent,
+                model: answerModel,
+                action: block.name,
+                tier: "auto",
+                summary: actionSummary(block.name, payload) || title,
+                ok,
+                result,
+                project: project?.name,
+              }).catch(() => {});
 
               emit(ok ? `\n\n✅ Yapıldı.\n` : `\n\n⚠️ ${result}\n`);
               toolResults.push({

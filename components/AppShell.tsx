@@ -10,6 +10,7 @@ import Releases from "./Releases";
 import Projects from "./Projects";
 import Skills from "./Skills";
 import Guardrail from "./Guardrail";
+import Audit from "./Audit";
 import type { Kickoff } from "./Chat";
 
 export type ConvMeta = {
@@ -48,6 +49,7 @@ const TITLES: Record<ViewKey, string> = {
   surumler: "Sürümler",
   loops: "Loops",
   guardrail: "Kontrol",
+  denetim: "Denetim",
   ayarlar: "Ayarlar",
 };
 
@@ -268,6 +270,8 @@ ekrana tıkla: tam ekran · Boşluk: konuş · fareyi oynat: menüler
           <Skills />
         ) : view === "guardrail" ? (
           <Guardrail />
+        ) : view === "denetim" ? (
+          <Audit />
         ) : (
           <Placeholder title={TITLES[view]} />
         )}
