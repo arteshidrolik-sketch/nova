@@ -35,6 +35,12 @@ export async function getSkillsForAgent(agent: AgentKey): Promise<Skill[]> {
   return (await loadSkills()).filter((s) => s.agentKeys.includes(agent));
 }
 
+export async function getSkillsByIds(ids: string[]): Promise<Skill[]> {
+  if (!ids.length) return [];
+  const set = new Set(ids);
+  return (await loadSkills()).filter((s) => set.has(s.id));
+}
+
 export async function createSkill(input: {
   name: string;
   description?: string;

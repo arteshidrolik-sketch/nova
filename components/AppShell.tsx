@@ -11,6 +11,7 @@ import Projects from "./Projects";
 import Skills from "./Skills";
 import Guardrail from "./Guardrail";
 import Audit from "./Audit";
+import Agents from "./Agents";
 import type { Kickoff } from "./Chat";
 
 export type ConvMeta = {
@@ -48,6 +49,7 @@ const TITLES: Record<ViewKey, string> = {
   beceriler: "Beceriler",
   surumler: "Sürümler",
   loops: "Loops",
+  ajanlar: "Ajanlar",
   guardrail: "Kontrol",
   denetim: "Denetim",
   ayarlar: "Ayarlar",
@@ -179,6 +181,19 @@ export default function AppShell() {
     setView("harita");
   }
 
+  // Özel ajanla yeni bir sohbet başlat (o ajana kilitli)
+  async function startAgentChat(agentId: string, name: string) {
+    const r = await fetch("/api/conversations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ forcedAgent: agentId, title: name }),
+    });
+    const d = await r.json();
+    setConvs(await refreshConvs());
+    setActiveConv(d.conversation.id);
+    setView("harita");
+  }
+
   function selectConversation(id: string) {
     setActiveConv(id);
     setView("harita");
@@ -272,6 +287,8 @@ ekrana tıkla: tam ekran · Boşluk: konuş · fareyi oynat: menüler
           <Guardrail />
         ) : view === "denetim" ? (
           <Audit />
+        ) : view === "ajanlar" ? (
+          <Agents onStartChat={startAgentChat} />
         ) : (
           <Placeholder title={TITLES[view]} />
         )}

@@ -35,6 +35,8 @@ import {
 import { getSkillsForAgent } from "@/lib/skills/store";
 import { getConversation } from "@/lib/conversations/store";
 import { isAgentKey } from "@/lib/agents/meta";
+import { getCustomAgent, type CustomAgent } from "@/lib/agents/custom";
+import { getSkillsByIds } from "@/lib/skills/store";
 import { logToVault } from "@/lib/vault/journal";
 import { getControl, isStopped } from "@/lib/control/store";
 import { getBudget, isOverCap, recordUsage } from "@/lib/budget/store";
@@ -139,11 +141,15 @@ export async function POST(req: Request) {
   // Sohbete kilitli ajan var mı? (ör. "Araştırma" sohbeti → research ajanı)
   // Kilitli sohbet PROJEDEN BAĞIMSIZDIR: orkestratör ve proje bağlamı atlanır.
   const conv = conversationId ? await getConversation(conversationId) : null;
-  const forcedAgent =
-    conv?.forcedAgent && isAgentKey(conv.forcedAgent) ? conv.forcedAgent : null;
+  const forcedRaw = conv?.forcedAgent || null;
+  const forcedAgent = forcedRaw && isAgentKey(forcedRaw) ? forcedRaw : null;
+  // Yerleşik değilse özel ajan mı? (kullanıcının oluşturduğu, data/agents.json)
+  const customAgent: CustomAgent | null =
+    forcedRaw && !forcedAgent ? (await getCustomAgent(forcedRaw)) ?? null : null;
+  const locked = !!forcedAgent || !!customAgent;
 
   // Proje bağlamı — bulunduğun SOHBETE bağlı proje (kilitli sohbette yok)
-  const project = forcedAgent
+  const project = locked
     ? null
     : conversationId
       ? await getProjectByConversation(conversationId)
@@ -163,13 +169,19 @@ export async function POST(req: Request) {
     }
   }
 
-  // 1) Ajan seçimi: kilitli sohbet → o ajan; beyin → developer; değilse orkestratör
+  // 1) Ajan seçimi: özel ajan → o; kilitli yerleşik → o; beyin → developer; değilse orkestratör
   const agent = forcedAgent
     ? forcedAgent
+    : customAgent
+      ? "general" // yerleşik-anahtar gerektiren yerler için güvenli varsayılan
+      : project?.self
+        ? "developer"
+        : await selectAgent(client, ROUTER_MODEL, messages, prevAgent);
+  let answerModel = customAgent
+    ? customAgent.model
     : project?.self
-      ? "developer"
-      : await selectAgent(client, ROUTER_MODEL, messages, prevAgent);
-  let answerModel = project?.self ? "claude-opus-4-8" : modelForAgent(agent);
+      ? "claude-opus-4-8"
+      : modelForAgent(agent);
   // Büyük dosya yazımı kesilmesin diye güçlü modellerde daha yüksek çıktı limiti
   let maxTokens = /opus|sonnet/.test(answerModel) ? 16000 : 8000;
   let escalated = false; // refusal olursa bir kez daha güçlü modele yükselt
@@ -183,7 +195,10 @@ export async function POST(req: Request) {
       ? "\n\n## İlgili geçmiş notlar (hafıza)\nBunları gerektiğinde kullan, gereksizse görmezden gel:\n" +
         relevant.map((m) => `- ${m.summary}`).join("\n")
       : "";
-  let system = SYSTEM_PROMPTS[agent];
+  // Özel ajanın kendi sistem promptu; yoksa yerleşik ajanınki
+  let system = customAgent
+    ? `Sen "${customAgent.name}" adlı bir asistansın.\n\n${customAgent.systemPrompt}`
+    : SYSTEM_PROMPTS[agent];
 
   if (project) {
     system +=
@@ -244,8 +259,10 @@ export async function POST(req: Request) {
     }
   }
 
-  // 4) Bu role yüklenmiş beceriler
-  const skills = await getSkillsForAgent(agent);
+  // 4) Yüklü beceriler — özel ajan kendi seçtiklerini, yerleşik ajan role atanmışları alır
+  const skills = customAgent
+    ? await getSkillsByIds(customAgent.skillIds)
+    : await getSkillsForAgent(agent);
   if (skills.length > 0) {
     system +=
       "\n\n## Yüklü beceriler (bu role atanmış — uygun olduğunda uygula)\n" +

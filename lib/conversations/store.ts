@@ -107,14 +107,18 @@ export async function getConversation(
   return (await loadConversations()).find((c) => c.id === id);
 }
 
-export async function createConversation(): Promise<Conversation> {
+export async function createConversation(opts?: {
+  forcedAgent?: string;
+  title?: string;
+}): Promise<Conversation> {
   const all = await loadConversations();
   const now = Date.now();
   const conv: Conversation = {
     id: crypto.randomUUID(),
-    title: DEFAULT_TITLE,
+    title: opts?.title?.trim() || DEFAULT_TITLE,
     createdAt: now,
     updatedAt: now,
+    forcedAgent: opts?.forcedAgent,
     messages: [],
   };
   all.push(conv);

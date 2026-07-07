@@ -12,6 +12,7 @@ export type IconName =
   | "beceriler"
   | "surumler"
   | "loops"
+  | "ajanlar"
   | "guardrail"
   | "denetim"
   | "ayarlar";
@@ -68,6 +69,16 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="M3 11v-1a4 4 0 0 1 4-4h14" />
       <path d="m7 22-4-4 4-4" />
       <path d="M21 13v1a4 4 0 0 1-4 4H3" />
+    </>
+  ),
+  // Ajanlar — robot/bot
+  ajanlar: (
+    <>
+      <rect x="5" y="8" width="14" height="9" rx="2" />
+      <path d="M12 8V5M9 5h6" />
+      <circle cx="9.5" cy="12.5" r="1" />
+      <circle cx="14.5" cy="12.5" r="1" />
+      <path d="M3 12v2M21 12v2" />
     </>
   ),
   // Kontrol — kalkan

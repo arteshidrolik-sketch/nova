@@ -11,6 +11,7 @@ export type ViewKey =
   | "beceriler"
   | "surumler"
   | "loops"
+  | "ajanlar"
   | "guardrail"
   | "denetim"
   | "ayarlar";
@@ -30,6 +31,7 @@ const MENU: { key: ViewKey; label: string; icon: string }[] = [
   { key: "beceriler", label: "Beceriler", icon: "🧩" },
   { key: "surumler", label: "Sürümler", icon: "🚀" },
   { key: "loops", label: "Loops", icon: "🔁" },
+  { key: "ajanlar", label: "Ajanlar", icon: "🤖" },
   { key: "guardrail", label: "Kontrol", icon: "🛡️" },
   { key: "denetim", label: "Denetim", icon: "📜" },
   { key: "ayarlar", label: "Ayarlar", icon: "⚙️" },

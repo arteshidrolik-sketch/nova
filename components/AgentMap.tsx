@@ -117,6 +117,41 @@ export default function AgentGraph({
   const speaking = voice === "speaking";
   const listening = voice === "listening";
 
+  // Kullanıcının özel ajanları → haritada merkez orb'dan çıkan yeni kollar
+  const [customAgents, setCustomAgents] = useState<
+    { id: string; name: string; emoji: string; color: string }[]
+  >([]);
+  useEffect(() => {
+    let cancel = false;
+    fetch("/api/agents")
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancel) return;
+        setCustomAgents(
+          (d.agents ?? []).map((a: { id: string; name: string; emoji: string; color: string }) => ({
+            id: a.id,
+            name: a.name,
+            emoji: a.emoji,
+            color: a.color,
+          })),
+        );
+      })
+      .catch(() => {});
+    return () => {
+      cancel = true;
+    };
+  }, []);
+  const customPos = customAgents.map((a, i) => {
+    const n = customAgents.length;
+    const ang = -Math.PI / 2 + ((i + 0.5) / n) * Math.PI * 2; // orb çevresine eşit dağıt
+    const R = 285;
+    return {
+      ...a,
+      x: Math.round(CX + Math.cos(ang) * R),
+      y: Math.round(CY + Math.sin(ang) * R),
+    };
+  });
+
   // Native tam ekran yoksa (ör. iPad/iOS) haritayı tüm ekranı kaplayacak
   // şekilde CSS ile "tam ekran" yaparız — her cihazda görünür sonuç.
   const [pseudoFs, setPseudoFs] = useState(false);
@@ -365,6 +400,19 @@ export default function AgentGraph({
           );
         })}
 
+        {/* özel ajanların kolları (orb'dan çıkan yeni bağlantılar) */}
+        {customPos.map((a) => (
+          <path
+            key={`ec-${a.id}`}
+            d={curve(a.x, a.y)}
+            fill="none"
+            stroke={a.color}
+            strokeOpacity={0.32}
+            strokeWidth={1.5}
+            strokeLinecap="round"
+          />
+        ))}
+
         {/* merkez çekirdek */}
         <g className="orb-halo">
           <circle cx={CX} cy={CY} r="82" fill="url(#halo)" />
@@ -426,6 +474,17 @@ export default function AgentGraph({
             </g>
           );
         })}
+
+        {/* özel ajan düğümleri */}
+        {customPos.map((a, i) => (
+          <g key={a.id} className="map-node" style={{ animationDelay: `${(i + 6) * 0.4}s` }}>
+            <circle cx={a.x} cy={a.y} r={9} fill="none" stroke={a.color} strokeWidth="2.5" strokeOpacity={0.85} />
+            <circle cx={a.x} cy={a.y} r={3.5} fill={a.color} />
+            <text x={a.x} y={a.y - 21} textAnchor="middle" fontSize="16" fontWeight={600} fill="#dbe6f5" style={{ paintOrder: "stroke", stroke: "#02040a", strokeWidth: 3 }}>
+              {a.emoji} {a.name}
+            </text>
+          </g>
+        ))}
         </g>
       </svg>
 

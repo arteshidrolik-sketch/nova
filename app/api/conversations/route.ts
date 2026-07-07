@@ -20,7 +20,11 @@ export async function GET() {
   return Response.json({ conversations });
 }
 
-export async function POST() {
-  const conversation = await createConversation();
+export async function POST(req: Request) {
+  const body = await req.json().catch(() => ({}));
+  const conversation = await createConversation({
+    forcedAgent: typeof body?.forcedAgent === "string" ? body.forcedAgent : undefined,
+    title: typeof body?.title === "string" ? body.title : undefined,
+  });
   return Response.json({ conversation });
 }
