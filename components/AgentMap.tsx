@@ -79,27 +79,6 @@ function curve(x: number, y: number): string {
   return `M ${CX} ${CY} Q ${cpx} ${cpy} ${x} ${y}`;
 }
 
-function Wave({ color, active }: { color: string; active: boolean }) {
-  return (
-    <div className="flex h-5 items-end gap-[3px]">
-      {Array.from({ length: 16 }).map((_, i) => (
-        <i
-          key={i}
-          style={{
-            display: "inline-block",
-            width: 3,
-            borderRadius: 2,
-            background: color,
-            height: active ? undefined : 4,
-            opacity: active ? 1 : 0.5,
-            animation: active ? `bar 0.9s ${i * 0.05}s infinite ease-in-out` : "none",
-          }}
-        />
-      ))}
-    </div>
-  );
-}
-
 export default function AgentGraph({
   active,
   voice = "idle",
@@ -503,30 +482,20 @@ export default function AgentGraph({
         {pseudoFs ? "🗕" : "⛶"}
       </button>
 
-      {/* ses kontrolü — tıklanabilir mikrofon + dalga */}
+      {/* orb'a tıkla → konuş (mikrofon butonu kaldırıldı; Boşluk tuşu da çalışır) */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onMic?.();
+        }}
+        title="Konuşmak için orb'a dokun (veya Boşluk tuşu)"
+        aria-label="Konuş"
+        className="absolute left-1/2 top-1/2 z-20 h-28 w-28 -translate-x-1/2 -translate-y-1/2 rounded-full"
+        style={{ background: "transparent", cursor: "pointer" }}
+      />
+
+      {/* ses: sadece "Nova" ile uyandırma */}
       <div className="absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 flex-col items-center gap-1.5">
-        <button
-          onClick={onMic}
-          title="Konuşmak için tıkla (veya Boşluk tuşu)"
-          className="btn-grad flex items-center gap-3 rounded-full px-5 py-2"
-          style={{
-            background: "rgba(4,8,18,0.6)",
-            backdropFilter: "blur(8px)",
-            border: `1px solid ${listening ? "#ef4444" : "var(--border)"}`,
-          }}
-        >
-          <span className="text-base">{listening ? "🔴" : "🎤"}</span>
-          <Wave color={listening ? "#ef4444" : "var(--accent)"} active={voice !== "idle"} />
-        </button>
-        <span className="text-[10px] font-semibold tracking-[0.25em]" style={{ color: "var(--text-muted)" }}>
-          {listening
-            ? "DİNLİYOR"
-            : speaking
-              ? "KONUŞUYOR"
-              : wakeOn
-                ? "'NOVA' DE"
-                : "KONUŞMAK İÇİN BAS"}
-        </span>
         <button
           onClick={onToggleWake}
           title="'Nova' diyerek sesle uyandır"
