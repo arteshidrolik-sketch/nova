@@ -48,24 +48,56 @@ function fmt(n: number): string {
   return String(n);
 }
 
+type EvalResult = {
+  id: string;
+  kind: "routing" | "injection";
+  input: string;
+  expected?: string;
+  got: string;
+  pass: boolean;
+};
+type EvalRun = {
+  ts: number;
+  results: EvalResult[];
+  routingScore: string;
+  injectionScore: string;
+  total: string;
+  pct: number;
+};
+
 export default function Guardrail() {
   const [control, setControl] = useState<Control | null>(null);
   const [budget, setBudget] = useState<BudgetStatus | null>(null);
   const [capInput, setCapInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [evalRun, setEvalRun] = useState<EvalRun | null>(null);
+  const [evalBusy, setEvalBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
-      const [c, b] = await Promise.all([
+      const [c, b, e] = await Promise.all([
         fetch("/api/control").then((r) => r.json()),
         fetch("/api/budget").then((r) => r.json()),
+        fetch("/api/evals").then((r) => r.json()),
       ]);
       setControl(c.control ?? null);
       setBudget(b.status ?? null);
+      setEvalRun(e.run ?? null);
     } catch {
       /* yoksay */
     }
   }, []);
+
+  async function runEvals() {
+    setEvalBusy(true);
+    try {
+      const r = await fetch("/api/evals", { method: "POST" });
+      const d = await r.json();
+      if (d.run) setEvalRun(d.run);
+    } finally {
+      setEvalBusy(false);
+    }
+  }
 
   async function saveCap() {
     const cap = Number(capInput.replace(/[^\d]/g, "")) || 0;
@@ -295,6 +327,72 @@ export default function Guardrail() {
               Riskli aksiyonlar sohbette çağrılınca &quot;Görevler&quot;de GO onayı
               bekler. Prod deploy, para, secret gibi işler ajanlara kapalıdır.
             </p>
+          </section>
+
+          {/* Ajan değerlendirme (eval) */}
+          <section
+            className="rounded-xl border p-5"
+            style={{ borderColor: "var(--border)", background: "var(--bg-panel)" }}
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <span className="font-semibold">🧪 Ajan değerlendirme (eval)</span>
+              <button
+                onClick={runEvals}
+                disabled={evalBusy}
+                className="rounded-lg px-3 py-1.5 text-sm font-medium text-black disabled:opacity-40"
+                style={{ background: "var(--accent)" }}
+              >
+                {evalBusy ? "Çalışıyor…" : "Testleri çalıştır"}
+              </button>
+            </div>
+            <p className="mb-3 text-xs" style={{ color: "var(--text-muted)" }}>
+              Altın görev seti: yönlendirme doğruluğu + injection dayanıklılığı.
+              Prompt/model değişince skor düşerse regresyon var demektir.
+            </p>
+
+            {!evalRun ? (
+              <div className="text-sm" style={{ color: "var(--text-muted)" }}>
+                Henüz çalıştırılmadı.
+              </div>
+            ) : (
+              <>
+                <div className="mb-3 flex flex-wrap items-center gap-3 text-sm">
+                  <span
+                    className="rounded-full px-2.5 py-1 font-bold"
+                    style={{
+                      color: evalRun.pct >= 80 ? "#10b981" : "#f59e0b",
+                      background: `${evalRun.pct >= 80 ? "#10b981" : "#f59e0b"}1a`,
+                    }}
+                  >
+                    Toplam {evalRun.total} · %{evalRun.pct}
+                  </span>
+                  <span style={{ color: "var(--text-muted)" }}>
+                    Yönlendirme {evalRun.routingScore} · Injection {evalRun.injectionScore}
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  {evalRun.results.map((r) => (
+                    <div
+                      key={r.id}
+                      className="flex items-start gap-2 text-xs"
+                      title={r.input}
+                    >
+                      <span style={{ color: r.pass ? "#10b981" : "#ef4444" }}>
+                        {r.pass ? "✓" : "✗"}
+                      </span>
+                      <span className="font-mono" style={{ color: "var(--text-muted)" }}>
+                        [{r.kind === "routing" ? "yön" : "inj"}]
+                      </span>
+                      <span className="min-w-0 flex-1 truncate" style={{ color: "var(--text)" }}>
+                        {r.kind === "routing"
+                          ? `${r.input.slice(0, 40)} → beklenen: ${r.expected}, gelen: ${r.got}`
+                          : `${r.input.slice(0, 40)} → ${r.got}`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </section>
         </div>
       </div>
