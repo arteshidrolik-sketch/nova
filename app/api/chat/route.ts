@@ -33,7 +33,7 @@ import {
   setActive,
 } from "@/lib/projects/store";
 import { getSkillsForAgent } from "@/lib/skills/store";
-import { getConversation } from "@/lib/conversations/store";
+import { getConversation, updateConversation } from "@/lib/conversations/store";
 import { isAgentKey } from "@/lib/agents/meta";
 import { getCustomAgent, type CustomAgent } from "@/lib/agents/custom";
 import { getSkillsByIds } from "@/lib/skills/store";
@@ -334,9 +334,41 @@ export async function POST(req: Request) {
     return { role: m.role, content: m.content };
   });
 
+  // Rozet için gösterilecek ajan: özel ajansa onun id'si, değilse yerleşik anahtar
+  const responseAgent = customAgent ? customAgent.id : agent;
+
+  // İstemci sohbetten çıksa bile cevap kaybolmasın diye iş bitince SUNUCU kaydeder.
+  const lightMsgs = messages.map((m) => ({
+    role: m.role,
+    content: m.content,
+    ...(m.attachments?.length
+      ? { attachments: m.attachments.map((a) => ({ kind: a.kind, name: a.name })) }
+      : {}),
+  }));
+  const persistFinal = (text: string) => {
+    if (!conversationId || !text.trim()) return;
+    const finalConv = [
+      ...lightMsgs,
+      {
+        role: "assistant" as const,
+        content: text,
+        agent: responseAgent,
+        model: answerModel,
+        ...(customAgent
+          ? {
+              agentName: customAgent.name,
+              agentEmoji: customAgent.emoji,
+              agentColor: customAgent.color,
+            }
+          : {}),
+      },
+    ];
+    updateConversation(conversationId, { messages: finalConv }).catch(() => {});
+  };
+
   // İşi bağlantıdan AYIR: arka planda çalıştır, istemci poll ile takip eder.
   const runId = crypto.randomUUID();
-  createRun(runId, agent, answerModel);
+  createRun(runId, responseAgent, answerModel);
   const emit = (s: string) => appendRun(runId, s);
 
   (async () => {
@@ -663,10 +695,21 @@ export async function POST(req: Request) {
         const msg = err instanceof Error ? err.message : "Model hatası";
         emit(`\n\n⚠️ ${msg}`);
         finishRun(runId, "error", msg);
+      } finally {
+        // İş bitti (normal/hatalı/erken çıkış): cevabı sohbete SUNUCU kaydeder →
+        // kullanıcı sohbetten çıkmış olsa bile cevap kaybolmaz.
+        persistFinal(getRun(runId)?.output ?? "");
       }
     })();
 
-  return Response.json({ runId, agent, model: answerModel });
+  return Response.json({
+    runId,
+    agent: responseAgent,
+    model: answerModel,
+    agentName: customAgent?.name,
+    agentEmoji: customAgent?.emoji,
+    agentColor: customAgent?.color,
+  });
 }
 
 // İstemci poll: çalışan işin o ana kadarki çıktısını (offset'ten sonrasını) döndürür.

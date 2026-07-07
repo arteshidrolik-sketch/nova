@@ -32,6 +32,10 @@ type Message = {
   agent?: AgentKey;
   model?: string;
   attachments?: Attachment[];
+  // Özel ajan (kullanıcının oluşturduğu) — rozet için
+  agentName?: string;
+  agentEmoji?: string;
+  agentColor?: string;
 };
 
 // Model kimliğini kısa okunur ada çevir
@@ -142,19 +146,28 @@ function MessageBody({ content }: { content: string }) {
   return <>{parts}</>;
 }
 
-function AgentBadge({ agent }: { agent: AgentKey }) {
-  const meta = AGENT_META[agent];
+function AgentBadge({ m }: { m: Message }) {
+  let color: string, emoji: string, label: string;
+  if (m.agentName) {
+    // özel ajan
+    color = m.agentColor || "#22d3ee";
+    emoji = m.agentEmoji || "🤖";
+    label = m.agentName;
+  } else if (m.agent && AGENT_META[m.agent]) {
+    const meta = AGENT_META[m.agent];
+    color = meta.color;
+    emoji = meta.emoji;
+    label = meta.label;
+  } else {
+    return null;
+  }
   return (
     <span
       className="mb-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
-      style={{
-        color: meta.color,
-        background: `${meta.color}1a`,
-        border: `1px solid ${meta.color}40`,
-      }}
+      style={{ color, background: `${color}1a`, border: `1px solid ${color}40` }}
     >
-      <span>{meta.emoji}</span>
-      {meta.label}
+      <span>{emoji}</span>
+      {label}
     </span>
   );
 }
@@ -881,12 +894,25 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       }
       const startData = await res.json();
       const runId: string = startData?.runId;
-      const agent: AgentKey = isAgentKey(startData?.agent)
-        ? startData.agent
-        : "general";
+      const isBuiltin = isAgentKey(startData?.agent);
+      const agent: AgentKey | undefined = isBuiltin ? startData.agent : undefined;
+      const agentName: string | undefined = startData?.agentName;
+      const agentEmoji: string | undefined = startData?.agentEmoji;
+      const agentColor: string | undefined = startData?.agentColor;
       let model: string | undefined = startData?.model;
-      onAgentActivity?.(agent); // haritada seçilen ajan parlasın
-      setMessages([...next, { role: "assistant", content: "", agent, model }]);
+      // yerleşik ajanı haritada parlat; özel ajanda orb nötr parlar
+      onAgentActivity?.(isBuiltin ? (startData.agent as AgentKey) : "orchestrator");
+      // Asistan mesajını tüm alanlarıyla kur (rozet özel ajanı da gösterir)
+      const mkA = (content: string): Message => ({
+        role: "assistant",
+        content,
+        agent,
+        model,
+        agentName,
+        agentEmoji,
+        agentColor,
+      });
+      setMessages([...next, mkA("")]);
 
       // 2) Poll ile takip et — bağlantı kopsa bile iş sunucuda sürer, ASLA takılmaz
       let acc = "";
@@ -942,14 +968,14 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
           acc += p.chunk;
           offset = p.len ?? offset;
           if (p.model) model = p.model;
-          setMessages([...next, { role: "assistant", content: acc, agent, model }]);
+          setMessages([...next, mkA(acc)]);
           scrollToBottom();
           pump(false); // akarken tamamlanan cümleleri sesli oku
         }
         status = p.status ?? "running";
         if (status === "error" && p.error) {
           acc += `\n\n⚠️ ${p.error}`;
-          setMessages([...next, { role: "assistant", content: acc, agent, model }]);
+          setMessages([...next, mkA(acc)]);
         }
       }
 
@@ -957,10 +983,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       const replyText = acc.trim()
         ? acc
         : "⚠️ Yanıt alınamadı (oturum/bağlantı kesilmiş olabilir). Tekrar dener misin?";
-      const finalMsgs: Message[] = [
-        ...next,
-        { role: "assistant", content: replyText, agent, model },
-      ];
+      const finalMsgs: Message[] = [...next, mkA(replyText)];
       setMessages(finalMsgs);
       persist(finalMsgs);
 
@@ -1188,7 +1211,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
             return (
               <div key={i} className="msg-in flex flex-col items-start">
                 <div className="mb-1 flex items-center gap-1.5">
-                  {m.agent && <AgentBadge agent={m.agent} />}
+                  {(m.agent || m.agentName) && <AgentBadge m={m} />}
                   {m.model && (
                     <span
                       className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
