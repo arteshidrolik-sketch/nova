@@ -14,6 +14,7 @@ export type Conversation = {
   createdAt: number;
   updatedAt: number;
   pinned?: boolean; // sabit sohbet (silinemez, listede üstte)
+  forcedAgent?: string; // bu sohbet her zaman bu ajana gider (orkestratör atlanır)
   messages: ConvMessage[];
 };
 
@@ -21,6 +22,7 @@ const DIR = path.join(process.cwd(), "data");
 const FILE = path.join(DIR, "conversations.json");
 const DEFAULT_TITLE = "Yeni sohbet";
 const PINNED_TITLE = "ne var ne yok";
+const RESEARCH_TITLE = "Araştırma";
 
 function truncate(s: string, n = 42): string {
   const clean = s.replace(/\s+/g, " ").trim();
@@ -62,7 +64,8 @@ export async function listConversations(): Promise<
 // Sabit "ne var ne yok" sohbetini garantiler (yoksa oluşturur)
 export async function ensurePinnedConversation(): Promise<Conversation> {
   const all = await loadConversations();
-  const existing = all.find((c) => c.pinned);
+  // forcedAgent'ı olmayan sabit sohbet = genel "ne var ne yok"
+  const existing = all.find((c) => c.pinned && !c.forcedAgent);
   if (existing) return existing;
   const now = Date.now();
   const conv: Conversation = {
@@ -71,6 +74,26 @@ export async function ensurePinnedConversation(): Promise<Conversation> {
     createdAt: now,
     updatedAt: now,
     pinned: true,
+    messages: [],
+  };
+  all.push(conv);
+  await persist(all);
+  return conv;
+}
+
+// Sabit "Araştırma" sohbeti — research ajanına kilitli, projelerden bağımsız
+export async function ensureResearchConversation(): Promise<Conversation> {
+  const all = await loadConversations();
+  const existing = all.find((c) => c.forcedAgent === "research");
+  if (existing) return existing;
+  const now = Date.now();
+  const conv: Conversation = {
+    id: crypto.randomUUID(),
+    title: RESEARCH_TITLE,
+    createdAt: now,
+    updatedAt: now,
+    pinned: true,
+    forcedAgent: "research",
     messages: [],
   };
   all.push(conv);

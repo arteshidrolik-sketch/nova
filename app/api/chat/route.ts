@@ -33,6 +33,8 @@ import {
   setActive,
 } from "@/lib/projects/store";
 import { getSkillsForAgent } from "@/lib/skills/store";
+import { getConversation } from "@/lib/conversations/store";
+import { isAgentKey } from "@/lib/agents/meta";
 import { logToVault } from "@/lib/vault/journal";
 import { getControl, isStopped } from "@/lib/control/store";
 import { getBudget, isOverCap, recordUsage } from "@/lib/budget/store";
@@ -134,10 +136,18 @@ export async function POST(req: Request) {
   await getControl();
   await getBudget();
 
-  // Proje bağlamı — bulunduğun SOHBETE bağlı proje (global aktif değil)
-  const project = conversationId
-    ? await getProjectByConversation(conversationId)
-    : null;
+  // Sohbete kilitli ajan var mı? (ör. "Araştırma" sohbeti → research ajanı)
+  // Kilitli sohbet PROJEDEN BAĞIMSIZDIR: orkestratör ve proje bağlamı atlanır.
+  const conv = conversationId ? await getConversation(conversationId) : null;
+  const forcedAgent =
+    conv?.forcedAgent && isAgentKey(conv.forcedAgent) ? conv.forcedAgent : null;
+
+  // Proje bağlamı — bulunduğun SOHBETE bağlı proje (kilitli sohbette yok)
+  const project = forcedAgent
+    ? null
+    : conversationId
+      ? await getProjectByConversation(conversationId)
+      : null;
   // UI tutarlılığı için global aktifi de senkronla
   if (project && (await getActiveId()) !== project.id) {
     await setActive(project.id);
@@ -153,10 +163,12 @@ export async function POST(req: Request) {
     }
   }
 
-  // 1) Orkestratör — beyin (kendi kodu) HER ZAMAN developer + Opus 4.8; değilse router
-  const agent = project?.self
-    ? "developer"
-    : await selectAgent(client, ROUTER_MODEL, messages, prevAgent);
+  // 1) Ajan seçimi: kilitli sohbet → o ajan; beyin → developer; değilse orkestratör
+  const agent = forcedAgent
+    ? forcedAgent
+    : project?.self
+      ? "developer"
+      : await selectAgent(client, ROUTER_MODEL, messages, prevAgent);
   let answerModel = project?.self ? "claude-opus-4-8" : modelForAgent(agent);
   // Büyük dosya yazımı kesilmesin diye güçlü modellerde daha yüksek çıktı limiti
   let maxTokens = /opus|sonnet/.test(answerModel) ? 16000 : 8000;
