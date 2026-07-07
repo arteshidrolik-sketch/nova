@@ -1,7 +1,8 @@
-// Office dosyalarını (docx/xlsx/xls) sunucuda metne çevirir (Claude binary okuyamaz).
+// Office/PDF dosyalarını sunucuda metne çevirir (form alanlarına yüklenebilsin).
 // @ts-ignore - mammoth tip dosyası yok
 import mammoth from "mammoth";
 import * as XLSX from "xlsx";
+import { extractText, getDocumentProxy } from "unpdf";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -26,6 +27,12 @@ export async function POST(req: Request) {
         txt += `# ${s}\n${XLSX.utils.sheet_to_csv(wb.Sheets[s])}\n\n`;
       }
       return Response.json({ text: txt });
+    }
+    if (/\.pdf$/i.test(name)) {
+      const pdf = await getDocumentProxy(new Uint8Array(buf));
+      const { text } = await extractText(pdf, { mergePages: true });
+      const out = Array.isArray(text) ? text.join("\n") : String(text ?? "");
+      return Response.json({ text: out });
     }
     return Response.json({ error: "unsupported" }, { status: 400 });
   } catch (e) {

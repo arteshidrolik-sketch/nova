@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type CustomAgent = {
   id: string;
@@ -41,6 +41,72 @@ export default function Agents({
   const [editing, setEditing] = useState<string | null>(null);
   const [form, setForm] = useState(empty);
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  function readText(file: File): Promise<string> {
+    return new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(String(r.result || ""));
+      r.onerror = rej;
+      r.readAsText(file);
+    });
+  }
+  function readDataUrl(file: File): Promise<string> {
+    return new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(String(r.result || ""));
+      r.onerror = rej;
+      r.readAsDataURL(file);
+    });
+  }
+
+  // Yüklenen dosyanın metnini çıkarıp sistem promptuna ekle (PDF/Word/Excel/metin)
+  async function handleFile(file: File) {
+    if (file.size > 12 * 1024 * 1024) {
+      alert("Dosya çok büyük (en fazla 12 MB).");
+      return;
+    }
+    setUploading(true);
+    try {
+      let text = "";
+      if (
+        /\.(txt|md|markdown|json|csv)$/i.test(file.name) ||
+        file.type.startsWith("text/")
+      ) {
+        text = await readText(file);
+      } else if (/\.(pdf|docx|xlsx|xls)$/i.test(file.name)) {
+        const b64 = (await readDataUrl(file)).split(",")[1] || "";
+        const r = await fetch("/api/extract", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: file.name, data: b64 }),
+        });
+        const d = await r.json();
+        if (r.ok && d.text) text = String(d.text);
+        else {
+          alert(`Okunamadı: ${d?.error ?? "hata"}`);
+          return;
+        }
+      } else {
+        alert("Desteklenmeyen dosya. PDF, Word, Excel veya metin yükle.");
+        return;
+      }
+      text = text.trim().slice(0, 100000);
+      if (text)
+        setForm((f) => ({
+          ...f,
+          systemPrompt: f.systemPrompt.trim()
+            ? f.systemPrompt + "\n\n" + text
+            : text,
+        }));
+    } catch {
+      alert("Dosya işlenemedi.");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
 
   const refresh = useCallback(async () => {
     try {
@@ -170,11 +236,35 @@ export default function Agents({
                 className="w-full rounded-lg border px-3 py-2 text-sm outline-none"
                 style={inputStyle}
               />
+              <div className="flex items-center justify-between">
+                <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  Sistem promptu (talimat)
+                </span>
+                <button
+                  onClick={() => fileRef.current?.click()}
+                  disabled={uploading}
+                  className="flex items-center gap-1 text-xs disabled:opacity-50"
+                  style={{ color: "var(--accent)" }}
+                  title="PDF, Word, Excel veya metin dosyasından promptu yükle"
+                >
+                  {uploading ? "okunuyor…" : "📎 Dosyadan yükle (PDF/Word/metin)"}
+                </button>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".pdf,.docx,.xlsx,.xls,.txt,.md,.markdown,.json,.csv,text/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleFile(f);
+                  }}
+                />
+              </div>
               <textarea
                 value={form.systemPrompt}
                 onChange={(e) => setForm({ ...form, systemPrompt: e.target.value })}
                 rows={7}
-                placeholder="Sistem promptu — bu ajan nasıl davransın? Rolü, üslubu, kuralları, uzmanlığı…"
+                placeholder="Sistem promptu — bu ajan nasıl davransın? Rolü, üslubu, kuralları, uzmanlığı… (ya da yukarıdan bir dosya yükle)"
                 className="w-full rounded-lg border p-2 text-sm outline-none"
                 style={inputStyle}
               />
