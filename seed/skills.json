@@ -273,5 +273,21 @@
     ],
     "source": "https://github.com/obra/superpowers",
     "createdAt": 1751500000000
+  },
+  {
+    "id": "graphify",
+    "name": "Graphify — Kodtabanı Bilgi Grafiği",
+    "description": "Projeyi bilgi grafiğine çevirip mimari/kodtabanı sorularını grep yerine grafı sorgulayarak yanıtla; graphify . ile haritalar, GRAPH_REPORT.md okur, graphify update . ile günceller.",
+    "content": "Tetiklenme: Bir kodtabanı/proje hakkında mimari, yapı, \"X nerede\", bağımlılık, bileşenler nasıl bağlı gibi sorularda; büyük bir projeyi anlamaya başlarken ya da değişiklik öncesi haritalamada Graphify kullan.\n\nGraphify projeyi bir BİLGİ GRAFİĞİNE çevirir — dosyaları grep'lemek yerine grafı sorgularsın. Kod tree-sitter AST ile YERELDE ayrıştırılır (LLM yok, API maliyeti yok, hiçbir şey makineden çıkmaz); doküman/PDF/görsel için model kullanılır. Vektör index değil; gezilebilir gerçek bir graf.\n\n## Kurallar\n- Mimari/kodtabanı sorusuna cevap vermeden ÖNCE, varsa graphify-out/GRAPH_REPORT.md oku (god node'lar, topluluk yapısı, önerilen sorular).\n- graphify-out/wiki/index.md varsa ham dosyaları okumak yerine onu gez.\n- Graf yoksa: run_command ile graphify . çalıştır → graphify-out/ içinde graph.html, GRAPH_REPORT.md, graph.json üretir.\n- Bu oturumda kod dosyası değiştirdiysen graphify update . çalıştır (AST-only, API maliyeti yok) → graf güncel kalsın.\n\n## Kurulum (yoksa)\nCLI kurulu değilse önce kur: uv tool install graphifyy  (ya da: pip install graphifyy). Sonra graphify komutlarını kullan.\n\nKaynak: github.com/Graphify-Labs/graphify",
+    "agentKeys": [
+      "general",
+      "developer",
+      "codeReviewer",
+      "research",
+      "releaseStore",
+      "projectOps"
+    ],
+    "source": "https://github.com/Graphify-Labs/graphify",
+    "createdAt": 1751600000000
   }
 ]
