@@ -165,6 +165,8 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   const wakeRef = useRef<Recognition | null>(null); // "Nova" wake-word dinleyici
   const wakeOnRef = useRef(false);
   const ttsKeepAlive = useRef<ReturnType<typeof setInterval> | null>(null); // Edge/Chrome 15sn kesme hatası için
+  const ttsQueueRef = useRef<string[]>([]); // streaming TTS kuyruğu (cümle cümle)
+  const ttsActiveRef = useRef(false);
   // Tarayıcı-içi Whisper (Edge/Safari/Firefox — native STT çalışmaz)
   const [whisperStatus, setWhisperStatus] = useState<
     "idle" | "loading" | "recording" | "transcribing"
@@ -383,85 +385,98 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     }
   }
 
-  function speak(text: string) {
-    const synth = typeof window !== "undefined" ? window.speechSynthesis : null;
-    if (!synth) return;
-    // Sadece Türkçe düz metni oku — kodları/teknik kısımları SESLENDİRME.
-    const clean = text
-      // ``` fenced kod blokları → tamamen at
-      .replace(/```[\s\S]*?```/g, " ")
+  // Sadece Türkçe düz metni bırak — kodları/teknik kısımları SESLENDİRME.
+  function cleanForSpeech(text: string): string {
+    return text
+      .replace(/```[\s\S]*?```/g, " ") // fenced kod blokları
       .replace(/~~~[\s\S]*?~~~/g, " ")
-      // markdown link [metin](url) → sadece metin
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-      // satır içi kod `...` → at (dosya adı/komut vb. okunmasın)
-      .replace(/`[^`]*`/g, " ")
-      // çıplak URL'ler → at
-      .replace(/https?:\/\/\S+/g, " ")
-      // girintili (4+ boşluk/tab ile başlayan) kod satırları → at
-      .replace(/^[ \t]{4,}\S.*$/gm, " ")
-      // dosya-yolu benzeri jetonlar (a/b/c.ext) → at
-      .replace(/\S*\/\S+\.[A-Za-z0-9]{1,5}\b/g, " ")
-      // emojiler
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // link → sadece metin
+      .replace(/`[^`]*`/g, " ") // satır içi kod
+      .replace(/https?:\/\/\S+/g, " ") // URL
+      .replace(/^[ \t]{4,}\S.*$/gm, " ") // girintili kod satırları
+      .replace(/\S*\/\S+\.[A-Za-z0-9]{1,5}\b/g, " ") // dosya yolları
       .replace(/\p{Extended_Pictographic}/gu, "")
       .replace(/[\u{1F1E6}-\u{1F1FF}\u{1F3FB}-\u{1F3FF}️‍⃣]/gu, "")
-      // kalan markdown işaretleri
       .replace(/[#*_>~|]/g, " ")
       .replace(/[ \t]{2,}/g, " ")
       .replace(/\n{2,}/g, ". ")
-      .replace(/(?:\s*\.){2,}\s*/g, ". ") // tekrar eden noktaları sadeleştir
+      .replace(/(?:\s*\.){2,}\s*/g, ". ")
       .trim();
-    if (!clean) return;
+  }
 
-    // Ses seçimi: kayıtlı ses → yerel Türkçe → herhangi Türkçe → yerel → ilk ses
-    // (yerel sesi tercih et: ağ-bağımlı "Online/Natural" sesler sessiz kalabiliyor)
+  function pickVoice(synth: SpeechSynthesis): SpeechSynthesisVoice | null {
     const list = synth.getVoices();
     const tr = list.filter((v) => v.lang.toLowerCase().startsWith("tr"));
-    const chosen =
+    return (
       list.find((v) => v.voiceURI === voiceURIRef.current) ||
       tr.find((v) => v.localService) ||
       tr[0] ||
       list.find((v) => v.localService) ||
       list[0] ||
-      null;
+      null
+    );
+  }
 
-    // Uzun metni cümlelere böl: kısa parçalar 15 sn kesme hatasını önler
+  // Temiz metni cümlelere bölüp kuyruğa ekle; çalmıyorsa çalmaya başla.
+  // Streaming: cevap akarken tamamlanan cümleler kuyruğa eklenip anında okunur.
+  function enqueueSpeak(cleanText: string) {
+    const synth = typeof window !== "undefined" ? window.speechSynthesis : null;
+    if (!synth || !cleanText) return;
     const parts =
-      clean.match(/[^.!?…\n]+[.!?…]*/g)?.map((s) => s.trim()).filter(Boolean) ?? [clean];
-    // çok uzun cümleleri de ~200 karakterde parçala
-    const chunks: string[] = [];
+      cleanText.match(/[^.!?…\n]+[.!?…]*/g)?.map((s) => s.trim()).filter(Boolean) ?? [
+        cleanText,
+      ];
     for (const p of parts) {
-      if (p.length <= 220) chunks.push(p);
-      else {
-        for (let i = 0; i < p.length; i += 200) chunks.push(p.slice(i, i + 200));
-      }
+      if (p.length <= 220) ttsQueueRef.current.push(p);
+      else for (let i = 0; i < p.length; i += 200) ttsQueueRef.current.push(p.slice(i, i + 200));
     }
+    runQueue();
+  }
 
-    synth.cancel(); // önceki kuyruğu temizle
+  function runQueue() {
+    const synth = typeof window !== "undefined" ? window.speechSynthesis : null;
+    if (!synth || ttsActiveRef.current || ttsQueueRef.current.length === 0) return;
+    ttsActiveRef.current = true;
     setSpeaking(true);
     startTtsKeepAlive();
-
-    let i = 0;
-    const next = () => {
-      if (i >= chunks.length) {
+    const voice = pickVoice(synth);
+    const step = () => {
+      const chunk = ttsQueueRef.current.shift();
+      if (chunk == null) {
+        ttsActiveRef.current = false;
         setSpeaking(false);
         stopTtsKeepAlive();
-        resumeWake(); // TTS bitince wake'e geri dön (kendi sesini duymaz)
+        resumeWake();
         return;
       }
-      const u = new SpeechSynthesisUtterance(chunks[i++]);
-      if (chosen) {
-        u.voice = chosen;
-        u.lang = chosen.lang;
+      const u = new SpeechSynthesisUtterance(chunk);
+      if (voice) {
+        u.voice = voice;
+        u.lang = voice.lang;
       } else {
         u.lang = "tr-TR";
       }
       u.rate = 1;
       u.pitch = 1;
-      u.onend = next;
-      u.onerror = next; // bir parça patlarsa sıradakine geç (takılma yok)
+      u.onend = step;
+      u.onerror = step;
       synth.speak(u);
     };
-    next();
+    step();
+  }
+
+  function cancelSpeak() {
+    ttsQueueRef.current = [];
+    ttsActiveRef.current = false;
+    if (typeof window !== "undefined") window.speechSynthesis?.cancel();
+    setSpeaking(false);
+    stopTtsKeepAlive();
+  }
+
+  // Tam metni bir kerede seslendir (önceki kuyruğu iptal eder).
+  function speak(text: string) {
+    cancelSpeak();
+    enqueueSpeak(cleanForSpeech(text));
   }
 
   function stopListening() {
@@ -486,7 +501,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       );
       return;
     }
-    if (typeof window !== "undefined") window.speechSynthesis?.cancel();
+    cancelSpeak(); // konuşurken mikrofona basınca Nova sussun (kuyruk dahil)
     // wake dinleyiciyi ve eski komut oturumunu kapat (mikrofon serbest kalsın)
     try {
       wakeRef.current?.abort();
@@ -579,7 +594,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       return;
     }
     try {
-      window.speechSynthesis?.cancel();
+      cancelSpeak();
       // Model yüklü değilse indir (ilk sefer)
       if (whisperStatusRef.current === "idle") {
         const { whisperReady, loadWhisper } = await import("@/lib/voice/whisper");
@@ -830,6 +845,31 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       let offset = 0;
       let status = "running";
       const startedAt = Date.now();
+
+      // Streaming TTS: cevap akarken tamamlanan cümleleri anında oku (bitişi bekleme)
+      const willSpeak = speakRef.current || voiceReplyRef.current;
+      if (willSpeak) cancelSpeak(); // önceki cevabın sesini durdur
+      let spokenChar = 0;
+      const pump = (final: boolean) => {
+        if (!willSpeak) return;
+        let end = acc.length;
+        if (!final) {
+          // açık kod bloğu içindeysek kapanana kadar bekle (kodu okumayalım)
+          if ((acc.match(/```/g) || []).length % 2 === 1) {
+            const li = acc.lastIndexOf("```");
+            end = li >= 0 ? li : acc.length;
+          }
+          // sadece son cümle sınırına kadar olan kısmı seslendir
+          const seg = acc.slice(spokenChar, end);
+          const m = seg.match(/^[\s\S]*[.!?…\n]/);
+          if (!m) return;
+          end = spokenChar + m[0].length;
+        }
+        if (end <= spokenChar) return;
+        const cleaned = cleanForSpeech(acc.slice(spokenChar, end));
+        spokenChar = end;
+        if (cleaned) enqueueSpeak(cleaned);
+      };
       while (status === "running") {
         await new Promise((r) => setTimeout(r, 700));
         if (Date.now() - startedAt > 20 * 60 * 1000) {
@@ -856,6 +896,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
           if (p.model) model = p.model;
           setMessages([...next, { role: "assistant", content: acc, agent, model }]);
           scrollToBottom();
+          pump(false); // akarken tamamlanan cümleleri sesli oku
         }
         status = p.status ?? "running";
         if (status === "error" && p.error) {
@@ -875,7 +916,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       setMessages(finalMsgs);
       persist(finalMsgs);
 
-      if ((speakRef.current || voiceReplyRef.current) && acc) speak(acc);
+      pump(true); // kalan son cümleyi de oku
       voiceReplyRef.current = false;
 
       fetch("/api/memory", {
@@ -989,8 +1030,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
           )}
           <button
             onClick={() => {
-              if (speakEnabled && typeof window !== "undefined")
-                window.speechSynthesis?.cancel();
+              if (speakEnabled) cancelSpeak();
               setSpeakEnabled((v) => !v);
             }}
             title="Yanıtları sesli oku"
