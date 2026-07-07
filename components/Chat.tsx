@@ -96,6 +96,34 @@ function Typing() {
   );
 }
 
+// Üretilen görsel + indirme butonu (fal URL'lerini proxy ile güvenle indirir).
+function GeneratedImage({ url }: { url: string }) {
+  return (
+    <span className="group relative my-2 inline-block max-w-full">
+      <img
+        src={url}
+        alt="üretilen görsel"
+        loading="lazy"
+        className="block max-w-full rounded-xl"
+        style={{ maxHeight: 460, border: "1px solid var(--border)" }}
+      />
+      <a
+        href={`/api/download?url=${encodeURIComponent(url)}`}
+        title="Görseli indir"
+        className="btn-grad absolute right-2 top-2 flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium"
+        style={{
+          background: "rgba(4,8,18,0.72)",
+          backdropFilter: "blur(6px)",
+          border: "1px solid var(--border)",
+          color: "var(--text)",
+        }}
+      >
+        ⬇ İndir
+      </a>
+    </span>
+  );
+}
+
 // Asistan mesajını render eder: markdown görselleri (![](url)) <img> olarak gösterir.
 function MessageBody({ content }: { content: string }) {
   const re = /!\[[^\]]*\]\((https?:\/\/[^\s)]+)\)/g;
@@ -106,16 +134,7 @@ function MessageBody({ content }: { content: string }) {
   while ((m = re.exec(content))) {
     if (m.index > last)
       parts.push(<span key={k++}>{content.slice(last, m.index)}</span>);
-    parts.push(
-      <img
-        key={k++}
-        src={m[1]}
-        alt="üretilen görsel"
-        loading="lazy"
-        className="my-2 block max-w-full rounded-xl"
-        style={{ maxHeight: 460, border: "1px solid var(--border)" }}
-      />,
-    );
+    parts.push(<GeneratedImage key={k++} url={m[1]} />);
     last = m.index + m[0].length;
   }
   if (last < content.length)
