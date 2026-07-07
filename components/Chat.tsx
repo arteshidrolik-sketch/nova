@@ -386,12 +386,29 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   function speak(text: string) {
     const synth = typeof window !== "undefined" ? window.speechSynthesis : null;
     if (!synth) return;
+    // Sadece Türkçe düz metni oku — kodları/teknik kısımları SESLENDİRME.
     const clean = text
-      .replace(/[#*`_>~|]/g, " ")
-      .replace(/\p{Extended_Pictographic}/gu, "") // emojileri okuma
+      // ``` fenced kod blokları → tamamen at
+      .replace(/```[\s\S]*?```/g, " ")
+      .replace(/~~~[\s\S]*?~~~/g, " ")
+      // markdown link [metin](url) → sadece metin
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      // satır içi kod `...` → at (dosya adı/komut vb. okunmasın)
+      .replace(/`[^`]*`/g, " ")
+      // çıplak URL'ler → at
+      .replace(/https?:\/\/\S+/g, " ")
+      // girintili (4+ boşluk/tab ile başlayan) kod satırları → at
+      .replace(/^[ \t]{4,}\S.*$/gm, " ")
+      // dosya-yolu benzeri jetonlar (a/b/c.ext) → at
+      .replace(/\S*\/\S+\.[A-Za-z0-9]{1,5}\b/g, " ")
+      // emojiler
+      .replace(/\p{Extended_Pictographic}/gu, "")
       .replace(/[\u{1F1E6}-\u{1F1FF}\u{1F3FB}-\u{1F3FF}️‍⃣]/gu, "")
+      // kalan markdown işaretleri
+      .replace(/[#*_>~|]/g, " ")
       .replace(/[ \t]{2,}/g, " ")
       .replace(/\n{2,}/g, ". ")
+      .replace(/(?:\s*\.){2,}\s*/g, ". ") // tekrar eden noktaları sadeleştir
       .trim();
     if (!clean) return;
 
