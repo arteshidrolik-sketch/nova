@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Icon from "./Icon";
 
 export type ViewKey =
   | "harita"
@@ -107,7 +108,7 @@ export default function Sidebar({
                     : { color: "var(--text-muted)" }
                 }
               >
-                <span className="text-base">{item.icon}</span>
+                <Icon name={item.key} size={18} />
                 <span className="hidden lg:inline">{item.label}</span>
                 {item.key === "tasks" && pendingCount > 0 && (
                   <span
