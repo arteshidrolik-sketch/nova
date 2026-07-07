@@ -6,6 +6,7 @@ import {
   useImperativeHandle,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import {
   AGENT_META,
@@ -93,6 +94,33 @@ function Typing() {
       <span />
     </span>
   );
+}
+
+// Asistan mesajını render eder: markdown görselleri (![](url)) <img> olarak gösterir.
+function MessageBody({ content }: { content: string }) {
+  const re = /!\[[^\]]*\]\((https?:\/\/[^\s)]+)\)/g;
+  const parts: ReactNode[] = [];
+  let last = 0;
+  let k = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content))) {
+    if (m.index > last)
+      parts.push(<span key={k++}>{content.slice(last, m.index)}</span>);
+    parts.push(
+      <img
+        key={k++}
+        src={m[1]}
+        alt="üretilen görsel"
+        loading="lazy"
+        className="my-2 block max-w-full rounded-xl"
+        style={{ maxHeight: 460, border: "1px solid var(--border)" }}
+      />,
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < content.length)
+    parts.push(<span key={k++}>{content.slice(last)}</span>);
+  return <>{parts}</>;
 }
 
 function AgentBadge({ agent }: { agent: AgentKey }) {
@@ -390,6 +418,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     return text
       .replace(/```[\s\S]*?```/g, " ") // fenced kod blokları
       .replace(/~~~[\s\S]*?~~~/g, " ")
+      .replace(/!\[[^\]]*\]\([^)]+\)/g, " ") // markdown görsel → at
       .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // link → sadece metin
       .replace(/`[^`]*`/g, " ") // satır içi kod
       .replace(/https?:\/\/\S+/g, " ") // URL
@@ -1169,7 +1198,13 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
                       border: "1px solid var(--border)",
                     }}
                   >
-                    {m.content || (isLast && loading ? <Typing /> : "")}
+                    {m.content ? (
+                      <MessageBody content={m.content} />
+                    ) : isLast && loading ? (
+                      <Typing />
+                    ) : (
+                      ""
+                    )}
                   </div>
                 </div>
               </div>

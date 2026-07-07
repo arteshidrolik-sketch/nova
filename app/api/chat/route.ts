@@ -508,6 +508,22 @@ export async function POST(req: Request) {
                 payload.projectName = project.name;
               }
 
+              // Görsel üretimi: kullanıcının SON yüklediği fotoğrafı yüz referansı
+              // olarak enjekte et (data URI) → kişiye benzeyen görsel.
+              if (block.name === "generate_image") {
+                for (let mi = messages.length - 1; mi >= 0; mi--) {
+                  const att = messages[mi].attachments?.find(
+                    (a) => a.kind === "image" && a.data && a.mediaType,
+                  );
+                  if (att) {
+                    payload.reference_image_url = `data:${att.mediaType};base64,${att.data}`;
+                    break;
+                  }
+                  if (messages[mi].role === "user" && messages[mi].attachments?.length)
+                    break; // en son kullanıcı turunda foto yoksa referanssız üret
+                }
+              }
+
               const title = actionTitle(block.name, payload);
 
               // RİSKLİ aksiyon (git push, dış dünyaya giden) → İNSAN ONAYINA düşer,
@@ -591,6 +607,19 @@ export async function POST(req: Request) {
                 result,
                 project: project?.name,
               }).catch(() => {});
+
+              // Görsel: sonucu (markdown görsel) doğrudan akışa yansıt; modele kısa özet
+              if (block.name === "generate_image") {
+                emit(ok ? `\n\n${result}\n` : `\n\n⚠️ ${result}\n`);
+                toolResults.push({
+                  type: "tool_result",
+                  tool_use_id: block.id,
+                  content: ok
+                    ? "Görsel üretildi ve kullanıcıya gösterildi. Kısaca bir yorum yap; URL'i tekrar yazma."
+                    : result.slice(0, 400),
+                });
+                continue;
+              }
 
               emit(ok ? `\n\n✅ Yapıldı.\n` : `\n\n⚠️ ${result}\n`);
               toolResults.push({

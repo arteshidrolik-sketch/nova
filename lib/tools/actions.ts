@@ -230,6 +230,75 @@ export const ACTIONS: Record<string, ActionDef> = {
     },
   },
 
+  generate_image: {
+    dangerous: true,
+    project: false,
+    description:
+      "Metinden görsel/resim üretir (fal.ai). Kullanıcı bir görsel, resim, avatar, logo, illüstrasyon vb. istediğinde BU ARACI DOĞRUDAN ÇAĞIR. Kullanıcı SON mesajında bir FOTOĞRAF yüklediyse o yüz otomatik referans alınır → kişiye BENZEYEN görsel üretilir. Çağrılınca hemen çalışır.",
+    input_schema: {
+      type: "object",
+      properties: {
+        prompt: {
+          type: "string",
+          description: "Görselin ayrıntılı tarifi: sahne, stil, ışık, atmosfer (İngilizce daha iyi sonuç verir)",
+        },
+        aspect: {
+          type: "string",
+          description: "En-boy oranı: square, portrait veya landscape (varsayılan square)",
+        },
+      },
+      required: ["prompt"],
+    },
+    makeTitle: (p) => `Görsel üret: ${shorten(String(p.prompt), 48)}`,
+    makeSummary: (p) =>
+      `"${shorten(String(p.prompt), 140)}" için bir görsel üretilecek${p.reference_image_url ? " (yüklenen fotoğraf yüz referansı olarak kullanılacak)" : ""}.`,
+    execute: async (p) => {
+      const key = process.env.FAL_KEY;
+      if (!key) return "Hata: FAL_KEY tanımlı değil (fal.ai anahtarı).";
+      const prompt = String(p.prompt ?? "").trim();
+      if (!prompt) return "Hata: görsel tarifi (prompt) boş.";
+      const ref =
+        typeof p.reference_image_url === "string" && p.reference_image_url
+          ? p.reference_image_url
+          : "";
+      const sizeMap: Record<string, string> = {
+        square: "square_hd",
+        portrait: "portrait_4_3",
+        landscape: "landscape_4_3",
+      };
+      const image_size = sizeMap[String(p.aspect || "square")] || "square_hd";
+      // Yüz referansı varsa kimlik-koruyan model, yoksa metin→görsel
+      const model = ref ? "fal-ai/flux-pulid" : "fal-ai/flux/dev";
+      const body = ref
+        ? { prompt, reference_image_url: ref, image_size, num_images: 1 }
+        : { prompt, image_size, num_images: 1 };
+      try {
+        const res = await fetch(`https://fal.run/${model}`, {
+          method: "POST",
+          headers: { Authorization: `Key ${key}`, "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = (await res.json()) as {
+          images?: { url?: string }[];
+          detail?: unknown;
+        };
+        if (!res.ok) {
+          const d =
+            typeof data?.detail === "string"
+              ? data.detail
+              : JSON.stringify(data?.detail ?? data);
+          return `Görsel üretilemedi (fal): ${d}`.slice(0, 400);
+        }
+        const url = data?.images?.[0]?.url;
+        if (!url) return "Görsel üretilemedi: sonuç boş.";
+        // Markdown görsel → sohbette gösterilir (route bunu akışa yansıtır)
+        return `![üretilen görsel](${url})`;
+      } catch (e) {
+        return `Görsel üretim hatası: ${e instanceof Error ? e.message : "bilinmeyen"}`;
+      }
+    },
+  },
+
   // --- Aktif proje aksiyonları (payload'a projectPath/projectName route ekler) ---
   write_project_file: {
     dangerous: true,
