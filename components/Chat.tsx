@@ -220,6 +220,10 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   const scrollRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<Recognition | null>(null);
   const messagesRef = useRef<Message[]>([]);
+  // Aktif sohbetin canlı kimliği (kapanışta değişmiş olabilir — sızmayı önler)
+  const conversationIdRef = useRef<string>("");
+  // Şu an arka planda çalışan sohbet kimlikleri (eşzamanlı bağımsız çalışsınlar)
+  const runningRef = useRef<Set<string>>(new Set());
   const speakRef = useRef(false);
   const voiceReplyRef = useRef(false); // sesle sorulduysa cevabı her zaman seslendir
   const wakeRef = useRef<Recognition | null>(null); // "Nova" wake-word dinleyici
@@ -291,6 +295,10 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
 
   // Aktif sohbet değişince mesajları yükle
   useEffect(() => {
+    // Canlı aktif-sohbet kimliğini güncelle (arka plan run'ları buna bakar)
+    conversationIdRef.current = conversationId ?? "";
+    // Yükleme göstergesi: bu sohbet arka planda çalışıyorsa açık, değilse kapalı
+    setLoading(runningRef.current.has(conversationId ?? ""));
     onAgentActivity?.(null);
     if (!conversationId) {
       setMessages([]);
@@ -338,8 +346,11 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoSend, conversationId]);
 
-  function persist(msgs: Message[]) {
-    if (!conversationId) return;
+  function persist(msgs: Message[], convId?: string) {
+    // Hangi sohbete yazacağımızı çağıran belirler (akış sırasında sohbet
+    // değişse bile cevap DOĞRU sohbete kaydedilsin — yanlış sohbete sızmasın)
+    const cid = convId ?? conversationId;
+    if (!cid) return;
     // Ekleri hafifet (base64 veri saklama, sadece ad/tür)
     const light = msgs.map((m) =>
       m.attachments
@@ -352,7 +363,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
           }
         : m,
     );
-    fetch(`/api/conversations/${conversationId}`, {
+    fetch(`/api/conversations/${cid}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messages: light }),
@@ -858,7 +869,13 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     const text = (typeof textArg === "string" ? textArg : input).trim();
     const atts =
       attsArg ?? (typeof textArg === "string" ? [] : attachments);
-    if ((!text && atts.length === 0) || loading) return;
+    // Bu sohbete kilitli çalış: başka sohbet meşgulken bu sohbette YENİ iş
+    // başlatılabilir; ama AYNI sohbette ikinci iş başlatılamaz.
+    const myConvId = conversationId ?? "";
+    if ((!text && atts.length === 0) || runningRef.current.has(myConvId))
+      return;
+    // Bu run'ın çıktısı yalnızca kendi sohbeti aktifken ekrana yazsın (sızma yok)
+    const active = () => conversationIdRef.current === myConvId;
 
     const base = messagesRef.current;
     const next: Message[] = [
@@ -870,9 +887,10 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       },
     ];
     setMessages(next);
-    persist(next); // kullanıcı mesajını HEMEN kaydet — akış sırasında yenilenirse kaybolmasın
+    persist(next, myConvId); // kullanıcı mesajını HEMEN doğru sohbete kaydet
     setInput("");
     setAttachments([]);
+    runningRef.current.add(myConvId);
     setLoading(true);
     onAgentActivity?.("orchestrator"); // haritada beyin parlasın
     setMessages([...next, { role: "assistant", content: "" }]);
@@ -901,7 +919,10 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       const agentColor: string | undefined = startData?.agentColor;
       let model: string | undefined = startData?.model;
       // yerleşik ajanı haritada parlat; özel ajanda orb nötr parlar
-      onAgentActivity?.(isBuiltin ? (startData.agent as AgentKey) : "orchestrator");
+      if (active())
+        onAgentActivity?.(
+          isBuiltin ? (startData.agent as AgentKey) : "orchestrator",
+        );
       // Asistan mesajını tüm alanlarıyla kur (rozet özel ajanı da gösterir)
       const mkA = (content: string): Message => ({
         role: "assistant",
@@ -912,7 +933,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         agentEmoji,
         agentColor,
       });
-      setMessages([...next, mkA("")]);
+      if (active()) setMessages([...next, mkA("")]);
 
       // 2) Poll ile takip et — bağlantı kopsa bile iş sunucuda sürer, ASLA takılmaz
       let acc = "";
@@ -925,7 +946,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       if (willSpeak) cancelSpeak(); // önceki cevabın sesini durdur
       let spokenChar = 0;
       const pump = (final: boolean) => {
-        if (!willSpeak) return;
+        if (!willSpeak || !active()) return; // arka plandaki sohbet sesli okumasın
         let end = acc.length;
         if (!final) {
           // açık kod bloğu içindeysek kapanana kadar bekle (kodu okumayalım)
@@ -968,14 +989,17 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
           acc += p.chunk;
           offset = p.len ?? offset;
           if (p.model) model = p.model;
-          setMessages([...next, mkA(acc)]);
-          scrollToBottom();
-          pump(false); // akarken tamamlanan cümleleri sesli oku
+          if (active()) {
+            // yalnızca bu sohbet aktifken ekrana yaz (diğer sekmelere sızmasın)
+            setMessages([...next, mkA(acc)]);
+            scrollToBottom();
+          }
+          pump(false); // akarken tamamlanan cümleleri sesli oku (pump aktifliği içeride kontrol eder)
         }
         status = p.status ?? "running";
         if (status === "error" && p.error) {
           acc += `\n\n⚠️ ${p.error}`;
-          setMessages([...next, mkA(acc)]);
+          if (active()) setMessages([...next, mkA(acc)]);
         }
       }
 
@@ -984,8 +1008,8 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         ? acc
         : "⚠️ Yanıt alınamadı (oturum/bağlantı kesilmiş olabilir). Tekrar dener misin?";
       const finalMsgs: Message[] = [...next, mkA(replyText)];
-      setMessages(finalMsgs);
-      persist(finalMsgs);
+      if (active()) setMessages(finalMsgs); // arka plandaysa aktif sohbeti ezme
+      persist(finalMsgs, myConvId); // sonuç HER ZAMAN kendi sohbetine kaydedilir (liste de yenilenir)
 
       pump(true); // kalan son cümleyi de oku
       voiceReplyRef.current = false;
@@ -1001,13 +1025,17 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         ...next,
         { role: "assistant", content: `⚠️ Hata: ${msg}` },
       ];
-      setMessages(errMsgs);
-      persist(errMsgs);
+      if (active()) setMessages(errMsgs);
+      persist(errMsgs, myConvId);
     } finally {
-      setLoading(false);
-      scrollToBottom();
-      setTimeout(() => onAgentActivity?.(null), 2500); // bir süre sonra sön
-      resumeWake(); // konuşmuyorsa wake'e dön (konuşuyorsa TTS bitince döner)
+      runningRef.current.delete(myConvId); // bu sohbet artık meşgul değil
+      if (active()) {
+        // yalnızca hâlâ bu sohbetteysek arayüzü kapat (başka sohbete geçtiysek dokunma)
+        setLoading(false);
+        scrollToBottom();
+        setTimeout(() => onAgentActivity?.(null), 2500); // bir süre sonra sön
+        resumeWake(); // konuşmuyorsa wake'e dön (konuşuyorsa TTS bitince döner)
+      }
     }
   }
 
