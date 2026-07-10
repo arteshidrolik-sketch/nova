@@ -133,6 +133,81 @@ export const ACTIONS: Record<string, ActionDef> = {
     },
   },
 
+  github_create_repo: {
+    dangerous: true,
+    approval: true, // hesapta yeni depo yaratır → dış dünyaya gider, insan onayı ister
+    project: false,
+    description:
+      "GitHub'da YENİ bir depo (repository) oluşturur. Yazma yetkili GITHUB_TOKEN gerekir. Kullanıcı 'yeni repo aç / GitHub'da depo oluştur' derse BU ARACI çağır. RİSKLİ: Görevler'de insan onayına düşer, onaylanınca oluşturulur. Varsayılan private. İstersen sonra git_commit_push ile kodu bu depoya gönderebilirsin.",
+    input_schema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Depo adı (ör. vyvo)" },
+        description: { type: "string", description: "Kısa açıklama" },
+        private: {
+          type: "boolean",
+          description: "Gizli mi? Varsayılan true (gizli).",
+        },
+        org: {
+          type: "string",
+          description:
+            "Kişisel hesap yerine bir organizasyonda açmak için org adı (opsiyonel).",
+        },
+        auto_init: {
+          type: "boolean",
+          description:
+            "README ile başlat. Varsayılan false — mevcut yerel kodu sorunsuz push edebilmek için boş depo.",
+        },
+      },
+      required: ["name"],
+    },
+    makeTitle: (p) => `GitHub repo oluştur: ${String(p.name)}`,
+    makeSummary: (p) =>
+      `GitHub'da yeni bir depo oluşturulacak: "${String(p.name)}"${
+        p.org ? ` (${String(p.org)} organizasyonunda)` : " (kişisel hesap)"
+      }\nGörünürlük: ${p.private === false ? "public (herkese açık)" : "private (gizli)"}${
+        p.description ? `\nAçıklama: ${shorten(String(p.description), 200)}` : ""
+      }`,
+    execute: async (p) => {
+      const token = process.env.GITHUB_TOKEN;
+      if (!token) return "Hata: Yazma yetkili GITHUB_TOKEN tanımlı değil.";
+      const endpoint = p.org
+        ? `https://api.github.com/orgs/${p.org}/repos`
+        : `https://api.github.com/user/repos`;
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+          "User-Agent": "nova-assistant",
+          "X-GitHub-Api-Version": "2022-11-28",
+        },
+        body: JSON.stringify({
+          name: p.name,
+          description: p.description ?? "",
+          private: p.private === false ? false : true, // varsayılan gizli
+          auto_init: p.auto_init === true, // varsayılan boş depo
+        }),
+      });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as {
+          message?: string;
+        };
+        return `GitHub hatası: HTTP ${res.status}${err.message ? ` — ${err.message}` : ""}`;
+      }
+      const data = (await res.json()) as {
+        html_url?: string;
+        clone_url?: string;
+        ssh_url?: string;
+      };
+      return (
+        `✅ Depo oluşturuldu: ${data.html_url ?? "(URL yok)"}\n` +
+        `Klonlama (HTTPS): ${data.clone_url ?? "-"}\n` +
+        `Kodu göndermek için: git remote add origin ${data.clone_url ?? "<url>"} && git push -u origin main`
+      );
+    },
+  },
+
   generate_document: {
     dangerous: true,
     project: false,
