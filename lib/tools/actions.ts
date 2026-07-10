@@ -524,6 +524,119 @@ export const ACTIONS: Record<string, ActionDef> = {
       }
     },
   },
+
+  deploy_vercel: {
+    dangerous: true,
+    approval: true, // dünyaya açık yayın → insan onayı ister
+    project: true,
+    description:
+      "Aktif projeyi Vercel'e deploy edip CANLI (production) bir HTTPS URL yayınlar. Kullanıcı 'yayınla / deploy et / canlıya al / Vercel'e gönder' derse kullan. VERCEL_TOKEN gerekir. RİSKLİ: Görevler'de GO onayına düşer, onaylanınca yayınlanır. Sonunda canlı URL döner.",
+    input_schema: {
+      type: "object",
+      properties: {
+        production: {
+          type: "boolean",
+          description:
+            "Canlı (production) yayın mı? Varsayılan true. false → geçici önizleme (preview) linki.",
+        },
+      },
+      required: [],
+    },
+    makeTitle: (p) =>
+      `Vercel'e yayınla: ${String(p.projectName ?? "proje")}${p.production === false ? " (önizleme)" : ""}`,
+    makeSummary: (p) =>
+      `"${String(p.projectName ?? "proje")}" projesi Vercel'e ${
+        p.production === false ? "ÖNİZLEME (preview)" : "CANLI (production)"
+      } olarak deploy edilecek. İşlem sonunda tarayıcıdan açılabilen canlı bir HTTPS adres döner.`,
+    execute: async (p) => {
+      const token = process.env.VERCEL_TOKEN;
+      if (!token)
+        return "Hata: VERCEL_TOKEN tanımlı değil. Vercel hesabından (Settings → Tokens) bir token oluşturup sunucunun .env dosyasına VERCEL_TOKEN=... ekle, sonra Nova'yı yeniden başlat.";
+      const root = String(p.projectPath ?? "");
+      if (!root) return "Hata: aktif proje yok.";
+      const prod = p.production === false ? "" : "--prod";
+      try {
+        // Token komut satırında DEĞİL — Vercel CLI VERCEL_TOKEN env'ini okur.
+        // `vercel` imaja global kurulu (Dockerfile) → indirme beklemesi yok.
+        const { stdout, stderr } = await execAsync(
+          `vercel ${prod} --yes`.trim(),
+          {
+            cwd: root,
+            timeout: 600000, // ilk sefer CLI indirimi + build uzun sürebilir
+            maxBuffer: 16 * 1024 * 1024,
+            env: { ...process.env, VERCEL_TOKEN: token },
+          },
+        );
+        const all = `${stdout}\n${stderr}`;
+        const urls = all.match(/https?:\/\/[^\s]+\.vercel\.app/g) || [];
+        const url = urls.length ? urls[urls.length - 1] : "";
+        return url
+          ? `✅ Yayınlandı: ${url}\n(Tarayıcıdan açabilirsin.)`
+          : `Deploy komutu çalıştı ama URL yakalanamadı. Çıktı:\n${all.slice(-1500)}`;
+      } catch (e) {
+        const err = e as { stderr?: string; stdout?: string; message?: string };
+        return `Vercel deploy hatası:\n${(err.stderr || err.message || "").slice(0, 4000)}\n${(err.stdout || "").slice(0, 2000)}`.trim();
+      }
+    },
+  },
+
+  vercel_set_env: {
+    dangerous: true,
+    approval: true, // secret yazar → insan onayı ister
+    project: true,
+    description:
+      "Bir Vercel projesine ortam değişkeni / secret (API anahtarı, DB URL vb.) ekler veya günceller. VERCEL_TOKEN gerekir. Proje daha önce en az bir kez deploy edilmiş olmalı. RİSKLİ: Görevler'de GO onayına düşer.",
+    input_schema: {
+      type: "object",
+      properties: {
+        key: { type: "string", description: "Değişken adı (ör. DATABASE_URL)" },
+        value: { type: "string", description: "Değeri" },
+        project: {
+          type: "string",
+          description:
+            "Vercel proje adı (verilmezse aktif proje klasör adı kullanılır).",
+        },
+      },
+      required: ["key", "value"],
+    },
+    makeTitle: (p) =>
+      `Vercel env: ${String(p.key)} → ${String(p.project ?? p.projectName ?? "proje")}`,
+    makeSummary: (p) =>
+      `"${String(p.project ?? p.projectName ?? "proje")}" Vercel projesine "${String(p.key)}" ortam değişkeni eklenecek/güncellenecek (değer gizli tutulur).`,
+    execute: async (p) => {
+      const token = process.env.VERCEL_TOKEN;
+      if (!token) return "Hata: VERCEL_TOKEN tanımlı değil.";
+      const projName =
+        String(p.project ?? "") ||
+        (p.projectPath ? path.basename(String(p.projectPath)) : "");
+      if (!projName) return "Hata: Vercel proje adı belirlenemedi.";
+      const res = await fetch(
+        `https://api.vercel.com/v10/projects/${encodeURIComponent(projName)}/env?upsert=true`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            key: String(p.key),
+            value: String(p.value),
+            type: "encrypted",
+            target: ["production", "preview", "development"],
+          }),
+        },
+      );
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as {
+          error?: { message?: string };
+        };
+        return `Vercel hatası: HTTP ${res.status}${
+          err.error?.message ? ` — ${err.error.message}` : ""
+        }${res.status === 404 ? " (Proje bulunamadı — önce deploy_vercel ile yayınla.)" : ""}`;
+      }
+      return `✅ "${String(p.key)}" ortam değişkeni ${projName} projesine yazıldı. (Etkili olması için yeniden deploy gerekebilir.)`;
+    },
+  },
 };
 
 function toolDefs(filter: (d: ActionDef) => boolean) {

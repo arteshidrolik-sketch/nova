@@ -7,6 +7,10 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends git ca-certificates openssh-client \
   && rm -rf /var/lib/apt/lists/*
 
+# Vercel CLI: kullanıcı uygulamalarını canlıya yayınlamak için (deploy_vercel aracı).
+# İmaja gömülü → çalışma anında indirme yok, deploy anında hazır.
+RUN npm i -g vercel@latest
+
 COPY package.json package-lock.json ./
 RUN npm ci
 
