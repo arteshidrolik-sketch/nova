@@ -23,9 +23,11 @@ import {
 import { createTask } from "@/lib/tasks/store";
 import {
   appendRun,
+  cancelRun,
   createRun,
   finishRun,
   getRun,
+  isCanceled,
 } from "@/lib/runs/store";
 import {
   getActiveId,
@@ -391,10 +393,14 @@ export async function POST(req: Request) {
         );
       }
       for (let i = 0; i < maxIter; i++) {
-          // Kill switch: her turdan önce kontrol et (kuyruktaki turlar iptal)
+          // Kill switch (global) veya kullanıcı bu işi durdurduysa: kes
           if (isStopped()) {
             emit("\n\n⛔ Durduruldu (kill switch aktif).");
             finishRun(runId, "error", "kill switch");
+            return;
+          }
+          if (isCanceled(runId)) {
+            finishRun(runId, "done"); // kısmi çıktı korunur, token yakılmaz
             return;
           }
           const stream = client.messages.stream({
@@ -406,9 +412,14 @@ export async function POST(req: Request) {
           });
 
           let stoppedMid = false;
+          let canceledMid = false;
           for await (const event of stream) {
             if (isStopped()) {
               stoppedMid = true;
+              break;
+            }
+            if (isCanceled(runId)) {
+              canceledMid = true;
               break;
             }
             if (
@@ -436,6 +447,16 @@ export async function POST(req: Request) {
             }
           }
 
+          if (canceledMid) {
+            // Kullanıcı "Durdur" dedi: akışı kes, kısmi çıktıyı koru, token yakma
+            try {
+              (stream as { abort?: () => void }).abort?.();
+            } catch {
+              /* yoksay */
+            }
+            finishRun(runId, "done");
+            return;
+          }
           if (stoppedMid) {
             try {
               (stream as { abort?: () => void }).abort?.();
@@ -734,4 +755,11 @@ export async function GET(req: Request) {
     model: run.model,
     error: run.error ?? null,
   });
+}
+
+// İstemci "Durdur" dedi: bu tek işi iptal et (sunucu döngüsü akışı keser).
+export async function DELETE(req: Request) {
+  const id = new URL(req.url).searchParams.get("id") || "";
+  if (id) cancelRun(id);
+  return Response.json({ ok: true });
 }

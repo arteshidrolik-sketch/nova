@@ -11,6 +11,7 @@ export type Run = {
   agent: string;
   model: string;
   error?: string;
+  canceled?: boolean; // kullanıcı bu tek işi durdurdu (kill switch'ten farklı)
   createdAt: number;
   updatedAt: number;
 };
@@ -60,4 +61,18 @@ export function finishRun(id: string, status: RunStatus, error?: string): void {
 
 export function getRun(id: string): Run | undefined {
   return runs.get(id);
+}
+
+// Tek bir işi durdur (kullanıcı "Durdur" dedi). Sunucu döngüsü bunu görüp
+// akışı keser → boşuna token yakılmaz.
+export function cancelRun(id: string): void {
+  const r = runs.get(id);
+  if (r) {
+    r.canceled = true;
+    r.updatedAt = Date.now();
+  }
+}
+
+export function isCanceled(id: string): boolean {
+  return runs.get(id)?.canceled ?? false;
 }

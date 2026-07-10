@@ -224,6 +224,10 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   const conversationIdRef = useRef<string>("");
   // Şu an arka planda çalışan sohbet kimlikleri (eşzamanlı bağımsız çalışsınlar)
   const runningRef = useRef<Set<string>>(new Set());
+  // Sohbet → aktif runId (Durdur bu işi iptal eder)
+  const runIdRef = useRef<Map<string, string>>(new Map());
+  // Durdurulması istenen sohbet kimlikleri (poll döngüsü görüp çıkar)
+  const stopRef = useRef<Set<string>>(new Set());
   const speakRef = useRef(false);
   const voiceReplyRef = useRef(false); // sesle sorulduysa cevabı her zaman seslendir
   const wakeRef = useRef<Recognition | null>(null); // "Nova" wake-word dinleyici
@@ -370,6 +374,33 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     })
       .then(() => onConversationUpdated?.())
       .catch(() => {});
+  }
+
+  // Yazışmayı durdur: aktif sohbetin çalışan işini iptal et, girişi hemen aç.
+  // Sunucuya iptal gönderir (boşuna token yakılmaz), kısmi cevabı dondurur.
+  function stopChat() {
+    const cid = conversationId ?? "";
+    if (!runningRef.current.has(cid)) return;
+    const rid = runIdRef.current.get(cid);
+    stopRef.current.add(cid); // poll döngüsü görüp finalize etmeden çıkar
+    if (rid)
+      fetch(`/api/chat?id=${encodeURIComponent(rid)}`, {
+        method: "DELETE",
+      }).catch(() => {});
+    cancelSpeak(); // konuşuyorsa sesi de kes
+    runningRef.current.delete(cid); // hemen yeni mesaj yazılabilsin
+    setLoading(false);
+    onAgentActivity?.(null);
+    // Kısmi cevabı dondur: boş asistan balonunu kaldır, doluysa olduğu gibi kaydet
+    setMessages((cur) => {
+      const last = cur[cur.length - 1];
+      const out =
+        last && last.role === "assistant" && !last.content.trim()
+          ? cur.slice(0, -1)
+          : cur;
+      persist(out, cid);
+      return out;
+    });
   }
 
   async function handleFiles(files: FileList | null) {
@@ -934,11 +965,13 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         agentColor,
       });
       if (active()) setMessages([...next, mkA("")]);
+      runIdRef.current.set(myConvId, runId); // Durdur bu işi iptal edebilsin
 
       // 2) Poll ile takip et — bağlantı kopsa bile iş sunucuda sürer, ASLA takılmaz
       let acc = "";
       let offset = 0;
       let status = "running";
+      let stopped = false;
       const startedAt = Date.now();
 
       // Streaming TTS: cevap akarken tamamlanan cümleleri anında oku (bitişi bekleme)
@@ -967,6 +1000,11 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       };
       while (status === "running") {
         await new Promise((r) => setTimeout(r, 700));
+        if (stopRef.current.has(myConvId)) {
+          // Kullanıcı Durdur'a bastı: stopChat ekranı/kaydı halletti → çık
+          stopped = true;
+          break;
+        }
         if (Date.now() - startedAt > 20 * 60 * 1000) {
           acc += "\n\n⚠️ Zaman aşımı (20 dk).";
           break;
@@ -1003,6 +1041,8 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         }
       }
 
+      if (stopped) return; // Durdur: sonuçlandırma yapma (finally temizler)
+
       // Boş yanıtı ASLA kaydetme: boş içerikli mesaj API'yi 400'e düşürüp sohbeti kilitler
       const replyText = acc.trim()
         ? acc
@@ -1029,6 +1069,8 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       persist(errMsgs, myConvId);
     } finally {
       runningRef.current.delete(myConvId); // bu sohbet artık meşgul değil
+      runIdRef.current.delete(myConvId);
+      stopRef.current.delete(myConvId);
       if (active()) {
         // yalnızca hâlâ bu sohbetteysek arayüzü kapat (başka sohbete geçtiysek dokunma)
         setLoading(false);
@@ -1040,6 +1082,11 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Escape" && loading) {
+      e.preventDefault();
+      stopChat(); // çalışıyorsa Esc ile hızlıca durdur
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       send();
@@ -1368,17 +1415,30 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
               className="max-h-40 flex-1 resize-none bg-transparent px-2 py-2 text-sm outline-none"
               style={{ color: "var(--text)" }}
             />
-            <button
-              onClick={() => send()}
-              disabled={loading || (!input.trim() && attachments.length === 0)}
-              className="btn-grad rounded-lg px-4 py-2 text-sm font-medium text-black disabled:opacity-40"
-              style={{
-                background:
-                  "linear-gradient(135deg, var(--accent), var(--accent-2))",
-              }}
-            >
-              {loading ? "…" : "Gönder"}
-            </button>
+            {loading ? (
+              <button
+                onClick={stopChat}
+                title="Yanıtı durdur (Esc)"
+                className="rounded-lg px-4 py-2 text-sm font-medium text-white"
+                style={{
+                  background: "linear-gradient(135deg, #f43f5e, #b91c1c)",
+                }}
+              >
+                ⏹ Durdur
+              </button>
+            ) : (
+              <button
+                onClick={() => send()}
+                disabled={!input.trim() && attachments.length === 0}
+                className="btn-grad rounded-lg px-4 py-2 text-sm font-medium text-black disabled:opacity-40"
+                style={{
+                  background:
+                    "linear-gradient(135deg, var(--accent), var(--accent-2))",
+                }}
+              >
+                Gönder
+              </button>
+            )}
           </div>
         </div>
       </div>
