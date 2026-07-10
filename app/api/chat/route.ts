@@ -403,9 +403,15 @@ export async function POST(req: Request) {
             finishRun(runId, "done"); // kısmi çıktı korunur, token yakılmaz
             return;
           }
+          // Extended thinking: güçlü modellerde (opus/sonnet) daha iyi akıl
+          // yürütme. Bütçe kısa tutulur ki hız ve maliyet makul kalsın.
+          const useThinking = /opus|sonnet/.test(answerModel);
           const stream = client.messages.stream({
             model: answerModel,
             max_tokens: maxTokens, // büyük dosya içeriği tek araç çağrısına sığsın
+            ...(useThinking
+              ? { thinking: { type: "enabled" as const, budget_tokens: 4000 } }
+              : {}),
             system: useMemory ? systemNoMem + memNote : systemNoMem,
             tools,
             messages: convo,

@@ -6,7 +6,7 @@ const FABLE = "claude-fable-5"; // hızlı/ucuz — genel sohbet
 const SONNET = "claude-sonnet-5"; // dengeli — araştırma/planlama/store
 
 export const AGENT_MODELS: Record<AgentKey, string> = {
-  general: FABLE,
+  general: SONNET, // genel sohbet de güçlü model + düşünme (kullanıcı tercihi)
   developer: OPUS,
   codeReviewer: OPUS,
   research: SONNET,
