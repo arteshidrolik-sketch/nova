@@ -403,19 +403,23 @@ export async function POST(req: Request) {
             finishRun(runId, "done"); // kısmi çıktı korunur, token yakılmaz
             return;
           }
-          // Extended thinking: güçlü modellerde (opus/sonnet) daha iyi akıl
-          // yürütme. Bütçe kısa tutulur ki hız ve maliyet makul kalsın.
+          // Extended thinking (Claude 5): adaptive = model gerektiğinde düşünür
+          // (basit soruda düşünmez → hız; karmaşıkta derinleşir → kalite).
+          // SDK tipleri henüz "adaptive"i bilmiyor → tip-güvenli cast ile ver.
           const useThinking = /opus|sonnet/.test(answerModel);
-          const stream = client.messages.stream({
+          const streamParams = {
             model: answerModel,
             max_tokens: maxTokens, // büyük dosya içeriği tek araç çağrısına sığsın
-            ...(useThinking
-              ? { thinking: { type: "enabled" as const, budget_tokens: 4000 } }
-              : {}),
             system: useMemory ? systemNoMem + memNote : systemNoMem,
             tools,
             messages: convo,
-          });
+          } as Anthropic.MessageStreamParams;
+          if (useThinking) {
+            const p = streamParams as unknown as Record<string, unknown>;
+            p.thinking = { type: "adaptive" };
+            p.output_config = { effort: "high" };
+          }
+          const stream = client.messages.stream(streamParams);
 
           let stoppedMid = false;
           let canceledMid = false;
