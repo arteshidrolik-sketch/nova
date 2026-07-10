@@ -22,11 +22,16 @@ export async function selectAgent(
   messages: ChatMessage[],
   prevAgent?: string,
 ): Promise<AgentKey> {
+  // Yönlendirme yalnızca SON mesaja + yakın bağlama bakar. Tüm geçmişi (büyük
+  // sohbetlerde 35k+ token) göndermek gereksiz gecikme + maliyet demek → son
+  // birkaç mesajla sınırla. prevAgent zaten sürekliliği ayrıca taşıyor.
   // API mesajlarda ekstra alan (agent/attachments) kabul etmez → sadece role+content bırak
-  const clean = messages.map((m) => ({
+  const clean = messages.slice(-8).map((m) => ({
     role: m.role === "assistant" ? ("assistant" as const) : ("user" as const),
     content: typeof m.content === "string" ? m.content : "",
   }));
+  // İlk mesaj "user" olmalı (API kuralı) — baştaki asistan mesajlarını at
+  while (clean.length > 1 && clean[0].role !== "user") clean.shift();
 
   // Süreklilik: önceki yanıt bir ajandan geldiyse, kısa devam/onay mesajlarında
   // (evet, sen yap, güncelle, devam et…) AYNI ajanda kal — iş ortada bölünmesin.
