@@ -238,6 +238,9 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   // Gerçekçi ses (OpenAI TTS): null=bilinmiyor, true=çalışıyor, false=anahtar yok→tarayıcıya düş
   const neuralTtsRef = useRef<boolean | null>(null);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null); // çalan ses (iptal için)
+  // Tek yeniden-kullanılabilir <audio> — tarayıcı otomatik-oynatma kilidini aşmak
+  // için (her cümlede yeni Audio yaratınca ilk hariç hepsi engellenebiliyor).
+  const audioElRef = useRef<HTMLAudioElement | null>(null);
   // Tarayıcı-içi Whisper (Edge/Safari/Firefox — native STT çalışmaz)
   const [whisperStatus, setWhisperStatus] = useState<
     "idle" | "loading" | "recording" | "transcribing"
@@ -540,7 +543,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
 
   // Bir cümleyi OpenAI TTS'ten (gerçekçi ses) çal. Başarılıysa true; anahtar
   // yok / hata varsa false döner (çağıran tarayıcı sesine düşer).
-  function playNeural(text: string): Promise<boolean> {
+  function playNeural(text: string): Promise<"ok" | "fail" | "nokey"> {
     return new Promise((resolve) => {
       (async () => {
         try {
@@ -549,23 +552,43 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ text }),
           });
-          if (!res.ok) return resolve(false);
+          if (res.status === 501) return resolve("nokey"); // anahtar yok → tarayıcıya düş
+          if (!res.ok) return resolve("fail");
           const blob = await res.blob();
-          if (!blob.size) return resolve(false);
+          if (!blob.size) return resolve("fail");
           const url = URL.createObjectURL(blob);
-          const audio = new Audio(url);
-          currentAudioRef.current = audio;
-          const done = (ok: boolean) => {
+          // TEK ses öğesini yeniden kullan: tarayıcı oynatma kilidi ilk gesture'da
+          // açılır ve aynı öğede kalır → sonraki cümleler de çalar. (Her cümlede
+          // yeni Audio yaratınca ilkinden sonrası engellenip susuyordu.)
+          let audio = audioElRef.current;
+          if (!audio) {
+            audio = new Audio();
+            audioElRef.current = audio;
+          }
+          const el = audio;
+          currentAudioRef.current = el;
+          let settled = false;
+          const done = (r: "ok" | "fail") => {
+            if (settled) return;
+            settled = true;
+            el.onended = null;
+            el.onerror = null;
+            el.onpause = null;
             URL.revokeObjectURL(url);
-            if (currentAudioRef.current === audio) currentAudioRef.current = null;
-            resolve(ok);
+            if (currentAudioRef.current === el) currentAudioRef.current = null;
+            resolve(r);
           };
-          audio.onended = () => done(true);
-          audio.onpause = () => done(true); // cancelSpeak durdurdu → iptal sinyali
-          audio.onerror = () => done(false);
-          audio.play().catch(() => done(false));
+          el.onended = () => done("ok");
+          el.onerror = () => done("fail");
+          el.src = url;
+          el.play()
+            .then(() => {
+              // Çalmaya başladı; bundan SONRAKİ pause = cancelSpeak (iptal)
+              el.onpause = () => done("ok");
+            })
+            .catch(() => done("fail"));
         } catch {
-          resolve(false);
+          resolve("fail");
         }
       })();
     });
@@ -602,9 +625,14 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       if (chunk == null) continue;
       let played = false;
       if (neuralTtsRef.current !== false) {
-        played = await playNeural(chunk);
-        if (played) neuralTtsRef.current = true;
-        else if (neuralTtsRef.current === null) neuralTtsRef.current = false; // ilk deneme→anahtar yok, tarayıcıya düş
+        const st = await playNeural(chunk);
+        if (st === "ok") {
+          played = true;
+          neuralTtsRef.current = true;
+        } else if (st === "nokey") {
+          neuralTtsRef.current = false; // sadece anahtar yoksa kalıcı tarayıcıya düş
+        }
+        // "fail" (geçici) → bu cümlede tarayıcıya düş ama neural'ı kapatma, sonra tekrar dene
       }
       if (!ttsActiveRef.current) break; // arada iptal edildiyse tarayıcıya düşme
       if (!played) await playBrowser(chunk);
