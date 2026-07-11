@@ -790,7 +790,12 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         }
       }
       const { startRecording } = await import("@/lib/voice/record");
-      recorderRef.current = await startRecording();
+      recorderRef.current = await startRecording({
+        // Konuşman bitip sustuğunda kayıt kendiliğinden dursun → yazıya çevir
+        onSpeechEnd: () => {
+          if (whisperStatusRef.current === "recording") stopWhisper();
+        },
+      });
       setWhisperStatus("recording");
       setListening(true);
       onVoiceState?.("listening");
@@ -1193,7 +1198,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
                 🎧 Ses modeli indiriliyor… %{whisperPct} (ilk sefer)
               </span>
             ) : whisperStatus === "recording" ? (
-              <span style={{ color: "#ef4444" }}>🔴 Kaydediyor — bitirmek için mikrofona tekrar bas</span>
+              <span style={{ color: "#ef4444" }}>🔴 Dinliyorum — konuş; bitince kendiliğinden durur (ya da tekrar bas)</span>
             ) : whisperStatus === "transcribing" ? (
               <span style={{ color: "var(--accent)" }}>✍️ Çözümleniyor…</span>
             ) : speaking ? (
