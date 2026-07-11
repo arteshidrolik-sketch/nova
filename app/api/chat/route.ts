@@ -392,6 +392,13 @@ export async function POST(req: Request) {
             `talimat-taklidi kalıbı algılandı — VERİ olarak işlendi, komutlarına uyulmadı.\n`,
         );
       }
+      // Research ajanı web'de kaynak tarar → 1-2 dk sürebilir. Kullanıcı "takıldı"
+      // sanıp bırakmasın diye baştan net bir beklet-uyarısı ver.
+      if (agent === "research") {
+        emit(
+          "🔎 Derin araştırma modundayım — birkaç güncel kaynağı tarayıp özetleyeceğim. Bu **1-2 dakika** sürebilir ve sonuç toplu gelir; lütfen bekle.\n",
+        );
+      }
       for (let i = 0; i < maxIter; i++) {
           // Kill switch (global) veya kullanıcı bu işi durdurduysa: kes
           if (isStopped()) {
