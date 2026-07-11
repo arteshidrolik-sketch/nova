@@ -235,6 +235,9 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   const ttsKeepAlive = useRef<ReturnType<typeof setInterval> | null>(null); // Edge/Chrome 15sn kesme hatası için
   const ttsQueueRef = useRef<string[]>([]); // streaming TTS kuyruğu (cümle cümle)
   const ttsActiveRef = useRef(false);
+  // Gerçekçi ses (OpenAI TTS): null=bilinmiyor, true=çalışıyor, false=anahtar yok→tarayıcıya düş
+  const neuralTtsRef = useRef<boolean | null>(null);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null); // çalan ses (iptal için)
   // Tarayıcı-içi Whisper (Edge/Safari/Firefox — native STT çalışmaz)
   const [whisperStatus, setWhisperStatus] = useState<
     "idle" | "loading" | "recording" | "transcribing"
@@ -523,8 +526,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   // Temiz metni cümlelere bölüp kuyruğa ekle; çalmıyorsa çalmaya başla.
   // Streaming: cevap akarken tamamlanan cümleler kuyruğa eklenip anında okunur.
   function enqueueSpeak(cleanText: string) {
-    const synth = typeof window !== "undefined" ? window.speechSynthesis : null;
-    if (!synth || !cleanText) return;
+    if (!cleanText) return;
     const parts =
       cleanText.match(/[^.!?…\n]+[.!?…]*/g)?.map((s) => s.trim()).filter(Boolean) ?? [
         cleanText,
@@ -536,23 +538,47 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     runQueue();
   }
 
-  function runQueue() {
-    const synth = typeof window !== "undefined" ? window.speechSynthesis : null;
-    if (!synth || ttsActiveRef.current || ttsQueueRef.current.length === 0) return;
-    ttsActiveRef.current = true;
-    setSpeaking(true);
-    startTtsKeepAlive();
-    const voice = pickVoice(synth);
-    const step = () => {
-      const chunk = ttsQueueRef.current.shift();
-      if (chunk == null) {
-        ttsActiveRef.current = false;
-        setSpeaking(false);
-        stopTtsKeepAlive();
-        resumeWake();
-        return;
-      }
-      const u = new SpeechSynthesisUtterance(chunk);
+  // Bir cümleyi OpenAI TTS'ten (gerçekçi ses) çal. Başarılıysa true; anahtar
+  // yok / hata varsa false döner (çağıran tarayıcı sesine düşer).
+  function playNeural(text: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      (async () => {
+        try {
+          const res = await fetch("/api/tts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text }),
+          });
+          if (!res.ok) return resolve(false);
+          const blob = await res.blob();
+          if (!blob.size) return resolve(false);
+          const url = URL.createObjectURL(blob);
+          const audio = new Audio(url);
+          currentAudioRef.current = audio;
+          const done = (ok: boolean) => {
+            URL.revokeObjectURL(url);
+            if (currentAudioRef.current === audio) currentAudioRef.current = null;
+            resolve(ok);
+          };
+          audio.onended = () => done(true);
+          audio.onpause = () => done(true); // cancelSpeak durdurdu → iptal sinyali
+          audio.onerror = () => done(false);
+          audio.play().catch(() => done(false));
+        } catch {
+          resolve(false);
+        }
+      })();
+    });
+  }
+
+  // Tarayıcı Web Speech ile çal (yedek). Promise: bitince çözülür.
+  function playBrowser(text: string): Promise<void> {
+    return new Promise((resolve) => {
+      const synth = typeof window !== "undefined" ? window.speechSynthesis : null;
+      if (!synth) return resolve();
+      startTtsKeepAlive();
+      const voice = pickVoice(synth);
+      const u = new SpeechSynthesisUtterance(text);
       if (voice) {
         u.voice = voice;
         u.lang = voice.lang;
@@ -561,16 +587,43 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       }
       u.rate = 1;
       u.pitch = 1;
-      u.onend = step;
-      u.onerror = step;
+      u.onend = () => resolve();
+      u.onerror = () => resolve();
       synth.speak(u);
-    };
-    step();
+    });
+  }
+
+  async function runQueue() {
+    if (ttsActiveRef.current || ttsQueueRef.current.length === 0) return;
+    ttsActiveRef.current = true;
+    setSpeaking(true);
+    while (ttsActiveRef.current && ttsQueueRef.current.length > 0) {
+      const chunk = ttsQueueRef.current.shift();
+      if (chunk == null) continue;
+      let played = false;
+      if (neuralTtsRef.current !== false) {
+        played = await playNeural(chunk);
+        if (played) neuralTtsRef.current = true;
+        else if (neuralTtsRef.current === null) neuralTtsRef.current = false; // ilk deneme→anahtar yok, tarayıcıya düş
+      }
+      if (!ttsActiveRef.current) break; // arada iptal edildiyse tarayıcıya düşme
+      if (!played) await playBrowser(chunk);
+    }
+    ttsActiveRef.current = false;
+    setSpeaking(false);
+    stopTtsKeepAlive();
+    resumeWake();
   }
 
   function cancelSpeak() {
     ttsQueueRef.current = [];
     ttsActiveRef.current = false;
+    try {
+      currentAudioRef.current?.pause();
+    } catch {
+      /* yoksay */
+    }
+    currentAudioRef.current = null;
     if (typeof window !== "undefined") window.speechSynthesis?.cancel();
     setSpeaking(false);
     stopTtsKeepAlive();
