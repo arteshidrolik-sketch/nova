@@ -294,10 +294,12 @@ export async function POST(req: Request) {
   // Beyin otonom build-düzelt döngüsü için daha fazla tur
   const maxIter = project?.self ? 30 : MAX_TOOL_ITERATIONS;
 
-  // Araçlar
+  // Araçlar. Web arama sayısını sınırla → hesap hız limitine daha zor takılır
+  // (env ile ayarlanabilir; varsayılan 3, eskiden 5'ti).
+  const webSearchMaxUses = Number(process.env.NOVA_WEB_SEARCH_MAX_USES) || 3;
   const tools = [
     GITHUB_TOOL,
-    { type: "web_search_20260209", name: "web_search", max_uses: 5 },
+    { type: "web_search_20260209", name: "web_search", max_uses: webSearchMaxUses },
     ...GENERAL_ACTION_TOOLS,
     ...(project ? [...READ_TOOLS, ...PROJECT_ACTION_TOOLS] : []),
   ] as unknown as Anthropic.Tool[];
@@ -399,6 +401,7 @@ export async function POST(req: Request) {
           "🔎 Derin araştırma modundayım — birkaç güncel kaynağı tarayıp özetleyeceğim. Bu **1-2 dakika** sürebilir ve sonuç toplu gelir; lütfen bekle.\n",
         );
       }
+      let webSearchNoticed = false; // web arama limiti uyarısı bir kez gösterilsin
       for (let i = 0; i < maxIter; i++) {
           // Kill switch (global) veya kullanıcı bu işi durdurduysa: kes
           if (isStopped()) {
@@ -486,6 +489,37 @@ export async function POST(req: Request) {
           }
 
           const final = await stream.finalMessage();
+
+          // Web arama aracı hata verdi mi? (hesap hız limiti / istek başına sınır)
+          // → uydurma yerine kullanıcıya NET, tutarlı bir not göster (bir kez).
+          if (!webSearchNoticed) {
+            for (const b of final.content as unknown as Array<{
+              type?: string;
+              content?: { type?: string; error_code?: string };
+            }>) {
+              if (
+                b.type === "web_search_tool_result" &&
+                b.content?.type === "web_search_tool_result_error"
+              ) {
+                webSearchNoticed = true;
+                const code = b.content.error_code || "";
+                if (code === "too_many_requests" || code === "rate_limited") {
+                  emit(
+                    "\n\n🔎 **Web arama limiti (hesap hız sınırı) şu an dolu.** Birkaç dakika sonra tekrar dene; şimdilik elimdeki bilgiyle yanıtlıyorum.\n",
+                  );
+                } else if (code === "max_uses_exceeded") {
+                  emit(
+                    "\n\n🔎 Bu araştırmadaki arama sınırına ulaşıldı; bulduğum kaynaklarla özetliyorum.\n",
+                  );
+                } else if (code) {
+                  emit(
+                    `\n\n🔎 Web araması şu an kullanılamıyor (${code}); elimdeki bilgiyle yanıtlıyorum.\n`,
+                  );
+                }
+                break;
+              }
+            }
+          }
 
           // Token kullanımını bütçeye kaydet (her API çağrısı)
           if (final.usage) {
