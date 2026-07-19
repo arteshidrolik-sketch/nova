@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 
 type Weather = { temp: number; code: number; city: string } | null;
 type Rates = { eur: number | null; usd: number | null; date: string } | null;
+type RatesState = { data: Rates; error: boolean };
 
 // WMO hava kodu → Türkçe açıklama + emoji
 function wmo(code: number): { label: string; icon: string } {
@@ -25,7 +26,7 @@ function wmo(code: number): { label: string; icon: string } {
 export default function Dashboard() {
   const [now, setNow] = useState<Date | null>(null);
   const [weather, setWeather] = useState<Weather>(null);
-  const [rates, setRates] = useState<Rates>(null);
+  const [rates, setRates] = useState<RatesState>({ data: null, error: false });
 
   // Canlı saat
   useEffect(() => {
@@ -72,23 +73,38 @@ export default function Dashboard() {
     };
   }, []);
 
-  // Günlük kur (ECB / frankfurter — anahtarsız)
+  // Günlük kur (ECB / frankfurter — anahtarsız).
+  // Not: api.frankfurter.app artık api.frankfurter.dev/v1'e 301 yönlendiriyor;
+  // cross-origin redirect fetch'te takılabildiği için doğrudan yeni adrese gidiyoruz.
+  // Tek çağrı: EUR base ile hem TRY hem USD → USD/TRY = TRY / USD (çapraz kur).
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
-        const d = await fetch(
-          "https://api.frankfurter.app/latest?base=EUR&symbols=TRY",
-        ).then((r) => r.json());
-        const usd = await fetch(
-          "https://api.frankfurter.app/latest?base=USD&symbols=TRY",
-        ).then((r) => r.json());
-        setRates({
-          eur: d?.rates?.TRY ?? null,
-          usd: usd?.rates?.TRY ?? null,
-          date: d?.date ?? "",
-        });
-      } catch {}
+        const r = await fetch(
+          "https://api.frankfurter.dev/v1/latest?base=EUR&symbols=TRY,USD",
+        );
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const d = await r.json();
+        const eurTry: number | null = d?.rates?.TRY ?? null;
+        const eurUsd: number | null = d?.rates?.USD ?? null;
+        const usdTry =
+          eurTry != null && eurUsd != null && eurUsd !== 0
+            ? eurTry / eurUsd
+            : null;
+        if (!cancelled) {
+          setRates({
+            data: { eur: eurTry, usd: usdTry, date: d?.date ?? "" },
+            error: false,
+          });
+        }
+      } catch {
+        if (!cancelled) setRates({ data: null, error: true });
+      }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const w = weather ? wmo(weather.code) : null;
@@ -128,16 +144,21 @@ export default function Dashboard() {
       <div className="rounded-2xl border border-emerald-400/40 bg-gradient-to-br from-emerald-500/30 via-teal-500/20 to-green-500/25 p-4 shadow-[0_0_35px_-12px_rgba(52,211,153,0.7)]">
         <div className="mb-2 flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-emerald-100/70">
           <span>Günlük Kur</span>
-          <span>{rates?.date || ""}</span>
+          <span>{rates.data?.date || (rates.error ? "⚠️" : "…")}</span>
         </div>
         <div className="flex items-baseline justify-between border-b border-white/10 py-1.5">
           <span className="font-medium text-emerald-50">🇪🇺 Euro</span>
-          <span className="text-xl font-bold tabular-nums text-amber-300">₺{fmtTRY(rates?.eur ?? null)}</span>
+          <span className="text-xl font-bold tabular-nums text-amber-300">₺{fmtTRY(rates.data?.eur ?? null)}</span>
         </div>
         <div className="flex items-baseline justify-between py-1.5">
           <span className="font-medium text-emerald-50">🇺🇸 Dolar</span>
-          <span className="text-xl font-bold tabular-nums text-lime-300">₺{fmtTRY(rates?.usd ?? null)}</span>
+          <span className="text-xl font-bold tabular-nums text-lime-300">₺{fmtTRY(rates.data?.usd ?? null)}</span>
         </div>
+        {rates.error && (
+          <div className="mt-2 text-center text-[11px] text-rose-300/80">
+            Kur verisi alınamadı
+          </div>
+        )}
       </div>
 
       <div className="mt-auto text-center text-[11px] text-white/40">
