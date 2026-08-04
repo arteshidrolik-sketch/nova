@@ -15,6 +15,7 @@ export type IconName =
   | "ajanlar"
   | "guardrail"
   | "denetim"
+  | "dosyalar"
   | "ayarlar";
 
 const PATHS: Record<IconName, ReactNode> = {
@@ -91,6 +92,13 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
       <path d="M14 2v4a2 2 0 0 0 2 2h4" />
       <path d="M9 13h6M9 17h6M9 9h1" />
+    </>
+  ),
+  // Dosyalar — tepsiye inen ok
+  dosyalar: (
+    <>
+      <path d="M12 3v10m0 0 4-4m-4 4-4-4" />
+      <path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" />
     </>
   ),
   // Ayarlar — sürgüler

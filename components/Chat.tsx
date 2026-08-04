@@ -128,9 +128,27 @@ function GeneratedImage({ url }: { url: string }) {
   );
 }
 
-// Asistan mesajını render eder: markdown görselleri (![](url)) <img> olarak gösterir.
+// Üretilen belge/dosya için indirme butonu (Dosyalar API'sinden indirir).
+function FileDownload({ href, label }: { href: string; label: string }) {
+  return (
+    <a
+      href={href}
+      download
+      className="btn-grad my-1.5 mr-2 inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium text-black"
+      style={{ background: "var(--grad)" }}
+      title="Bilgisayarına indir"
+    >
+      <span className="max-w-[260px] truncate">{label}</span>
+      <span className="opacity-80">⬇ İndir</span>
+    </a>
+  );
+}
+
+// Asistan mesajını render eder: markdown görselleri (![](url)) <img>,
+// belge indirme linklerini ([ad](/api/files?...)) indirme butonu olarak gösterir.
 function MessageBody({ content }: { content: string }) {
-  const re = /!\[[^\]]*\]\((https?:\/\/[^\s)]+)\)/g;
+  const re =
+    /!\[[^\]]*\]\((https?:\/\/[^\s)]+)\)|\[([^\]]*)\]\((\/api\/files\?[^\s)]+)\)/g;
   const parts: ReactNode[] = [];
   let last = 0;
   let k = 0;
@@ -138,7 +156,11 @@ function MessageBody({ content }: { content: string }) {
   while ((m = re.exec(content))) {
     if (m.index > last)
       parts.push(<span key={k++}>{content.slice(last, m.index)}</span>);
-    parts.push(<GeneratedImage key={k++} url={m[1]} />);
+    if (m[1]) parts.push(<GeneratedImage key={k++} url={m[1]} />);
+    else if (m[3])
+      parts.push(
+        <FileDownload key={k++} href={m[3]} label={m[2] || "dosya"} />,
+      );
     last = m.index + m[0].length;
   }
   if (last < content.length)

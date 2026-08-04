@@ -729,14 +729,19 @@ export async function POST(req: Request) {
                 project: project?.name,
               }).catch(() => {});
 
-              // Görsel: sonucu (markdown görsel) doğrudan akışa yansıt; modele kısa özet
-              if (block.name === "generate_image") {
+              // Görsel/belge/dosya: sonucu (markdown görsel ya da indirme linki)
+              // DOĞRUDAN akışa yansıt → kullanıcı hemen görüp indirebilir.
+              if (
+                block.name === "generate_image" ||
+                block.name === "generate_document" ||
+                block.name === "write_file"
+              ) {
                 emit(ok ? `\n\n${result}\n` : `\n\n⚠️ ${result}\n`);
                 toolResults.push({
                   type: "tool_result",
                   tool_use_id: block.id,
                   content: ok
-                    ? "Görsel üretildi ve kullanıcıya gösterildi. Kısaca bir yorum yap; URL'i tekrar yazma."
+                    ? "Çıktı üretildi ve kullanıcıya indirme linkiyle gösterildi. Kısaca bir yorum yap; linki/markdown'ı tekrar yazma."
                     : result.slice(0, 400),
                 });
                 continue;

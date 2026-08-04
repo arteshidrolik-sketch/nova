@@ -87,7 +87,9 @@ export const ACTIONS: Record<string, ActionDef> = {
       const content = String(p.content ?? "");
       await fs.writeFile(target, content, "utf8");
       const sec = formatFindings(scanContent(String(p.path), content));
-      return `Yazıldı: workspace/${String(p.path)} (${Buffer.byteLength(content)} bayt)${sec}`;
+      const rel = String(p.path);
+      const link = `[📄 ${rel}](/api/files?name=${encodeURIComponent(rel)})`;
+      return `✅ Yazıldı: ${link} (${Buffer.byteLength(content)} bayt) — **Dosyalar** sekmesinden de indirebilirsin.${sec}`;
     },
   },
 
@@ -299,9 +301,12 @@ export const ACTIONS: Record<string, ActionDef> = {
           /* indirme hatası — atla */
         }
       }
-      return saved.length
-        ? `Belge üretildi → workspace/${saved.join(", workspace/")}`
-        : "Belge üretildi ama indirilemedi.";
+      if (!saved.length) return "Belge üretildi ama indirilemedi.";
+      // Chat'e tıklanabilir indirme linki + "Dosyalar" sekmesi yönlendirmesi
+      const links = saved
+        .map((f) => `[📄 ${f}](/api/files?name=${encodeURIComponent(f)})`)
+        .join("  ·  ");
+      return `✅ Belge hazır: ${links}\n_(Tüm dosyalar **Dosyalar** sekmesinde — oradan da bilgisayarına indirebilirsin.)_`;
     },
   },
 

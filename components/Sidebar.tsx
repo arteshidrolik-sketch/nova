@@ -14,6 +14,7 @@ export type ViewKey =
   | "ajanlar"
   | "guardrail"
   | "denetim"
+  | "dosyalar"
   | "ayarlar";
 
 export type ConvMeta = {
@@ -28,6 +29,7 @@ const MENU: { key: ViewKey; label: string; icon: string }[] = [
   { key: "brifing", label: "Brifing", icon: "📋" },
   { key: "tasks", label: "Görevler", icon: "✅" },
   { key: "projeler", label: "Projeler", icon: "📁" },
+  { key: "dosyalar", label: "Dosyalar", icon: "📥" },
   { key: "beceriler", label: "Beceriler", icon: "🧩" },
   { key: "surumler", label: "Sürümler", icon: "🚀" },
   { key: "loops", label: "Loops", icon: "🔁" },

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Sidebar, { type ViewKey } from "./Sidebar";
+import Files from "./Files";
 import Workspace from "./Workspace";
 import Tasks from "./Tasks";
 import Loops from "./Loops";
@@ -46,6 +47,7 @@ const TITLES: Record<ViewKey, string> = {
   brifing: "Brifing",
   tasks: "Görevler",
   projeler: "Projeler",
+  dosyalar: "Dosyalar",
   beceriler: "Beceriler",
   surumler: "Sürümler",
   loops: "Loops",
@@ -289,6 +291,8 @@ ekrana tıkla: tam ekran · Boşluk: konuş · fareyi oynat: menüler
           <Audit />
         ) : view === "ajanlar" ? (
           <Agents onStartChat={startAgentChat} />
+        ) : view === "dosyalar" ? (
+          <Files />
         ) : (
           <Placeholder title={TITLES[view]} />
         )}
