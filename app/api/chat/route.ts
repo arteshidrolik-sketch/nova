@@ -1,5 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { selectAgent } from "@/lib/agents/orchestrator";
+import {
+  claudeReachable,
+  toOllamaMessages,
+  ollamaChatStream,
+} from "@/lib/brain/ollama";
 import { SYSTEM_PROMPTS } from "@/lib/agents/prompts";
 import { modelForAgent } from "@/lib/agents/models";
 import { searchMemories } from "@/lib/memory/store";
@@ -171,14 +176,22 @@ export async function POST(req: Request) {
     }
   }
 
-  // 1) Ajan seçimi: özel ajan → o; kilitli yerleşik → o; beyin → developer; değilse orkestratör
+  // Çevrimdışı beyin: OLLAMA_BASE_URL tanımlıysa ve Claude'a ulaşılamıyorsa
+  // (internet yok) yerel Ollama modeline düş. VPS'te bu env yok → hiç etkilenmez.
+  const ollamaUrl = process.env.OLLAMA_BASE_URL;
+  const useOllama = !!ollamaUrl && !(await claudeReachable());
+
+  // 1) Ajan seçimi: özel ajan → o; kilitli yerleşik → o; beyin → developer;
+  //    çevrimdışı → general (orkestratör Claude ister); değilse orkestratör
   const agent = forcedAgent
     ? forcedAgent
     : customAgent
       ? "general" // yerleşik-anahtar gerektiren yerler için güvenli varsayılan
       : project?.self
         ? "developer"
-        : await selectAgent(client, ROUTER_MODEL, messages, prevAgent);
+        : useOllama
+          ? "general"
+          : await selectAgent(client, ROUTER_MODEL, messages, prevAgent);
   let answerModel = customAgent
     ? customAgent.model
     : project?.self
@@ -377,6 +390,32 @@ export async function POST(req: Request) {
 
   (async () => {
     try {
+      // ---- Çevrimdışı beyin (Ollama) — Aşama 1: sohbet ----
+      // İnternet yoksa yerel modelle yanıtla. Bulut araç döngüsü atlanır.
+      if (useOllama) {
+        emit(
+          "\n\n💻 **Çevrimdışı mod** — internet yok, yerel model (Ollama) kullanılıyor. Bulut araçları (web araması, görsel, deploy) şu an devre dışı; sohbet ve bildiklerimle yardımcı olurum.\n\n",
+        );
+        try {
+          const model = process.env.OLLAMA_MODEL || "qwen2.5:7b";
+          const sys =
+            systemNoMem +
+            memNote +
+            "\n\n## ÇEVRİMDIŞISIN\nİnternet ve araçlar (web_search, görsel üretimi, komut, deploy) ŞU AN YOK. Web'e bakıyormuş ya da araç çağırıyormuş gibi YAPMA. Sadece kendi bilginle ve sohbetle yardım et; gerçekten internet gereken bir şey istenirse 'bunu internet gelince yapabilirim' de.";
+          const oMsgs = toOllamaMessages(sys, convo);
+          await ollamaChatStream(ollamaUrl as string, model, oMsgs, (t) =>
+            emit(t),
+          );
+          finishRun(runId, "done");
+        } catch (e) {
+          emit(
+            `\n\n⚠️ Yerel model çalıştırılamadı: ${e instanceof Error ? e.message : "bilinmeyen"}`,
+          );
+          finishRun(runId, "error", "ollama");
+        }
+        return;
+      }
+
       // Bütçe kapısı: günlük token tavanı dolduysa YENİ iş başlamaz
       // (çalışan işler kesilmez — Bölüm 0.2). Beyin (self) de bu kapıya tabidir.
       if (isOverCap()) {
