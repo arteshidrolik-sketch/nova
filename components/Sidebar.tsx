@@ -89,7 +89,9 @@ export default function Sidebar({
             <span className="nova-orb absolute inset-0 rounded-xl" />
             <span className="relative text-sm font-bold text-black">N</span>
           </span>
-          <span className="hidden font-semibold tracking-wide xl:block">Nova</span>
+          <span className="hidden font-semibold tracking-wide xl:block">
+            {process.env.NEXT_PUBLIC_APP_NAME || "Nova"}
+          </span>
         </div>
 
         {/* ana menü — kalan genişliğe eşit yayılır */}

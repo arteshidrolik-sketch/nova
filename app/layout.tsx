@@ -11,9 +11,12 @@ const notoEmoji = Noto_Color_Emoji({
   display: "swap",
 });
 
+// Uygulama adı ortam değişkeninden gelir: VPS'te "Nova", yerelde "Nova Desk".
+const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME || "Nova";
+
 export const metadata: Metadata = {
-  title: "Nova",
-  description: "Nova — kişisel geliştirici asistanı",
+  title: APP_NAME,
+  description: `${APP_NAME} — kişisel geliştirici asistanı`,
 };
 
 export const viewport: Viewport = {
