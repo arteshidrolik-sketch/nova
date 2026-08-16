@@ -310,6 +310,115 @@ export const ACTIONS: Record<string, ActionDef> = {
     },
   },
 
+  edit_excel: {
+    dangerous: true,
+    project: false,
+    description:
+      "Kullanıcının YÜKLEDİĞİ bir Excel dosyasına (.xlsx) formül ekler/düzenler; orijinali (veri, biçim, hücre konumları) BOZMADAN yeni bir kopya üretir. Kullanıcı 'yüklediğim Excel'e formül ekle', 'şu hücreye şu formülü yaz', 'toplam/çarpım/KDV sütunu ekle' gibi bir şey isterse BU ARACI çağır (generate_document DEĞİL). Çağrılınca hemen çalışır, sonuç Dosyalar'a kaydedilir. `edits`: her biri {cell (ör. D2), formula (ör. =B2*C2), sheet (opsiyonel)}. Hücre adreslerini yüklenen tablonun düzeninden hesapla: 1. sütun=A, 2.=B…; başlık genelde 1. satır, veriler 2. satırdan başlar. Her veri satırı için ayrı hücre ver (D2, D3, D4…).",
+    input_schema: {
+      type: "object",
+      properties: {
+        edits: {
+          type: "array",
+          description:
+            "Uygulanacak formüller listesi. Her veri satırı için ayrı bir giriş.",
+          items: {
+            type: "object",
+            properties: {
+              cell: { type: "string", description: "Hücre adresi, ör. D2" },
+              formula: {
+                type: "string",
+                description: "Formül (= ile veya =siz), ör. =B2*C2",
+              },
+              sheet: {
+                type: "string",
+                description: "Sayfa adı (opsiyonel; boşsa ilk sayfa)",
+              },
+            },
+            required: ["cell", "formula"],
+          },
+        },
+        filename: { type: "string", description: "Çıktı dosya adı (opsiyonel)" },
+      },
+      required: ["edits"],
+    },
+    makeTitle: (p) =>
+      `Excel'e formül ekle (${Array.isArray(p.edits) ? (p.edits as unknown[]).length : 0} hücre)`,
+    makeSummary: (p) => {
+      const edits = (Array.isArray(p.edits) ? p.edits : []) as Array<{
+        cell?: unknown;
+        formula?: unknown;
+      }>;
+      const list = edits
+        .slice(0, 8)
+        .map((e) => `${String(e.cell)} = ${String(e.formula)}`)
+        .join(", ");
+      return `Yüklenen Excel'e ${edits.length} formül eklenecek (orijinal bozulmadan, yeni kopya olarak): ${list}${edits.length > 8 ? "…" : ""}`;
+    },
+    execute: async (p) => {
+      const srcB64 = p.source_xlsx ? String(p.source_xlsx) : "";
+      if (!srcB64)
+        return "Hata: Önce bir Excel (.xlsx) dosyası yükle, sonra formül eklememi iste. (Yüklü dosya bulunamadı.)";
+      const edits = (Array.isArray(p.edits) ? p.edits : []) as Array<{
+        cell?: unknown;
+        formula?: unknown;
+        sheet?: unknown;
+      }>;
+      if (!edits.length) return "Hata: Eklenecek formül belirtilmedi.";
+      const { Workbook } = await import("exceljs");
+      const wb = new Workbook();
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await wb.xlsx.load(Buffer.from(srcB64, "base64") as any);
+      } catch {
+        return "Hata: Excel dosyası açılamadı (bozuk ya da desteklenmeyen biçim).";
+      }
+      // Açılışta formülleri yeniden hesapla (önbellek değeri boş kalmasın)
+      wb.calcProperties.fullCalcOnLoad = true;
+      const applied: string[] = [];
+      const skipped: string[] = [];
+      for (const e of edits) {
+        const cell = String(e.cell ?? "").trim();
+        let formula = String(e.formula ?? "").trim();
+        if (!cell || !formula) {
+          skipped.push(`${cell || "?"} (eksik)`);
+          continue;
+        }
+        if (formula.startsWith("=")) formula = formula.slice(1);
+        const ws = e.sheet
+          ? wb.getWorksheet(String(e.sheet))
+          : wb.worksheets[0];
+        if (!ws) {
+          skipped.push(`${cell} (sayfa bulunamadı)`);
+          continue;
+        }
+        try {
+          ws.getCell(cell).value = { formula };
+          applied.push(`${ws.name}!${cell}==${formula}`);
+        } catch {
+          skipped.push(`${cell} (geçersiz)`);
+        }
+      }
+      if (!applied.length)
+        return `Hiç formül uygulanamadı. Atlananlar: ${skipped.join(", ")}`;
+      const baseName = String(p.filename || p.source_name || "excel").replace(
+        /\.[a-z0-9]+$/i,
+        "",
+      );
+      const outName = `${baseName}_formullu.xlsx`;
+      await fs.mkdir(WORKSPACE, { recursive: true });
+      const buf = await wb.xlsx.writeBuffer();
+      await fs.writeFile(safeWorkspacePath(outName), Buffer.from(buf));
+      const link = `[📊 ${outName}](/api/files?name=${encodeURIComponent(outName)})`;
+      return (
+        `✅ Formüller eklendi (orijinal korundu, yeni kopya): ${link}\n` +
+        `Uygulanan (${applied.length}): ${applied.slice(0, 20).join(" · ")}${applied.length > 20 ? " …" : ""}` +
+        (skipped.length ? `\n⚠️ Atlanan: ${skipped.join(", ")}` : "") +
+        `\n_Dosyalar sekmesinden de indirebilirsin._`
+      );
+    },
+  },
+
   generate_image: {
     dangerous: true,
     project: false,

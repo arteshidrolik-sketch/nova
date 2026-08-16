@@ -467,6 +467,8 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
               kind: "text",
               name: file.name,
               text: String(d.text).slice(0, 150000),
+              // xlsx binary'sini de sakla → edit_excel formül eklerken kullanır
+              ...(/\.(xlsx|xls)$/i.test(file.name) ? { data: b64 } : {}),
             });
           } else {
             alert(`${file.name} okunamadı: ${d?.error ?? "hata"}`);

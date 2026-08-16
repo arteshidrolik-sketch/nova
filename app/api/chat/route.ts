@@ -685,6 +685,22 @@ export async function POST(req: Request) {
                 }
               }
 
+              // Excel düzenleme: son yüklenen .xlsx binary'sini araca enjekte et
+              if (block.name === "edit_excel") {
+                for (let mi = messages.length - 1; mi >= 0; mi--) {
+                  const att = messages[mi].attachments?.find(
+                    (a) => a.data && /\.(xlsx|xls)$/i.test(a.name || ""),
+                  );
+                  if (att) {
+                    payload.source_xlsx = att.data;
+                    payload.source_name = att.name;
+                    break;
+                  }
+                  if (messages[mi].role === "user" && messages[mi].attachments?.length)
+                    break; // son kullanıcı turunda xlsx yoksa dur
+                }
+              }
+
               const title = actionTitle(block.name, payload);
 
               // RİSKLİ aksiyon (git push, dış dünyaya giden) → İNSAN ONAYINA düşer,
@@ -774,7 +790,8 @@ export async function POST(req: Request) {
               if (
                 block.name === "generate_image" ||
                 block.name === "generate_document" ||
-                block.name === "write_file"
+                block.name === "write_file" ||
+                block.name === "edit_excel"
               ) {
                 emit(ok ? `\n\n${result}\n` : `\n\n⚠️ ${result}\n`);
                 toolResults.push({

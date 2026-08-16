@@ -12,6 +12,7 @@
     "@anthropic-ai/sdk": "^0.106.0",
     "@xyflow/react": "^12.11.1",
     "adm-zip": "^0.5.18",
+    "exceljs": "^4.4.0",
     "mammoth": "^1.12.0",
     "next": "^16.2.9",
     "react": "^19.2.7",
