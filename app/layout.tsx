@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Noto_Color_Emoji } from "next/font/google";
+import { Noto_Color_Emoji, Space_Grotesk, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 
 // Emoji fontu — VPS'te sistem emoji fontu olmadığı için başlık/buton
@@ -8,6 +8,20 @@ const notoEmoji = Noto_Color_Emoji({
   weight: "400",
   subsets: ["emoji"],
   variable: "--font-emoji",
+  display: "swap",
+});
+
+// Haven tasarım dili: Space Grotesk (metin) + IBM Plex Mono (etiket/veri).
+// latin-ext Türkçe karakterler (ğışçöü) için gerekli.
+const spaceGrotesk = Space_Grotesk({
+  subsets: ["latin", "latin-ext"],
+  variable: "--font-space",
+  display: "swap",
+});
+const plexMono = IBM_Plex_Mono({
+  weight: ["400", "500", "600"],
+  subsets: ["latin", "latin-ext"],
+  variable: "--font-plex",
   display: "swap",
 });
 
@@ -23,7 +37,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#02040a",
+  themeColor: "#060a14",
 };
 
 export default function RootLayout({
@@ -32,7 +46,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="tr" className={notoEmoji.variable}>
+    <html
+      lang="tr"
+      className={`${notoEmoji.variable} ${spaceGrotesk.variable} ${plexMono.variable}`}
+    >
       <body>
         <div className="aurora" />
         {children}

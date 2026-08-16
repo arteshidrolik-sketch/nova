@@ -107,7 +107,7 @@ export default function Sidebar({
                 style={
                   isActive
                     ? {
-                        background: "linear-gradient(180deg, #22d3ee22, transparent)",
+                        background: "linear-gradient(180deg, #4fd8ff22, transparent)",
                         color: "var(--text)",
                         boxShadow: "inset 0 -2px 0 var(--accent)",
                       }

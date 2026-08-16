@@ -19,13 +19,13 @@ const MODELS = [
   { id: "claude-sonnet-5", label: "Sonnet — dengeli" },
   { id: "claude-opus-4-8", label: "Opus — en güçlü" },
 ];
-const COLORS = ["#22d3ee", "#a855f7", "#f472b6", "#f59e0b", "#10b981", "#3b82f6", "#ef4444"];
+const COLORS = ["#4fd8ff", "#a855f7", "#f472b6", "#f59e0b", "#10b981", "#3b82f6", "#ef4444"];
 
 const empty = {
   name: "",
   description: "",
   emoji: "🤖",
-  color: "#22d3ee",
+  color: "#4fd8ff",
   model: "claude-sonnet-5",
   systemPrompt: "",
   skillIds: [] as string[],
@@ -317,7 +317,7 @@ export default function Agents({
                           className="rounded-full px-3 py-1 text-xs font-medium"
                           style={{
                             color: on ? "#04121a" : "var(--accent)",
-                            background: on ? "var(--accent)" : "var(--accent-bg, #22d3ee1a)",
+                            background: on ? "var(--accent)" : "var(--accent-bg, #4fd8ff1a)",
                             border: "1px solid var(--border)",
                           }}
                         >

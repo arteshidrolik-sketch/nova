@@ -22,7 +22,7 @@ type Task = {
 
 const STATUS_STYLE: Record<TaskStatus, { label: string; color: string }> = {
   proposed: { label: "BEKLİYOR", color: "#f59e0b" },
-  running: { label: "ÇALIŞIYOR", color: "#22d3ee" },
+  running: { label: "ÇALIŞIYOR", color: "#4fd8ff" },
   done: { label: "TAMAM", color: "#10b981" },
   rejected: { label: "İPTAL", color: "#6b7280" },
   failed: { label: "HATA", color: "#ef4444" },
@@ -246,7 +246,7 @@ export default function Tasks({ onChange }: { onChange?: () => void }) {
                           className="rounded-lg px-4 py-1.5 text-sm font-semibold text-black disabled:opacity-40"
                           style={{
                             background:
-                              "linear-gradient(135deg, #10b981, #22d3ee)",
+                              "linear-gradient(135deg, #10b981, #4fd8ff)",
                           }}
                         >
                           ▶ GO

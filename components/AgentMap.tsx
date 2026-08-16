@@ -242,18 +242,18 @@ export default function AgentGraph({
           </filter>
           <radialGradient id="orbGrad" cx="50%" cy="42%" r="62%">
             <stop offset="0%" stopColor="#e6fcff" />
-            <stop offset="38%" stopColor="#22d3ee" />
+            <stop offset="38%" stopColor="#4fd8ff" />
             <stop offset="72%" stopColor="#0b6f93" />
             <stop offset="100%" stopColor="#063246" />
           </radialGradient>
           <radialGradient id="halo" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.5" />
-            <stop offset="55%" stopColor="#22d3ee" stopOpacity="0.1" />
-            <stop offset="100%" stopColor="#22d3ee" stopOpacity="0" />
+            <stop offset="0%" stopColor="#4fd8ff" stopOpacity="0.5" />
+            <stop offset="55%" stopColor="#4fd8ff" stopOpacity="0.1" />
+            <stop offset="100%" stopColor="#4fd8ff" stopOpacity="0" />
           </radialGradient>
           <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
             <stop offset="0%" stopColor="#fde68a" />
-            <stop offset="50%" stopColor="#22d3ee" />
+            <stop offset="50%" stopColor="#4fd8ff" />
             <stop offset="100%" stopColor="#a855f7" />
           </linearGradient>
           {/* gezegen gövde gradyanları (ışık sol-üstten) */}
@@ -367,7 +367,7 @@ export default function AgentGraph({
               key={`e-${key}`}
               d={curve(p.x, p.y)}
               fill="none"
-              stroke={on ? color : "#22d3ee"}
+              stroke={on ? color : "#4fd8ff"}
               strokeOpacity={on ? 0.95 : 0.28}
               strokeWidth={on ? 3 : 1.4}
               filter={on ? "url(#glow)" : undefined}
@@ -407,7 +407,7 @@ export default function AgentGraph({
         {/* ses tepkisi: Nova konuşurken genişleyen halkalar */}
         {speaking && (
           <g>
-            <circle cx={CX} cy={CY} r="46" fill="none" stroke="#22d3ee" strokeWidth="3">
+            <circle cx={CX} cy={CY} r="46" fill="none" stroke="#4fd8ff" strokeWidth="3">
               <animate attributeName="r" values="46;118" dur="1.6s" repeatCount="indefinite" />
               <animate attributeName="opacity" values="0.9;0" dur="1.6s" repeatCount="indefinite" />
             </circle>
@@ -419,7 +419,7 @@ export default function AgentGraph({
         )}
         {/* dinlerken nazik nabız */}
         {listening && (
-          <circle cx={CX} cy={CY} r="52" fill="none" stroke="#22d3ee" strokeWidth="2">
+          <circle cx={CX} cy={CY} r="52" fill="none" stroke="#4fd8ff" strokeWidth="2">
             <animate attributeName="r" values="50;66;50" dur="1.4s" repeatCount="indefinite" />
             <animate attributeName="opacity" values="0.7;0.2;0.7" dur="1.4s" repeatCount="indefinite" />
           </circle>

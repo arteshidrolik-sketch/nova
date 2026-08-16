@@ -172,7 +172,7 @@ function AgentBadge({ m }: { m: Message }) {
   let color: string, emoji: string, label: string;
   if (m.agentName) {
     // özel ajan
-    color = m.agentColor || "#22d3ee";
+    color = m.agentColor || "#4fd8ff";
     emoji = m.agentEmoji || "🤖";
     label = m.agentName;
   } else if (m.agent && AGENT_META[m.agent]) {
@@ -1294,7 +1294,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
             style={{
               borderColor: speakEnabled ? "var(--accent)" : "var(--border)",
               color: speakEnabled ? "var(--accent)" : "var(--text-muted)",
-              background: speakEnabled ? "#22d3ee14" : "transparent",
+              background: speakEnabled ? "#4fd8ff14" : "transparent",
             }}
           >
             {speakEnabled ? "🔊 Sesli açık" : "🔇 Sesli kapalı"}

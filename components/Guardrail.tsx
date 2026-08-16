@@ -190,7 +190,7 @@ export default function Guardrail() {
                 onClick={() => toggle(false)}
                 disabled={busy}
                 className="rounded-lg px-5 py-2.5 text-sm font-bold text-black disabled:opacity-40"
-                style={{ background: "linear-gradient(135deg, #10b981, #22d3ee)" }}
+                style={{ background: "linear-gradient(135deg, #10b981, #4fd8ff)" }}
               >
                 ▶ DEVAM ET
               </button>
