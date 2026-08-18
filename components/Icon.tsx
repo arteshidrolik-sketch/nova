@@ -16,6 +16,7 @@ export type IconName =
   | "guardrail"
   | "denetim"
   | "dosyalar"
+  | "fatura"
   | "ayarlar";
 
 const PATHS: Record<IconName, ReactNode> = {
@@ -99,6 +100,13 @@ const PATHS: Record<IconName, ReactNode> = {
     <>
       <path d="M12 3v10m0 0 4-4m-4 4-4-4" />
       <path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" />
+    </>
+  ),
+  // Fatura — fiş/makbuz (altı tırtıklı)
+  fatura: (
+    <>
+      <path d="M6 2h12v20l-2-1.5-2 1.5-2-1.5L10 22l-2-1.5L6 22Z" />
+      <path d="M9 7h6M9 11h6M9 15h4" />
     </>
   ),
   // Ayarlar — sürgüler
