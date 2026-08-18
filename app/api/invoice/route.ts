@@ -56,10 +56,24 @@ const INVOICE_TOOL = {
           required: ["aciklama"],
         },
       },
-      mal_hizmet_toplam: { type: ["number", "null"] },
-      iskonto: { type: ["number", "null"] },
-      kdv_toplam: { type: ["number", "null"] },
-      genel_toplam: { type: ["number", "null"], description: "Ödenecek tutar" },
+      mal_hizmet_toplam: {
+        type: ["number", "null"],
+        description:
+          "Faturadaki 'Mal Hizmet Toplam Tutarı' satırı — KDV HARİÇ ara toplam (kalem tutarlarının toplamı). Vergiler dahil tutarı BURAYA YAZMA.",
+      },
+      iskonto: {
+        type: ["number", "null"],
+        description: "'Toplam İskonto' satırı (yoksa null)",
+      },
+      kdv_toplam: {
+        type: ["number", "null"],
+        description: "'Hesaplanan KDV' satırı (toplam KDV tutarı)",
+      },
+      genel_toplam: {
+        type: ["number", "null"],
+        description:
+          "'Vergiler Dahil Toplam Tutar' / 'Ödenecek Tutar' satırı — KDV DAHİL nihai tutar",
+      },
     },
     required: ["kalemler"],
   },
@@ -75,7 +89,10 @@ const EXTRACT_PROMPT =
   "- Kalem tablosunda hiçbir satırı atlama; miktar/adet sütununu özellikle dikkatli oku.\n" +
   "- BİRİM: Türk faturalarında miktar ve birim çoğu zaman AYNI hücrede yazar ('2 Adet', '1,5 KG', '3 MT', '10 AD', 'C62' kodu = Adet). Bunu ayrıştır: miktar=2, birim='Adet'. Ayrı 'Birim' sütunu varsa oradan al; kısaltmaları aç (AD/ADET→Adet, KG→kg, MT/M→m, LT→lt, PK→Paket, KT→Koli). Belgede gerçekten hiçbir birim yazmıyorsa ve kalemler sayılabilir ürünse 'Adet' yaz.\n" +
   "- Görsel bulanıksa okunduğu kadarını ver; emin olmadığın rakamı null bırak.\n" +
-  "- Belge birden çok parça/görüntüden oluşuyorsa hepsi AYNI faturadır; birleştirerek oku.";
+  "- Belge birden çok parça/görüntüden oluşuyorsa hepsi AYNI faturadır; birleştirerek oku.\n" +
+  "- TOPLAM ALANLARINI KARIŞTIRMA: mal_hizmet_toplam = 'Mal Hizmet Toplam Tutarı' (KDV HARİÇ ara toplam); " +
+  "genel_toplam = 'Vergiler Dahil Toplam Tutar' / 'Ödenecek Tutar' (KDV DAHİL). " +
+  "Sağlama: mal_hizmet_toplam − iskonto + KDV = genel_toplam çıkmalı; çıkmıyorsa alanları yanlış eşledin, tekrar bak.";
 
 type Page = { data: string; mediaType: string };
 
@@ -109,6 +126,31 @@ function normalizeFields(raw: Record<string, unknown>): InvoiceFields {
     kdv_toplam: num(raw.kdv_toplam),
     genel_toplam: num(raw.genel_toplam),
   };
+}
+
+// Bilinen karışıklığı deterministik düzelt: model bazen mal_hizmet_toplam'a
+// KDV DAHİL tutarı (ödenecek tutarı) yazıyor. Rakamlar bunu ele veriyorsa
+// kalem toplamından düzeltir ve uyarıyla bildirir.
+function autofix(f: InvoiceFields): string[] {
+  const w: string[] = [];
+  const tol = (x: number) => Math.max(0.05, Math.abs(x) * 0.01);
+  const satirToplam = f.kalemler.reduce((a, k) => a + (k.tutar ?? 0), 0);
+  if (
+    f.mal_hizmet_toplam !== null &&
+    f.genel_toplam !== null &&
+    f.kdv_toplam !== null &&
+    f.kdv_toplam > 0 &&
+    Math.abs(f.mal_hizmet_toplam - f.genel_toplam) <= tol(f.genel_toplam) &&
+    f.kalemler.some((k) => k.tutar !== null) &&
+    Math.abs(satirToplam - (f.iskonto ?? 0) + f.kdv_toplam - f.genel_toplam) <=
+      tol(f.genel_toplam)
+  ) {
+    f.mal_hizmet_toplam = Math.round(satirToplam * 100) / 100;
+    w.push(
+      "Mal/hizmet alanına vergiler dahil tutar yazılmıştı; kalem toplamından KDV hariç olarak düzeltildi — kontrol et.",
+    );
+  }
+  return w;
 }
 
 // Aritmetik sağlama: model ne derse desin rakamlar TUTARLI olmalı.
@@ -197,7 +239,8 @@ export async function POST(req: Request) {
       );
     }
     const fields = normalizeFields(toolUse.input);
-    return Response.json({ fields, uyarilar: validate(fields) });
+    const fixNotes = autofix(fields);
+    return Response.json({ fields, uyarilar: [...fixNotes, ...validate(fields)] });
   } catch (e) {
     return Response.json(
       { error: e instanceof Error ? e.message : "Çıkarım hatası" },
