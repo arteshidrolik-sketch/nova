@@ -341,26 +341,6 @@ export default function Invoices() {
                 />
               </div>
             ))}
-            {(
-              [
-                ["Mal/Hizmet", "mal_hizmet_toplam"],
-                ["İskonto", "iskonto"],
-                ["KDV", "kdv_toplam"],
-                ["Ödenecek", "genel_toplam"],
-              ] as const
-            ).map(([label, key]) => (
-              <div key={key}>
-                <label className={labelCls} style={{ color: "var(--text-muted)" }}>
-                  {label}
-                </label>
-                <input
-                  className={inputCls}
-                  style={inputStyle}
-                  defaultValue={draft[key] ?? ""}
-                  onBlur={(e) => setF({ [key]: numVal(e.target.value) })}
-                />
-              </div>
-            ))}
           </div>
 
           <div className="mb-2 overflow-x-auto">
@@ -370,11 +350,11 @@ export default function Invoices() {
                   className="text-left font-mono text-[11px] uppercase tracking-wider"
                   style={{ color: "var(--text-muted)" }}
                 >
-                  <th className="py-1 pr-2">Açıklama</th>
+                  <th className="py-1 pr-2">Ürün</th>
                   <th className="w-20 py-1 pr-2">Miktar</th>
                   <th className="w-16 py-1 pr-2">Birim</th>
                   <th className="w-24 py-1 pr-2">Birim Fiyat</th>
-                  <th className="w-16 py-1 pr-2">KDV %</th>
+                  <th className="w-16 py-1 pr-2">KDV</th>
                   <th className="w-24 py-1 pr-2">Tutar</th>
                   <th className="w-8 py-1" />
                 </tr>
@@ -430,6 +410,45 @@ export default function Invoices() {
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {/* Tutar sütununun altı: KDV'li fiyat (kalemlerden canlı) + toplam fiyat */}
+          <div className="mb-3 flex flex-col items-end gap-2">
+            <div className="flex items-center gap-2">
+              <span className={labelCls + " !mb-0"} style={{ color: "var(--text-muted)" }}>
+                KDV&apos;li Fiyat
+              </span>
+              <span
+                className="w-40 rounded-lg border px-2 py-1.5 text-right text-sm"
+                style={{ ...inputStyle, color: "var(--accent)" }}
+              >
+                {(() => {
+                  const kdvli = draft.kalemler.reduce(
+                    (a, k) =>
+                      a + (k.tutar ?? 0) * (1 + (k.kdv_orani ?? 0) / 100),
+                    0,
+                  );
+                  const fallback =
+                    draft.kalemler.reduce((a, k) => a + (k.tutar ?? 0), 0) +
+                    (draft.kdv_toplam ?? 0);
+                  const v = draft.kalemler.some((k) => k.kdv_orani !== null)
+                    ? kdvli
+                    : fallback;
+                  return fmtMoney(Math.round(v * 100) / 100, draft.para_birimi);
+                })()}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={labelCls + " !mb-0"} style={{ color: "var(--text-muted)" }}>
+                Toplam Fiyat
+              </span>
+              <input
+                className="w-40 rounded-lg border px-2 py-1.5 text-right text-sm outline-none"
+                style={inputStyle}
+                defaultValue={draft.genel_toplam ?? ""}
+                onBlur={(e) => setF({ genel_toplam: numVal(e.target.value) })}
+              />
+            </div>
           </div>
 
           <div className="flex items-center justify-between">

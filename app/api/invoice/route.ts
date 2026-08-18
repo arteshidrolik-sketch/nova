@@ -285,10 +285,8 @@ export async function GET(req: Request) {
     { header: "Fatura No", key: "no", width: 20 },
     { header: "Satıcı", key: "satici", width: 32 },
     { header: "Satıcı VKN", key: "vkn", width: 14 },
-    { header: "Mal/Hizmet", key: "mh", width: 14 },
-    { header: "İskonto", key: "isk", width: 12 },
     { header: "KDV", key: "kdv", width: 12 },
-    { header: "Ödenecek", key: "genel", width: 14 },
+    { header: "Toplam Fiyat", key: "genel", width: 14 },
     { header: "Para", key: "pb", width: 8 },
     { header: "Kaynak dosya", key: "kaynak", width: 26 },
   ];
@@ -299,8 +297,6 @@ export async function GET(req: Request) {
       no: r.fatura_no ?? "",
       satici: r.satici ?? "",
       vkn: r.satici_vkn ?? "",
-      mh: r.mal_hizmet_toplam ?? "",
-      isk: r.iskonto ?? "",
       kdv: r.kdv_toplam ?? "",
       genel: r.genel_toplam ?? "",
       pb: r.para_birimi ?? "TRY",
@@ -313,12 +309,13 @@ export async function GET(req: Request) {
     { header: "Tarih", key: "tarih", width: 12 },
     { header: "Fatura No", key: "no", width: 20 },
     { header: "Satıcı", key: "satici", width: 28 },
-    { header: "Açıklama", key: "ack", width: 40 },
+    { header: "Ürün", key: "ack", width: 40 },
     { header: "Miktar", key: "miktar", width: 10 },
     { header: "Birim", key: "birim", width: 10 },
     { header: "Birim Fiyat", key: "bf", width: 12 },
-    { header: "KDV %", key: "kdv", width: 8 },
+    { header: "KDV", key: "kdv", width: 8 },
     { header: "Tutar", key: "tutar", width: 12 },
+    { header: "KDV'li Fiyat", key: "kdvli", width: 12 },
   ];
   kalem.getRow(1).font = { bold: true };
   for (const r of all) {
@@ -333,6 +330,10 @@ export async function GET(req: Request) {
         bf: k.birim_fiyat ?? "",
         kdv: k.kdv_orani ?? "",
         tutar: k.tutar ?? "",
+        kdvli:
+          k.tutar !== null
+            ? Math.round(k.tutar * (1 + (k.kdv_orani ?? 0) / 100) * 100) / 100
+            : "",
       });
     }
   }
