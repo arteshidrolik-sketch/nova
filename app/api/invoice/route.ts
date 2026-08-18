@@ -73,6 +73,7 @@ const EXTRACT_PROMPT =
   "- SADECE belgede fiilen okuduğunu yaz. Okunamayan/olmayan alana null koy — ASLA tahmin etme, uydurma.\n" +
   "- Sayıları Türk biçiminden çevir: '1.234,56' → 1234.56. Para işaretlerini sayıya katma.\n" +
   "- Kalem tablosunda hiçbir satırı atlama; miktar/adet sütununu özellikle dikkatli oku.\n" +
+  "- BİRİM: Türk faturalarında miktar ve birim çoğu zaman AYNI hücrede yazar ('2 Adet', '1,5 KG', '3 MT', '10 AD', 'C62' kodu = Adet). Bunu ayrıştır: miktar=2, birim='Adet'. Ayrı 'Birim' sütunu varsa oradan al; kısaltmaları aç (AD/ADET→Adet, KG→kg, MT/M→m, LT→lt, PK→Paket, KT→Koli). Belgede gerçekten hiçbir birim yazmıyorsa ve kalemler sayılabilir ürünse 'Adet' yaz.\n" +
   "- Görsel bulanıksa okunduğu kadarını ver; emin olmadığın rakamı null bırak.\n" +
   "- Belge birden çok parça/görüntüden oluşuyorsa hepsi AYNI faturadır; birleştirerek oku.";
 
