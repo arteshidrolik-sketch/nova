@@ -180,7 +180,6 @@ export async function POST(req: Request) {
     const resp = await client.messages.create({
       model: EXTRACT_MODEL,
       max_tokens: 8000,
-      temperature: 0,
       tools: [INVOICE_TOOL as unknown as Anthropic.Tool],
       tool_choice: { type: "tool", name: "fatura_ver" },
       messages: [
