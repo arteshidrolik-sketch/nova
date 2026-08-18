@@ -562,6 +562,43 @@ export const ACTIONS: Record<string, ActionDef> = {
     },
   },
 
+  publish_project_file: {
+    dangerous: true,
+    project: true,
+    description:
+      "Aktif projedeki bir dosyayı (ör. mockup/taslak HTML) kullanıcının indirebileceği workspace'e KOPYALAR ve gerçek indirme linki döner. Kullanıcı bir taslağı görmek/indirmek istediğinde ya da bir mockup dosyasını düzenledikten SONRA güncel halini sunmak için BU ARACI çağır — içeriği write_file ile elle yeniden YAZMA (içerik eskir/bozulur, bu araç birebir kopyalar). Çağrılınca hemen çalışır.",
+    input_schema: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description: "Proje köküne göre dosya yolu (ör. mockup/vyvo-taslak.html)",
+        },
+        filename: {
+          type: "string",
+          description: "Workspace'te görünecek ad (opsiyonel; boşsa dosya adı)",
+        },
+      },
+      required: ["path"],
+    },
+    makeTitle: (p) =>
+      `[${String(p.projectName ?? "proje")}] Yayınla: ${String(p.path)}`,
+    makeSummary: (p) =>
+      `"${String(p.projectName ?? "proje")}" projesindeki "${String(p.path)}" dosyası, kullanıcının indirebilmesi için workspace'e birebir kopyalanacak.`,
+    execute: async (p) => {
+      const root = String(p.projectPath ?? "");
+      if (!root) return "Hata: aktif proje yok.";
+      const src = resolveIn(root, String(p.path));
+      const buf = await fs.readFile(src).catch(() => null);
+      if (buf === null) return `Dosya okunamadı: ${String(p.path)}`;
+      const name = path.basename(String(p.filename || p.path));
+      await fs.mkdir(WORKSPACE, { recursive: true });
+      await fs.writeFile(safeWorkspacePath(name), buf);
+      const link = `[📄 ${name}](/api/files?name=${encodeURIComponent(name)})`;
+      return `✅ Güncel kopya hazır: ${link} (${buf.length} bayt) — **Dosyalar** sekmesinden de indirebilirsin.`;
+    },
+  },
+
   git_commit_push: {
     dangerous: true,
     approval: true, // uzak depoya push → geri alınması zor, insan onayı ister

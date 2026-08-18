@@ -76,6 +76,15 @@ function trimTrailingThinking(
 }
 const MAX_TOOL_ITERATIONS = 12;
 
+// Sunucuya ayrılmış durum işaretleri (⚙️ ✅ ⏳ ⚠️ 📂 🔧 🌐 🛡️ ⛔) yalnızca
+// gerçek araç sonuçlarında sunucu tarafından basılır. Model bu işaretleri
+// taklit edip "sahte araç sonucu" (ör. çağrılmamış bir yazma için "✅ Yazıldı")
+// gösteremesin diye model metninde nötr işarete çevrilir.
+const RESERVED_MARKS = /[⚙✅⏳⚠⛔\u{1F4C2}\u{1F527}\u{1F310}\u{1F6E1}]️?/gu;
+function sanitizeModelText(t: string): string {
+  return t.replace(RESERVED_MARKS, "▪");
+}
+
 type Attach = {
   kind: "image" | "pdf" | "text";
   name?: string;
@@ -231,6 +240,11 @@ export async function POST(req: Request) {
       `RİSKLİ aksiyonlar — git_commit_push (push), github_create_issue — İNSAN ONAYI ister: çağırınca Görevler onay ` +
       `kuyruğuna düşer, kullanıcı onaylayınca çalışır. Bunları çağırdığında "yaptım/push ettim" DEME; "onayına sundum, ` +
       `Görevler'de onayla" de. Kod değişikliklerini yaz (otomatik iner) ama push'u kullanıcı onayına bırak.\n` +
+      `### 🎭 SAHTE ARAÇ SONUCU YASAK\n` +
+      `Durum satırlarını ("⚙️ …", "✅ Yapıldı", "✅ Yazıldı: … bayt", "⏳ Onay bekliyor") SUNUCU basar; ` +
+      `sen bu kalıpları ASLA kendin yazma. Bir iş ancak aracı FİİLEN çağırıp gerçek tool_result gördüysen yapılmıştır; ` +
+      `araç çağırmadan "yazdım/kopyaladım/güncelledim" deme. Kullanıcının indireceği bir proje dosyasının (mockup/taslak) ` +
+      `GÜNCEL halini sunmak için publish_project_file çağır — içeriği write_file ile elle yeniden yazma.\n` +
       `### 🚫 HALÜSİNASYON YASAK — araç sonucuna GÜVEN\n` +
       `Bir araç "yazıldı/yapıldı" diyorsa iş OLMUŞTUR; bu yer gerçeğidir. ASLA şunları UYDURMA: "diske yansımıyor", ` +
       `"kuyruk ile dosya sistemi arasında kopukluk", "sistem arızalı", "izin sorunu", "setup.sh çalıştır", ` +
@@ -486,13 +500,13 @@ export async function POST(req: Request) {
               event.type === "content_block_delta" &&
               event.delta.type === "text_delta"
             ) {
-              emit(event.delta.text);
+              emit(sanitizeModelText(event.delta.text));
             } else if (
               event.type === "content_block_delta" &&
               (event.delta as { type?: string }).type === "thinking_delta"
             ) {
               const t = (event.delta as { thinking?: string }).thinking ?? "";
-              if (t) emit(t);
+              if (t) emit(sanitizeModelText(t));
             } else if (
               event.type === "content_block_start" &&
               (event.content_block as { type?: string })?.type === "thinking"
@@ -791,7 +805,8 @@ export async function POST(req: Request) {
                 block.name === "generate_image" ||
                 block.name === "generate_document" ||
                 block.name === "write_file" ||
-                block.name === "edit_excel"
+                block.name === "edit_excel" ||
+                block.name === "publish_project_file"
               ) {
                 emit(ok ? `\n\n${result}\n` : `\n\n⚠️ ${result}\n`);
                 toolResults.push({
