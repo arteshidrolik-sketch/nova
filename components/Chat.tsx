@@ -1038,15 +1038,36 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     scrollToBottom();
 
     try {
-      // 1) İşi başlat — sunucu arka planda çalıştırır, hemen runId döner
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: next,
-          conversationId: conversationId ?? "",
-        }),
-      });
+      // 1) İşi başlat — sunucu arka planda çalıştırır, hemen runId döner.
+      // Anlık bağlantı kopması ("Failed to fetch") kullanıcıya hata olarak
+      // yansımasın diye başlatma isteği 3 kez, artan beklemeyle denenir.
+      // Sunucu asıl hata dönerse (4xx/5xx) tekrar denemeden hemen bildirilir.
+      let res: Response | null = null;
+      let lastErr: unknown = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (stopRef.current.has(myConvId)) return; // arada Durdur'a basıldıysa
+        try {
+          res = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              messages: next,
+              conversationId: conversationId ?? "",
+            }),
+          });
+          break; // HTTP cevabı geldi (ok olmasa da) → tekrar deneme
+        } catch (e) {
+          lastErr = e; // yalnızca ağ hatası (fetch reddi) buraya düşer
+          if (attempt < 2)
+            await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+        }
+      }
+      if (!res) {
+        throw new Error(
+          "Bağlantı kurulamadı (internet/tünel kısa süreli kesilmiş olabilir). Lütfen tekrar dene." +
+            (lastErr instanceof Error ? ` [${lastErr.message}]` : ""),
+        );
+      }
       if (!res.ok) {
         const errText = await res.text().catch(() => "");
         throw new Error(errText || `Sunucu hatası (${res.status})`);
