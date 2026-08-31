@@ -87,6 +87,48 @@ function sanitizeModelText(t: string): string {
   return t.replace(RESERVED_MARKS, "▪");
 }
 
+// Görsel/video/dosya linkleri YALNIZCA gerçek araç sonuçlarında sunucu
+// tarafından basılır. Model bunları kendi metninde uydurabiliyor (çağrılmamış
+// bir üretim için sahte ![](/api/files?name=...) linki → dosya yok → 404).
+// Bu süzgeç, modelin AKIŞ metninde yazdığı medya/dosya linklerini temizler.
+// Chunk sınırına yayılan yarım linkler için tampon tutar. Gerçek sonuç emit'i
+// bu süzgeçten GEÇMEZ (ayrı yoldan basılır), o yüzden gerçek görseller korunur.
+const MEDIA_MD =
+  /!video\[[^\]]*\]\([^)\s]*\)|!\[[^\]]*\]\([^)\s]*\)|\[[^\]]*\]\(\/api\/files\?[^)\s]*\)/g;
+function makeModelTextFilter(sink: (s: string) => void) {
+  let buf = "";
+  // Tamponun sonunda KAPANMAMIŞ bir görsel/video link başlangıcı (![ veya
+  // !video[) varsa onun konumunu döndür → tamamlanana kadar tut. Normal
+  // köşeli parantezli metin ([0] gibi) etkilenmez.
+  const openIdx = (s: string): number => {
+    for (const tok of ["!video[", "!["]) {
+      const i = s.lastIndexOf(tok);
+      if (i !== -1 && s.indexOf(")", i) === -1) return i;
+    }
+    return -1;
+  };
+  return {
+    push(delta: string) {
+      buf += delta;
+      buf = buf.replace(MEDIA_MD, ""); // tamamlanmış (uydurma) linkleri at
+      const open = openIdx(buf);
+      if (open === -1) {
+        if (buf) sink(sanitizeModelText(buf));
+        buf = "";
+      } else {
+        const safe = buf.slice(0, open);
+        if (safe) sink(sanitizeModelText(safe));
+        buf = buf.slice(open);
+      }
+    },
+    done() {
+      buf = buf.replace(MEDIA_MD, "");
+      if (buf) sink(sanitizeModelText(buf));
+      buf = "";
+    },
+  };
+}
+
 type Attach = {
   kind: "image" | "pdf" | "text";
   name?: string;
@@ -308,6 +350,11 @@ export async function POST(req: Request) {
     "- Bir değişiklik yapacaksan, o mesajda AÇIKLAMA YAZMADAN doğrudan aracı ÇAĞIR.\n" +
     "- ASLA 'şimdi aracı çağırıyorum', 'GO'ya gönderiyorum', 'kuyruğa atıyorum', 'dosyayı yazıyorum' gibi cümle yazıp turu BİTİRME. Aracı fiilen çağırmazsan HİÇBİR ŞEY OLMAZ ve kullanıcıya yalan söylemiş olursun — bu KESİNLİKLE YASAK.\n" +
     "- Niyetini anlatmak = işi yapmak DEĞİLDİR. Sadece aracı çağırmak işi kaydeder.\n" +
+    "- 🖼️ GÖRSEL/VİDEO: Bir görsel/video üretmenin TEK yolu generate_image / generate_video aracını ÇAĞIRMAKTIR. " +
+    "Sonucu (görseli/videoyu) kullanıcıya SUNUCU gösterir. ASLA kendi metninde `![...](...)`, `!video[...]` ya da " +
+    "`/api/files?...` linki YAZMA — böyle bir link uydurursan dosya var olmaz, kullanıcı 404 'dosya bulunamadı' görür. " +
+    "İkinci/üçüncü bir görsel istenirse yine ARACI ÇAĞIR; önceki linki kopyalama, yeni link yazma. " +
+    "Görsel ürettiğini söyleyip aracı çağırmamak KESİNLİKLE YASAK.\n" +
     "- Aracı çağırınca iş HEMEN çalışır (GO onayı KALDIRILDI; artık elle onay yok). Yaptığın iş anında uygulanır ve Görevler'e 'tamamlandı' olarak düşer. O yüzden çekinmeden çağır ama ne yaptığına DİKKAT ET — geri alınması zor işlerde (komut çalıştırma, git push, dosya silme) emin ol.\n" +
     "- Akış: gerekiyorsa önce oku (list_files/read_file/search_files) → SONRA aynı konuşmada değişiklik aracını ÇAĞIR. Okuyup durma, mutlaka aksiyonu çağır.\n" +
     "- Birden çok dosya değişecekse her biri için ayrı ayrı aracı çağır (birini atlama)." +
@@ -492,6 +539,8 @@ export async function POST(req: Request) {
 
           let stoppedMid = false;
           let canceledMid = false;
+          // Model metnindeki uydurma görsel/video/dosya linklerini süz
+          const textFilter = makeModelTextFilter((s) => emit(s));
           for await (const event of stream) {
             if (isStopped()) {
               stoppedMid = true;
@@ -505,7 +554,7 @@ export async function POST(req: Request) {
               event.type === "content_block_delta" &&
               event.delta.type === "text_delta"
             ) {
-              emit(sanitizeModelText(event.delta.text));
+              textFilter.push(event.delta.text);
             } else if (
               event.type === "content_block_delta" &&
               (event.delta as { type?: string }).type === "thinking_delta"
@@ -525,6 +574,7 @@ export async function POST(req: Request) {
               emit("\n\n🌐 web araması…\n");
             }
           }
+          textFilter.done(); // tampondaki son güvenli metni bas
 
           if (canceledMid) {
             // Kullanıcı "Durdur" dedi: akışı kes, kısmi çıktıyı koru, token yakma
