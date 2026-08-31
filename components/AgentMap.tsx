@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AGENT_META, AGENT_KEYS, type AgentActivity } from "@/lib/agents/meta";
-import NovaPlayground from "./NovaPlayground";
-import SpaceBackground from "./SpaceBackground";
+import { type AgentActivity } from "@/lib/agents/meta";
+import RadarGame from "./RadarGame";
 
 export type VoiceState = "idle" | "listening" | "speaking";
 
@@ -32,56 +31,14 @@ function nativeExitFs(): Promise<void> {
   return fn ? Promise.resolve(fn.call(d)) : Promise.reject(new Error("no-fs-api"));
 }
 
-const CX = 500;
-const CY = 330;
-
-const POS: Record<string, { x: number; y: number }> = {
-  research: { x: 205, y: 168 },
-  general: { x: 512, y: 122 },
-  codeReviewer: { x: 826, y: 172 },
-  releaseStore: { x: 842, y: 368 },
-  projectOps: { x: 548, y: 556 },
-  developer: { x: 158, y: 488 },
-};
-
-function mulberry32(seed: number) {
-  return function () {
-    let t = (seed += 0x6d2b79f5);
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-const STAR_COLORS = ["#ffffff", "#ffffff", "#eaf2ff", "#bfdbfe", "#fde68a", "#fecaca"];
-const rand = mulberry32(20240620);
-const STARS = Array.from({ length: 70 }, () => {
-  const bright = rand() > 0.93;
-  return {
-    x: +(rand() * 1000).toFixed(1),
-    y: +(rand() * 680).toFixed(1),
-    r: +(0.4 + rand() * 1.5).toFixed(2),
-    dur: +(2.5 + rand() * 4).toFixed(2),
-    delay: +(rand() * 5).toFixed(2),
-    color: STAR_COLORS[Math.floor(rand() * STAR_COLORS.length)],
-    bright,
-  };
-});
-
-function curve(x: number, y: number): string {
-  const mx = (CX + x) / 2;
-  const my = (CY + y) / 2;
-  const dx = x - CX;
-  const dy = y - CY;
-  const len = Math.hypot(dx, dy) || 1;
-  const k = 55;
-  const cpx = mx + (-dy / len) * k;
-  const cpy = my + (dx / len) * k;
-  return `M ${CX} ${CY} Q ${cpx} ${cpy} ${x} ${y}`;
-}
-
+/**
+ * Çalışma Alanı üst bölgesi. Eski uzay teması yerine RadarGame:
+ * fosfor-yeşil kontrol ekranı + oynanabilir radar oyunu. Merkezde Nova
+ * çekirdeği, halkalarda ajanlar; mikrofon/uyandırma/tam ekran korunur.
+ */
 export default function AgentGraph({
   active,
-  voice = "idle",
+  voice,
   onMic,
   wakeOn = false,
   onToggleWake,
@@ -92,11 +49,7 @@ export default function AgentGraph({
   wakeOn?: boolean;
   onToggleWake?: () => void;
 }) {
-  const orchActive = active === "orchestrator";
-  const speaking = voice === "speaking";
-  const listening = voice === "listening";
-
-  // Kullanıcının özel ajanları → haritada merkez orb'dan çıkan yeni kollar
+  // Kullanıcının özel ajanları → radarda dış halkada işaretlenir
   const [customAgents, setCustomAgents] = useState<
     { id: string; name: string; emoji: string; color: string }[]
   >([]);
@@ -107,12 +60,14 @@ export default function AgentGraph({
       .then((d) => {
         if (cancel) return;
         setCustomAgents(
-          (d.agents ?? []).map((a: { id: string; name: string; emoji: string; color: string }) => ({
-            id: a.id,
-            name: a.name,
-            emoji: a.emoji,
-            color: a.color,
-          })),
+          (d.agents ?? []).map(
+            (a: { id: string; name: string; emoji: string; color: string }) => ({
+              id: a.id,
+              name: a.name,
+              emoji: a.emoji,
+              color: a.color,
+            }),
+          ),
         );
       })
       .catch(() => {});
@@ -120,22 +75,9 @@ export default function AgentGraph({
       cancel = true;
     };
   }, []);
-  const customPos = customAgents.map((a, i) => {
-    const n = customAgents.length;
-    const ang = -Math.PI / 2 + ((i + 0.5) / n) * Math.PI * 2; // orb çevresine eşit dağıt
-    const R = 285;
-    return {
-      ...a,
-      x: Math.round(CX + Math.cos(ang) * R),
-      y: Math.round(CY + Math.sin(ang) * R),
-    };
-  });
 
-  // Native tam ekran yoksa (ör. iPad/iOS) haritayı tüm ekranı kaplayacak
-  // şekilde CSS ile "tam ekran" yaparız — her cihazda görünür sonuç.
+  // Native tam ekran yoksa (iPad/iOS) CSS ile tüm ekranı kapla
   const [pseudoFs, setPseudoFs] = useState(false);
-
-  // Native tam ekran açılırsa CSS yedeğini kapat; ESC ile CSS modundan çık
   useEffect(() => {
     const onFsChange = () => {
       if (nativeFsElement()) setPseudoFs(false);
@@ -153,12 +95,6 @@ export default function AgentGraph({
     };
   }, []);
 
-  function enterFullscreen() {
-    if (typeof document === "undefined" || nativeFsElement() || pseudoFs) return;
-    // native dene; olmazsa CSS tam ekrana düş
-    nativeRequestFs().catch(() => setPseudoFs(true));
-  }
-
   function toggleFullscreen(e?: React.MouseEvent) {
     e?.stopPropagation();
     if (typeof document === "undefined") return;
@@ -171,12 +107,6 @@ export default function AgentGraph({
     }
   }
 
-  // Boşluğa (uzaya) tıklayınca tam ekran — butonlar hariç
-  function onBgClick(e: React.MouseEvent) {
-    if ((e.target as HTMLElement).closest("button")) return;
-    enterFullscreen();
-  }
-
   return (
     <div
       className={
@@ -184,327 +114,49 @@ export default function AgentGraph({
           ? "fixed inset-0 z-[9999] overflow-hidden"
           : "relative h-full w-full overflow-hidden"
       }
-      style={{ background: "#02040a", cursor: "pointer" }}
-      onClick={onBgClick}
-      title="Tam ekran için ekrana tıkla"
+      style={{ background: "#060d0b" }}
     >
-      {/* hareketli 3B uzay arka planı (parallax nebula + yıldız + atom) */}
-      <SpaceBackground />
-      {/* okunabilirlik için hafif kenar karartma (vinyet) */}
-      <div
-        className="absolute inset-0"
-        style={{
-          zIndex: 1,
-          background:
-            "radial-gradient(130% 100% at 50% 42%, transparent 0%, transparent 52%, rgba(2,4,10,0.35) 80%, rgba(2,4,10,0.62) 100%)",
-        }}
-      />
-      {/* 3D yıldız tüneli + mini oyun (foto üstünde, UI altında) */}
-      <NovaPlayground />
-      <svg
-        viewBox="0 0 1000 680"
-        preserveAspectRatio="xMidYMid slice"
-        className="relative h-full w-full"
-        style={{ zIndex: 10, pointerEvents: "none" }}
-      >
-        <defs>
-          <radialGradient id="bg" cx="50%" cy="44%" r="80%">
-            <stop offset="0%" stopColor="#0a1226" />
-            <stop offset="55%" stopColor="#060a16" />
-            <stop offset="100%" stopColor="#02040a" />
-          </radialGradient>
-          {/* nebula gaz bulutları */}
-          <radialGradient id="nebA" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#1d4ed8" stopOpacity="0.5" />
-            <stop offset="100%" stopColor="#1d4ed8" stopOpacity="0" />
-          </radialGradient>
-          <radialGradient id="nebB" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#7c3aed" stopOpacity="0.45" />
-            <stop offset="100%" stopColor="#7c3aed" stopOpacity="0" />
-          </radialGradient>
-          <radialGradient id="nebC" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#be185d" stopOpacity="0.4" />
-            <stop offset="100%" stopColor="#be185d" stopOpacity="0" />
-          </radialGradient>
-          <radialGradient id="nebD" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#0e7490" stopOpacity="0.4" />
-            <stop offset="100%" stopColor="#0e7490" stopOpacity="0" />
-          </radialGradient>
-          <filter id="nebBlur" x="-30%" y="-30%" width="160%" height="160%">
-            <feGaussianBlur stdDeviation="36" />
-          </filter>
-          <filter id="starGlow" x="-200%" y="-200%" width="500%" height="500%">
-            <feGaussianBlur stdDeviation="1.6" result="b" />
-            <feMerge>
-              <feMergeNode in="b" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-          <radialGradient id="orbGrad" cx="50%" cy="42%" r="62%">
-            <stop offset="0%" stopColor="#e6fcff" />
-            <stop offset="38%" stopColor="#4fd8ff" />
-            <stop offset="72%" stopColor="#0b6f93" />
-            <stop offset="100%" stopColor="#063246" />
-          </radialGradient>
-          <radialGradient id="halo" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#4fd8ff" stopOpacity="0.5" />
-            <stop offset="55%" stopColor="#4fd8ff" stopOpacity="0.1" />
-            <stop offset="100%" stopColor="#4fd8ff" stopOpacity="0" />
-          </radialGradient>
-          <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#fde68a" />
-            <stop offset="50%" stopColor="#4fd8ff" />
-            <stop offset="100%" stopColor="#a855f7" />
-          </linearGradient>
-          {/* gezegen gövde gradyanları (ışık sol-üstten) */}
-          <radialGradient id="saturnBody" cx="36%" cy="32%" r="75%">
-            <stop offset="0%" stopColor="#f6e8b4" />
-            <stop offset="50%" stopColor="#cda94f" />
-            <stop offset="100%" stopColor="#6e4d18" />
-          </radialGradient>
-          <radialGradient id="venusBody" cx="36%" cy="32%" r="75%">
-            <stop offset="0%" stopColor="#fbf1d6" />
-            <stop offset="50%" stopColor="#e6bd6c" />
-            <stop offset="100%" stopColor="#8a6526" />
-          </radialGradient>
-          <radialGradient id="marsBody" cx="36%" cy="32%" r="75%">
-            <stop offset="0%" stopColor="#f0996b" />
-            <stop offset="50%" stopColor="#b8472d" />
-            <stop offset="100%" stopColor="#511910" />
-          </radialGradient>
-          {/* küre kenar kararması (limb darkening → 3B) */}
-          <radialGradient id="sphereShade" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#000000" stopOpacity="0" />
-            <stop offset="62%" stopColor="#000000" stopOpacity="0" />
-            <stop offset="100%" stopColor="#000000" stopOpacity="0.6" />
-          </radialGradient>
-          <linearGradient id="shoot" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#ffffff" stopOpacity="0" />
-            <stop offset="100%" stopColor="#ffffff" stopOpacity="0.95" />
-          </linearGradient>
-          <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
-            <feGaussianBlur stdDeviation="3" result="b" />
-            <feMerge>
-              <feMergeNode in="b" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-          <filter id="soft" x="-60%" y="-60%" width="220%" height="220%">
-            <feGaussianBlur stdDeviation="4" />
-          </filter>
-          <clipPath id="orbClip">
-            <circle cx={CX} cy={CY} r="46" />
-          </clipPath>
-          <clipPath id="satFront">
-            <rect x="735" y="525" width="230" height="130" />
-          </clipPath>
-          <filter id="plasma">
-            <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="3" seed="7" result="n">
-              <animate attributeName="baseFrequency" dur="20s" values="0.018;0.03;0.018" repeatCount="indefinite" />
-            </feTurbulence>
-            <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0.75  0 0 0 0 0.95  0 0 0 0.9 0" />
-          </filter>
-          {/* gezegen yüzey dokuları (bulut bantları) */}
-          <filter id="texVenus">
-            <feTurbulence type="fractalNoise" baseFrequency="0.012 0.13" numOctaves="2" seed="3" />
-            <feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.43  0 0 0 0 0.18  0 0 0 0.5 0" />
-          </filter>
-          <filter id="texSaturn">
-            <feTurbulence type="fractalNoise" baseFrequency="0.01 0.16" numOctaves="2" seed="9" />
-            <feColorMatrix type="matrix" values="0 0 0 0 0.42  0 0 0 0 0.31  0 0 0 0 0.12  0 0 0 0.6 0" />
-          </filter>
-          <filter id="texMars">
-            <feTurbulence type="fractalNoise" baseFrequency="0.11" numOctaves="3" seed="14" />
-            <feColorMatrix type="matrix" values="0 0 0 0 0.32  0 0 0 0 0.11  0 0 0 0 0.06  0 0 0 0.6 0" />
-          </filter>
-          <clipPath id="clipVenus"><circle cx="150" cy="150" r="32" /></clipPath>
-          <clipPath id="clipSaturn"><circle cx="845" cy="525" r="40" /></clipPath>
-          <clipPath id="clipMars"><circle cx="118" cy="560" r="17" /></clipPath>
-        </defs>
-
-        {/* yıldızlar (foto üstünde parıltı + hareket) */}
-        <g>
-          <animateTransform attributeName="transform" type="translate" values="0 0; -16 10; 0 0" dur="45s" repeatCount="indefinite" />
-          {STARS.map((s, i) => (
-            <circle
-              key={i}
-              className="star"
-              cx={s.x}
-              cy={s.y}
-              r={s.bright ? s.r + 0.9 : s.r}
-              fill={s.color}
-              filter={s.bright ? "url(#starGlow)" : undefined}
-              style={{ animationDuration: `${s.dur}s`, animationDelay: `${s.delay}s` }}
-            />
-          ))}
-        </g>
-
-        {/* ikinci kayan yıldız (farklı yön/zaman) */}
-        <g>
-          <animateTransform attributeName="transform" type="translate" values="1120 110; 180 520; 180 520" keyTimes="0; 0.14; 1" dur="13s" begin="5s" repeatCount="indefinite" />
-          <animate attributeName="opacity" values="0; 1; 0; 0" keyTimes="0; 0.06; 0.15; 1" dur="13s" begin="5s" repeatCount="indefinite" />
-          <line x1="62" y1="-30" x2="0" y2="0" stroke="url(#shoot)" strokeWidth="2" strokeLinecap="round" />
-          <circle cx="0" cy="0" r="2.2" fill="#ffffff" />
-        </g>
-
-        {/* kayan yıldız */}
-        <g>
-          <animateTransform attributeName="transform" type="translate" values="-220 -120; 760 400; 760 400" keyTimes="0; 0.12; 1" dur="9s" repeatCount="indefinite" />
-          <animate attributeName="opacity" values="0; 1; 0; 0" keyTimes="0; 0.05; 0.13; 1" dur="9s" repeatCount="indefinite" />
-          <line x1="-58" y1="-32" x2="0" y2="0" stroke="url(#shoot)" strokeWidth="2.5" strokeLinecap="round" />
-          <circle cx="0" cy="0" r="2.6" fill="#ffffff" />
-        </g>
-
-        {/* ajan ağı — merkezden yarıya ölçekli (yıldızlar/arka plan tam kalır) */}
-        <g transform="translate(500 330) scale(0.5) translate(-500 -330)">
-        {/* bağlantı hatları */}
-        {AGENT_KEYS.map((key) => {
-          const p = POS[key];
-          const on = active === key;
-          const color = AGENT_META[key].color;
-          return (
-            <path
-              key={`e-${key}`}
-              d={curve(p.x, p.y)}
-              fill="none"
-              stroke={on ? color : "#4fd8ff"}
-              strokeOpacity={on ? 0.95 : 0.28}
-              strokeWidth={on ? 3 : 1.4}
-              filter={on ? "url(#glow)" : undefined}
-              strokeLinecap="round"
-              strokeDasharray={on ? "6 8" : undefined}
-            >
-              {on && <animate attributeName="stroke-dashoffset" from="40" to="0" dur="0.6s" repeatCount="indefinite" />}
-            </path>
-          );
-        })}
-
-        {/* özel ajanların kolları (orb'dan çıkan yeni bağlantılar) */}
-        {customPos.map((a) => (
-          <path
-            key={`ec-${a.id}`}
-            d={curve(a.x, a.y)}
-            fill="none"
-            stroke={a.color}
-            strokeOpacity={0.32}
-            strokeWidth={1.5}
-            strokeLinecap="round"
-          />
-        ))}
-
-        {/* merkez çekirdek */}
-        <g className="orb-halo">
-          <circle cx={CX} cy={CY} r="82" fill="url(#halo)" />
-        </g>
-        <g className="orb-core">
-          <g clipPath="url(#orbClip)">
-            <rect x={CX - 46} y={CY - 46} width="92" height="92" filter="url(#plasma)" />
-            <circle cx={CX} cy={CY} r="46" fill="url(#orbGrad)" opacity="0.6" />
-          </g>
-          <circle cx={CX} cy={CY} r="46" fill="none" stroke="url(#rim)" strokeWidth="3" filter="url(#glow)" />
-        </g>
-
-        {/* ses tepkisi: Nova konuşurken genişleyen halkalar */}
-        {speaking && (
-          <g>
-            <circle cx={CX} cy={CY} r="46" fill="none" stroke="#4fd8ff" strokeWidth="3">
-              <animate attributeName="r" values="46;118" dur="1.6s" repeatCount="indefinite" />
-              <animate attributeName="opacity" values="0.9;0" dur="1.6s" repeatCount="indefinite" />
-            </circle>
-            <circle cx={CX} cy={CY} r="46" fill="none" stroke="#67e8f9" strokeWidth="2">
-              <animate attributeName="r" values="46;118" dur="1.6s" begin="0.8s" repeatCount="indefinite" />
-              <animate attributeName="opacity" values="0.8;0" dur="1.6s" begin="0.8s" repeatCount="indefinite" />
-            </circle>
-          </g>
-        )}
-        {/* dinlerken nazik nabız */}
-        {listening && (
-          <circle cx={CX} cy={CY} r="52" fill="none" stroke="#4fd8ff" strokeWidth="2">
-            <animate attributeName="r" values="50;66;50" dur="1.4s" repeatCount="indefinite" />
-            <animate attributeName="opacity" values="0.7;0.2;0.7" dur="1.4s" repeatCount="indefinite" />
-          </circle>
-        )}
-        {/* yönlendirme halkası */}
-        {orchActive && (
-          <circle cx={CX} cy={CY} r="54" fill="none" stroke="#a855f7" strokeWidth="2">
-            <animate attributeName="r" from="50" to="86" dur="1.4s" repeatCount="indefinite" />
-            <animate attributeName="opacity" from="0.8" to="0" dur="1.4s" repeatCount="indefinite" />
-          </circle>
-        )}
-
-        {/* ajan düğümleri */}
-        {AGENT_KEYS.map((key, i) => {
-          const p = POS[key];
-          const meta = AGENT_META[key];
-          const on = active === key;
-          return (
-            <g key={key} className="map-node" style={{ animationDelay: `${i * 0.5}s` }}>
-              {on && (
-                <circle cx={p.x} cy={p.y} r="14" fill="none" stroke={meta.color} strokeWidth="2">
-                  <animate attributeName="r" from="12" to="26" dur="1.2s" repeatCount="indefinite" />
-                  <animate attributeName="opacity" from="0.9" to="0" dur="1.2s" repeatCount="indefinite" />
-                </circle>
-              )}
-              <circle cx={p.x} cy={p.y} r={on ? 11 : 9} fill="none" stroke={meta.color} strokeWidth="2.5" strokeOpacity={on ? 1 : 0.7} filter={on ? "url(#glow)" : undefined} />
-              <circle cx={p.x} cy={p.y} r={on ? 5 : 3.5} fill={meta.color} />
-              <text x={p.x} y={p.y - 22} textAnchor="middle" fontSize="17" fontWeight={600} fill={on ? meta.color : "#dbe6f5"} style={{ paintOrder: "stroke", stroke: "#02040a", strokeWidth: 3 }}>
-                {meta.emoji} {meta.label}
-              </text>
-            </g>
-          );
-        })}
-
-        {/* özel ajan düğümleri */}
-        {customPos.map((a, i) => (
-          <g key={a.id} className="map-node" style={{ animationDelay: `${(i + 6) * 0.4}s` }}>
-            <circle cx={a.x} cy={a.y} r={9} fill="none" stroke={a.color} strokeWidth="2.5" strokeOpacity={0.85} />
-            <circle cx={a.x} cy={a.y} r={3.5} fill={a.color} />
-            <text x={a.x} y={a.y - 21} textAnchor="middle" fontSize="16" fontWeight={600} fill="#dbe6f5" style={{ paintOrder: "stroke", stroke: "#02040a", strokeWidth: 3 }}>
-              {a.emoji} {a.name}
-            </text>
-          </g>
-        ))}
-        </g>
-      </svg>
+      {/* radar + oyun + animasyonlu arka plan */}
+      <RadarGame active={active} voice={voice} customAgents={customAgents} />
 
       {/* tam ekran düğmesi */}
       <button
         onClick={toggleFullscreen}
         title="Tam ekran aç/kapat"
-        className="btn-grad absolute right-3 top-3 z-20 rounded-lg px-2.5 py-1 text-sm"
+        className="absolute right-3 top-3 z-20 rounded-lg px-2.5 py-1 text-sm"
         style={{
-          background: "rgba(4,8,18,0.6)",
+          background: "rgba(12,26,22,0.62)",
           backdropFilter: "blur(8px)",
-          border: "1px solid var(--border)",
-          color: "var(--text-muted)",
+          border: "1px solid #1c5140",
+          color: "#5f8a72",
         }}
       >
         {pseudoFs ? "🗕" : "⛶"}
       </button>
 
-      {/* orb'a tıkla → konuş (mikrofon butonu kaldırıldı; Boşluk tuşu da çalışır) */}
+      {/* merkez çekirdeğe dokun → konuş (Boşluk tuşu da çalışır) */}
       <button
         onClick={(e) => {
           e.stopPropagation();
           onMic?.();
         }}
-        title="Konuşmak için orb'a dokun (veya Boşluk tuşu)"
+        title="Konuşmak için merkeze dokun (veya Boşluk tuşu)"
         aria-label="Konuş"
-        className="absolute left-1/2 top-1/2 z-20 h-28 w-28 -translate-x-1/2 -translate-y-1/2 rounded-full"
+        className="absolute left-1/2 top-1/2 z-20 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full"
         style={{ background: "transparent", cursor: "pointer" }}
       />
 
-      {/* ses: sadece "Nova" ile uyandırma */}
+      {/* ses: "Nova" ile uyandırma */}
       <div className="absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 flex-col items-center gap-1.5">
         <button
           onClick={onToggleWake}
           title="'Nova' diyerek sesle uyandır"
           className="rounded-full px-3 py-1 text-[11px] font-medium"
           style={{
-            background: wakeOn ? "#10b98122" : "rgba(4,8,18,0.6)",
+            background: wakeOn ? "#10b98122" : "rgba(12,26,22,0.62)",
             backdropFilter: "blur(8px)",
-            border: `1px solid ${wakeOn ? "#10b981" : "var(--border)"}`,
-            color: wakeOn ? "#10b981" : "var(--text-muted)",
+            border: `1px solid ${wakeOn ? "#10b981" : "#1c5140"}`,
+            color: wakeOn ? "#10b981" : "#5f8a72",
           }}
         >
           {wakeOn ? "👂 'Nova' dinleniyor — kapat" : "👂 'Nova' ile uyandır"}
