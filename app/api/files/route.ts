@@ -33,6 +33,9 @@ const MIME: Record<string, string> = {
   ".jpeg": "image/jpeg",
   ".gif": "image/gif",
   ".webp": "image/webp",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+  ".mov": "video/quicktime",
 };
 
 type FileItem = { name: string; rel: string; size: number; mtime: number };
