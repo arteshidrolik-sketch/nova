@@ -74,12 +74,19 @@ export async function GET(req: Request) {
       const buf = await fs.readFile(target);
       const ext = path.extname(target).toLowerCase();
       const disp = url.searchParams.get("inline") ? "inline" : "attachment";
-      return new Response(new Uint8Array(buf), {
+      const base = path.basename(target);
+      // ASCII-güvenli ad + RFC 5987 UTF-8 adı (Türkçe karakterli dosyalar için).
+      const ascii = base.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
+      const bytes = new Uint8Array(buf);
+      return new Response(bytes, {
         headers: {
           "Content-Type": MIME[ext] || "application/octet-stream",
-          "Content-Disposition": `${disp}; filename="${encodeURIComponent(
-            path.basename(target),
-          )}"`,
+          "Content-Disposition": `${disp}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(
+            base,
+          )}`,
+          // Content-Length ekle → tünel/tarayıcı indirmeyi güvenle tamamlar
+          // (chunked yerine net boyut).
+          "Content-Length": String(bytes.byteLength),
           "Cache-Control": "no-store",
         },
       });

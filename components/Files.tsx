@@ -59,6 +59,32 @@ export default function Files() {
     load();
   }
 
+  // İndirmeyi tarayıcıya bırakmak yerine dosyayı blob olarak çekip kaydettir:
+  // <a download> bazı tarayıcılarda / Cloudflare tüneli arkasında dosyayı
+  // indirmek yerine sekmede açıyordu. Bu yöntem her yerde gerçek indirme yapar.
+  const [dl, setDl] = useState<string | null>(null);
+  async function download(rel: string, name: string) {
+    setDl(rel);
+    try {
+      const res = await fetch(`/api/files?name=${encodeURIComponent(rel)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch {
+      // Yedek: yeni sekmede aç (en azından erişilsin)
+      window.open(`/api/files?name=${encodeURIComponent(rel)}`, "_blank");
+    } finally {
+      setDl(null);
+    }
+  }
+
   return (
     <div className="mx-auto h-full w-full max-w-3xl overflow-y-auto px-4 py-5">
       <div className="mb-4 flex items-center justify-between gap-3">
@@ -118,14 +144,14 @@ export default function Files() {
                   {fmtSize(f.size)} · {fmtDate(f.mtime)}
                 </div>
               </div>
-              <a
-                href={`/api/files?name=${encodeURIComponent(f.rel)}`}
-                download
+              <button
+                onClick={() => download(f.rel, f.name)}
+                disabled={dl === f.rel}
                 className="btn-grad shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium text-black"
-                style={{ background: "var(--grad)" }}
+                style={{ background: "var(--grad)", opacity: dl === f.rel ? 0.6 : 1 }}
               >
-                ⬇ İndir
-              </a>
+                {dl === f.rel ? "İniyor…" : "⬇ İndir"}
+              </button>
               <button
                 onClick={() => del(f.rel)}
                 title="Sil"
