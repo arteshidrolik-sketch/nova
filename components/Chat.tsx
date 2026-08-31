@@ -128,6 +128,35 @@ function GeneratedImage({ url }: { url: string }) {
   );
 }
 
+// Üretilen video + indirme butonu (fal URL'lerini proxy ile güvenle indirir).
+function GeneratedVideo({ url }: { url: string }) {
+  return (
+    <span className="group relative my-2 block max-w-full">
+      <video
+        src={url}
+        controls
+        playsInline
+        preload="metadata"
+        className="block max-w-full rounded-xl"
+        style={{ maxHeight: 460, border: "1px solid var(--border)" }}
+      />
+      <a
+        href={`/api/download?url=${encodeURIComponent(url)}`}
+        title="Videoyu indir"
+        className="btn-grad absolute right-2 top-2 flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium"
+        style={{
+          background: "rgba(4,8,18,0.72)",
+          backdropFilter: "blur(6px)",
+          border: "1px solid var(--border)",
+          color: "var(--text)",
+        }}
+      >
+        ⬇ İndir
+      </a>
+    </span>
+  );
+}
+
 // Üretilen belge/dosya için indirme butonu (Dosyalar API'sinden indirir).
 function FileDownload({ href, label }: { href: string; label: string }) {
   return (
@@ -147,8 +176,9 @@ function FileDownload({ href, label }: { href: string; label: string }) {
 // Asistan mesajını render eder: markdown görselleri (![](url)) <img>,
 // belge indirme linklerini ([ad](/api/files?...)) indirme butonu olarak gösterir.
 function MessageBody({ content }: { content: string }) {
+  // Sıra önemli: video işareti (!video[..](url)) görsel işaretinden ÖNCE denenir.
   const re =
-    /!\[[^\]]*\]\((https?:\/\/[^\s)]+)\)|\[([^\]]*)\]\((\/api\/files\?[^\s)]+)\)/g;
+    /!video\[[^\]]*\]\((https?:\/\/[^\s)]+)\)|!\[[^\]]*\]\((https?:\/\/[^\s)]+)\)|\[([^\]]*)\]\((\/api\/files\?[^\s)]+)\)/g;
   const parts: ReactNode[] = [];
   let last = 0;
   let k = 0;
@@ -156,10 +186,11 @@ function MessageBody({ content }: { content: string }) {
   while ((m = re.exec(content))) {
     if (m.index > last)
       parts.push(<span key={k++}>{content.slice(last, m.index)}</span>);
-    if (m[1]) parts.push(<GeneratedImage key={k++} url={m[1]} />);
-    else if (m[3])
+    if (m[1]) parts.push(<GeneratedVideo key={k++} url={m[1]} />);
+    else if (m[2]) parts.push(<GeneratedImage key={k++} url={m[2]} />);
+    else if (m[4])
       parts.push(
-        <FileDownload key={k++} href={m[3]} label={m[2] || "dosya"} />,
+        <FileDownload key={k++} href={m[4]} label={m[3] || "dosya"} />,
       );
     last = m.index + m[0].length;
   }

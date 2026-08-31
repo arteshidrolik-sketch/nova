@@ -488,6 +488,101 @@ export const ACTIONS: Record<string, ActionDef> = {
     },
   },
 
+  generate_video: {
+    dangerous: true,
+    project: false,
+    description:
+      "Metinden ya da bir görselden VİDEO üretir (Google Veo, fal.ai). Kullanıcı bir video, klip, animasyon, 'bunu hareketlendir/videoya çevir' isterse BU ARACI çağır. Kullanıcı SON mesajında bir FOTOĞRAF yüklediyse ya da az önce bir görsel ÜRETİLDİYSE o görsel otomatik başlangıç karesi olur (image-to-video). Üretim 1-3 dakika sürer; çağrılınca hemen başlar. NOT: Video üretimi görsele göre PAHALIDIR — gereksiz/tekrarlı çağırma, kullanıcının açık isteği olmadan üretme.",
+    input_schema: {
+      type: "object",
+      properties: {
+        prompt: {
+          type: "string",
+          description:
+            "Videonun ayrıntılı tarifi: sahne, hareket, kamera, atmosfer (İngilizce daha iyi sonuç verir). Görselden video ise görselde OLAN sahnenin nasıl hareket edeceğini yaz.",
+        },
+        aspect: {
+          type: "string",
+          description: "En-boy oranı: landscape (16:9) veya portrait (9:16). Varsayılan landscape.",
+        },
+      },
+      required: ["prompt"],
+    },
+    makeTitle: (p) => `Video üret: ${shorten(String(p.prompt), 44)}`,
+    makeSummary: (p) =>
+      `"${shorten(String(p.prompt), 140)}" için bir video üretilecek${p.reference_image_url ? " (başlangıç karesi olarak bir görsel kullanılacak)" : ""}. Üretim 1-3 dakika sürebilir.`,
+    execute: async (p) => {
+      const key = process.env.FAL_KEY;
+      if (!key) return "Hata: FAL_KEY tanımlı değil (fal.ai anahtarı).";
+      const prompt = String(p.prompt ?? "").trim();
+      if (!prompt) return "Hata: video tarifi (prompt) boş.";
+      const ref =
+        typeof p.reference_image_url === "string" && p.reference_image_url
+          ? p.reference_image_url
+          : "";
+      const aspect_ratio = String(p.aspect || "landscape") === "portrait" ? "9:16" : "16:9";
+      // Model env ile ayarlanabilir; varsayılan Veo3 "fast" (daha ucuz tier).
+      // Görselden video için modelin image-to-video varyantı kullanılır.
+      const base = process.env.NOVA_VIDEO_MODEL || "fal-ai/veo3/fast";
+      const model = ref ? `${base}/image-to-video` : base;
+      const body: Record<string, unknown> = ref
+        ? { prompt, image_url: ref, aspect_ratio }
+        : { prompt, aspect_ratio };
+      try {
+        // 1) Kuyruğa gönder (video uzun sürer → senkron istek zaman aşımına uğrar)
+        const submit = await fetch(`https://queue.fal.run/${model}`, {
+          method: "POST",
+          headers: { Authorization: `Key ${key}`, "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const sub = (await submit.json().catch(() => ({}))) as {
+          request_id?: string;
+          status_url?: string;
+          response_url?: string;
+          detail?: unknown;
+        };
+        if (!submit.ok || !sub.status_url || !sub.response_url) {
+          const d =
+            typeof sub?.detail === "string"
+              ? sub.detail
+              : JSON.stringify(sub?.detail ?? sub);
+          return `Video üretilemedi (fal): ${d}`.slice(0, 400);
+        }
+        // 2) Bitene kadar durum sorgula (en fazla ~4 dk)
+        const deadline = Date.now() + 4 * 60 * 1000;
+        let done = false;
+        while (Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 5000));
+          const st = await fetch(sub.status_url, {
+            headers: { Authorization: `Key ${key}` },
+          });
+          const sd = (await st.json().catch(() => ({}))) as { status?: string };
+          if (sd.status === "COMPLETED") {
+            done = true;
+            break;
+          }
+          if (sd.status === "FAILED" || sd.status === "ERROR") {
+            return "Video üretilemedi: fal işi başarısız oldu.";
+          }
+        }
+        if (!done) return "Video zaman aşımına uğradı (4 dk). Daha kısa/sade bir tarifle tekrar dene.";
+        // 3) Sonucu al
+        const out = await fetch(sub.response_url, {
+          headers: { Authorization: `Key ${key}` },
+        });
+        const od = (await out.json().catch(() => ({}))) as {
+          video?: { url?: string };
+        };
+        const url = od?.video?.url;
+        if (!url) return "Video üretildi ama sonuç bağlantısı bulunamadı.";
+        // Özel işaret → route akışa yansıtır, arayüz <video> olarak gösterir
+        return `!video[üretilen video](${url})`;
+      } catch (e) {
+        return `Video üretim hatası: ${e instanceof Error ? e.message : "bilinmeyen"}`;
+      }
+    },
+  },
+
   // --- Aktif proje aksiyonları (payload'a projectPath/projectName route ekler) ---
   write_project_file: {
     dangerous: true,

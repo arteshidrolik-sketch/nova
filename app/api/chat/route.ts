@@ -702,6 +702,33 @@ export async function POST(req: Request) {
                 }
               }
 
+              // Video üretimi: başlangıç karesi olarak (1) kullanıcının SON
+              // yüklediği fotoğrafı, yoksa (2) bu konuşmada az önce ÜRETİLEN
+              // görseli (asistan mesajındaki ![](url)) kullan → image-to-video.
+              if (block.name === "generate_video") {
+                let found = false;
+                for (let mi = messages.length - 1; mi >= 0 && !found; mi--) {
+                  const att = messages[mi].attachments?.find(
+                    (a) => a.kind === "image" && a.data && a.mediaType,
+                  );
+                  if (att) {
+                    payload.reference_image_url = `data:${att.mediaType};base64,${att.data}`;
+                    found = true;
+                    break;
+                  }
+                  if (messages[mi].role === "assistant") {
+                    const im = messages[mi].content?.match(
+                      /!\[[^\]]*\]\((https?:\/\/[^\s)]+)\)/,
+                    );
+                    if (im?.[1]) {
+                      payload.reference_image_url = im[1];
+                      found = true;
+                      break;
+                    }
+                  }
+                }
+              }
+
               // Excel düzenleme: son yüklenen .xlsx binary'sini araca enjekte et
               if (block.name === "edit_excel") {
                 for (let mi = messages.length - 1; mi >= 0; mi--) {
@@ -806,6 +833,7 @@ export async function POST(req: Request) {
               // DOĞRUDAN akışa yansıt → kullanıcı hemen görüp indirebilir.
               if (
                 block.name === "generate_image" ||
+                block.name === "generate_video" ||
                 block.name === "generate_document" ||
                 block.name === "write_file" ||
                 block.name === "edit_excel" ||

@@ -21,20 +21,24 @@ export async function GET(req: Request) {
   } catch {
     return new Response("Görsel alınamadı", { status: 502 });
   }
-  if (!r.ok) return new Response("Görsel alınamadı", { status: 502 });
+  if (!r.ok) return new Response("İçerik alınamadı", { status: 502 });
   const ct = r.headers.get("content-type") || "image/jpeg";
-  const ext = ct.includes("png")
-    ? "png"
-    : ct.includes("webp")
-      ? "webp"
-      : ct.includes("gif")
-        ? "gif"
-        : "jpg";
+  const isVideo = ct.startsWith("video/") || /\.mp4($|\?)/.test(parsed.pathname);
+  const ext = isVideo
+    ? "mp4"
+    : ct.includes("png")
+      ? "png"
+      : ct.includes("webp")
+        ? "webp"
+        : ct.includes("gif")
+          ? "gif"
+          : "jpg";
+  const fname = isVideo ? "nova-video" : "nova-gorsel";
   const buf = await r.arrayBuffer();
   return new Response(buf, {
     headers: {
       "Content-Type": ct,
-      "Content-Disposition": `attachment; filename="nova-gorsel.${ext}"`,
+      "Content-Disposition": `attachment; filename="${fname}.${ext}"`,
       "Cache-Control": "no-store",
     },
   });
