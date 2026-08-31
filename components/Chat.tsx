@@ -100,8 +100,40 @@ function Typing() {
   );
 }
 
-// Üretilen görsel + indirme butonu (fal URL'lerini proxy ile güvenle indirir).
+// Üretilen medyayı blob olarak indirir (yerel dosya ya da fal proxy).
+async function saveBlob(fetchUrl: string, filename: string) {
+  try {
+    const res = await fetch(fetchUrl);
+    if (!res.ok) throw new Error(String(res.status));
+    const blob = await res.blob();
+    const u = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = u;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(u), 5000);
+  } catch {
+    window.open(fetchUrl, "_blank");
+  }
+}
+
+// Yerel (/api/files) veya uzak (fal) medya için indirme kaynağı + dosya adı.
+function mediaDownload(url: string, fallbackName: string) {
+  const isLocal = url.startsWith("/api/files");
+  const fetchUrl = isLocal
+    ? url.replace(/&inline=1\b/, "")
+    : `/api/download?url=${encodeURIComponent(url)}`;
+  const name = isLocal
+    ? decodeURIComponent(url.match(/name=([^&]+)/)?.[1] || fallbackName)
+    : fallbackName;
+  return { fetchUrl, name };
+}
+
+// Üretilen görsel + indirme butonu.
 function GeneratedImage({ url }: { url: string }) {
+  const { fetchUrl, name } = mediaDownload(url, "nova-gorsel.jpg");
   return (
     <span className="group relative my-2 inline-block max-w-full">
       <img
@@ -111,8 +143,8 @@ function GeneratedImage({ url }: { url: string }) {
         className="block max-w-full rounded-xl"
         style={{ maxHeight: 460, border: "1px solid var(--border)" }}
       />
-      <a
-        href={`/api/download?url=${encodeURIComponent(url)}`}
+      <button
+        onClick={() => saveBlob(fetchUrl, name)}
         title="Görseli indir"
         className="btn-grad absolute right-2 top-2 flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium"
         style={{
@@ -123,7 +155,7 @@ function GeneratedImage({ url }: { url: string }) {
         }}
       >
         ⬇ İndir
-      </a>
+      </button>
     </span>
   );
 }
@@ -140,8 +172,11 @@ function GeneratedVideo({ url }: { url: string }) {
         className="block max-w-full rounded-xl"
         style={{ maxHeight: 460, border: "1px solid var(--border)" }}
       />
-      <a
-        href={`/api/download?url=${encodeURIComponent(url)}`}
+      <button
+        onClick={() => {
+          const { fetchUrl, name } = mediaDownload(url, "nova-video.mp4");
+          saveBlob(fetchUrl, name);
+        }}
         title="Videoyu indir"
         className="btn-grad absolute right-2 top-2 flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium"
         style={{
@@ -152,7 +187,7 @@ function GeneratedVideo({ url }: { url: string }) {
         }}
       >
         ⬇ İndir
-      </a>
+      </button>
     </span>
   );
 }
@@ -177,8 +212,9 @@ function FileDownload({ href, label }: { href: string; label: string }) {
 // belge indirme linklerini ([ad](/api/files?...)) indirme butonu olarak gösterir.
 function MessageBody({ content }: { content: string }) {
   // Sıra önemli: video işareti (!video[..](url)) görsel işaretinden ÖNCE denenir.
+  // Görsel/video URL'i hem uzak (http) hem yerel (/api/files) olabilir.
   const re =
-    /!video\[[^\]]*\]\((https?:\/\/[^\s)]+)\)|!\[[^\]]*\]\((https?:\/\/[^\s)]+)\)|\[([^\]]*)\]\((\/api\/files\?[^\s)]+)\)/g;
+    /!video\[[^\]]*\]\(((?:https?:\/\/|\/api\/files)[^\s)]+)\)|!\[[^\]]*\]\(((?:https?:\/\/|\/api\/files)[^\s)]+)\)|\[([^\]]*)\]\((\/api\/files\?[^\s)]+)\)/g;
   const parts: ReactNode[] = [];
   let last = 0;
   let k = 0;

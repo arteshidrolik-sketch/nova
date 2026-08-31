@@ -54,6 +54,39 @@ type ActionDef = {
 
 const WORKSPACE = path.join(process.cwd(), "workspace");
 
+// Uzak (fal.media) bir dosyayı indirip workspace'e kaydeder, yerel inline
+// URL döner. fal.media süreli URL'lerini kalıcı hale getirir. Başarısızsa null
+// (çağıran fal URL'ine düşer). Ad çakışmasın diye zaman damgalı benzersiz ad.
+let __seq = 0;
+async function saveRemoteToWorkspace(
+  remoteUrl: string,
+  prefix: string,
+  allowExt: string[],
+): Promise<string | null> {
+  try {
+    const res = await fetch(remoteUrl);
+    if (!res.ok) return null;
+    const ct = (res.headers.get("content-type") || "").toLowerCase();
+    const urlExt = (remoteUrl.match(/\.([a-z0-9]+)(?:$|\?)/i)?.[1] || "").toLowerCase();
+    let ext = allowExt.includes(urlExt) ? urlExt : "";
+    if (!ext) {
+      if (ct.includes("png")) ext = "png";
+      else if (ct.includes("webp")) ext = "webp";
+      else if (ct.includes("webm")) ext = "webm";
+      else if (ct.includes("mp4")) ext = "mp4";
+      else ext = allowExt[0];
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length === 0) return null;
+    const name = `${prefix}-${Date.now()}-${__seq++}.${ext}`;
+    await fs.mkdir(WORKSPACE, { recursive: true });
+    await fs.writeFile(safeWorkspacePath(name), buf);
+    return `/api/files?name=${encodeURIComponent(name)}&inline=1`;
+  } catch {
+    return null;
+  }
+}
+
 function safeWorkspacePath(p: string): string {
   const cleaned = p.replace(/\\/g, "/").replace(/^\/+/, "");
   const target = path.normalize(path.join(WORKSPACE, cleaned));
@@ -480,8 +513,11 @@ export const ACTIONS: Record<string, ActionDef> = {
         }
         const url = data?.images?.[0]?.url;
         if (!url) return "Görsel üretilemedi: sonuç boş.";
-        // Markdown görsel → sohbette gösterilir (route bunu akışa yansıtır)
-        return `![üretilen görsel](${url})`;
+        // fal.media URL'leri SÜRELİDİR (süre dolunca görsel kaybolur, indirme
+        // 502 verir). Kalıcı olması için görseli indirip workspace'e kaydet,
+        // sonra KENDİ depomuzdan sun. İndirilemezse fal URL'ine düş.
+        const local = await saveRemoteToWorkspace(url, "gorsel", ["jpg", "jpeg", "png", "webp"]);
+        return `![üretilen görsel](${local || url})`;
       } catch (e) {
         return `Görsel üretim hatası: ${e instanceof Error ? e.message : "bilinmeyen"}`;
       }
@@ -575,8 +611,10 @@ export const ACTIONS: Record<string, ActionDef> = {
         };
         const url = od?.video?.url;
         if (!url) return "Video üretildi ama sonuç bağlantısı bulunamadı.";
+        // fal.media süreli → videoyu da workspace'e kaydet, yerelden sun
+        const local = await saveRemoteToWorkspace(url, "video", ["mp4", "webm"]);
         // Özel işaret → route akışa yansıtır, arayüz <video> olarak gösterir
-        return `!video[üretilen video](${url})`;
+        return `!video[üretilen video](${local || url})`;
       } catch (e) {
         return `Video üretim hatası: ${e instanceof Error ? e.message : "bilinmeyen"}`;
       }

@@ -1,3 +1,5 @@
+import { promises as fs } from "fs";
+import path from "path";
 import Anthropic from "@anthropic-ai/sdk";
 import { selectAgent } from "@/lib/agents/orchestrator";
 import {
@@ -717,12 +719,39 @@ export async function POST(req: Request) {
                     break;
                   }
                   if (messages[mi].role === "assistant") {
+                    // Yerel (/api/files) ya da uzak (http) üretilmiş görsel
                     const im = messages[mi].content?.match(
-                      /!\[[^\]]*\]\((https?:\/\/[^\s)]+)\)/,
+                      /!\[[^\]]*\]\(((?:https?:\/\/|\/api\/files)[^\s)]+)\)/,
                     );
                     if (im?.[1]) {
-                      payload.reference_image_url = im[1];
-                      found = true;
+                      let ref = im[1];
+                      // Yerel görseli data URI'ye çevir — fal bizim yerel
+                      // adresimizi çekemez.
+                      if (ref.startsWith("/api/files")) {
+                        try {
+                          const nm = ref.match(/name=([^&]+)/)?.[1];
+                          if (nm) {
+                            const fname = path.basename(decodeURIComponent(nm));
+                            const fp = path.join(process.cwd(), "workspace", fname);
+                            const b = await fs.readFile(fp);
+                            const e = path.extname(fname).slice(1).toLowerCase();
+                            const mt =
+                              e === "png"
+                                ? "image/png"
+                                : e === "webp"
+                                  ? "image/webp"
+                                  : "image/jpeg";
+                            ref = `data:${mt};base64,${b.toString("base64")}`;
+                          }
+                        } catch {
+                          /* okunamazsa video referanssız (metinden) üretilir */
+                          ref = "";
+                        }
+                      }
+                      if (ref) {
+                        payload.reference_image_url = ref;
+                        found = true;
+                      }
                       break;
                     }
                   }
