@@ -42,12 +42,14 @@ export default function AgentGraph({
   onMic,
   wakeOn = false,
   onToggleWake,
+  onExpand,
 }: {
   active: AgentActivity;
   voice?: VoiceState;
   onMic?: () => void;
   wakeOn?: boolean;
   onToggleWake?: () => void;
+  onExpand?: () => void;
 }) {
   // Kullanıcının özel ajanları → radarda dış halkada işaretlenir
   const [customAgents, setCustomAgents] = useState<
@@ -119,19 +121,25 @@ export default function AgentGraph({
       {/* radar + oyun + animasyonlu arka plan */}
       <RadarGame active={active} voice={voice} customAgents={customAgents} />
 
-      {/* tam ekran düğmesi */}
+      {/* tam ekran düğmesi — onExpand varsa radarı uygulama içinde tam ekran
+          açar (küçültünce sağ üstte mini kalır); yoksa tarayıcı tam ekranı. */}
       <button
-        onClick={toggleFullscreen}
-        title="Tam ekran aç/kapat"
-        className="absolute right-3 top-3 z-20 rounded-lg px-2.5 py-1 text-sm"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (onExpand) onExpand();
+          else toggleFullscreen(e);
+        }}
+        title="Radarı tam ekran aç"
+        aria-label="Radarı tam ekran aç"
+        className="absolute right-3 top-3 z-20 flex items-center justify-center rounded-lg px-2 py-2"
         style={{
           background: "rgba(12,26,22,0.62)",
           backdropFilter: "blur(8px)",
           border: "1px solid #1c5140",
-          color: "#5f8a72",
+          color: "#6ee7b7",
         }}
       >
-        {pseudoFs ? "🗕" : "⛶"}
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>
       </button>
 
       {/* merkez çekirdeğe dokun → konuş (Boşluk tuşu da çalışır) */}

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Sidebar, { type ViewKey } from "./Sidebar";
 import Files from "./Files";
 import Invoices from "./Invoices";
+import RadarGame from "./RadarGame";
 import Workspace from "./Workspace";
 import Tasks from "./Tasks";
 import Loops from "./Loops";
@@ -62,6 +63,9 @@ const TITLES: Record<ViewKey, string> = {
 export default function AppShell() {
   const [view, setView] = useState<ViewKey>("harita");
   const [pending, setPending] = useState(0);
+  // Radar tam ekran modu: true → radar tüm ekranı kaplar; false → normal Nova
+  // arayüzü + sağ üstte küçük animasyonlu radar sembolü.
+  const [radarFull, setRadarFull] = useState(false);
 
   const [convs, setConvs] = useState<ConvMeta[]>([]);
   const [activeConv, setActiveConv] = useState<string | null>(null);
@@ -274,6 +278,7 @@ ekrana tıkla: tam ekran · Boşluk: konuş · fareyi oynat: menüler
             pinnedChat={
               convs.find((c) => c.id === activeConv)?.pinned ?? false
             }
+            onExpandRadar={() => setRadarFull(true)}
           />
         ) : view === "tasks" ? (
           <Tasks onChange={refreshPending} />
@@ -304,6 +309,52 @@ ekrana tıkla: tam ekran · Boşluk: konuş · fareyi oynat: menüler
 
       {/* harita dışı görünümlerde menü altta */}
       {view !== "harita" && menuBarNode}
+
+      {/* Sağ üstte küçük animasyonlu radar sembolü — tıkla → tam ekran radar.
+          Harita görünümünde büyük radar zaten üstte olduğundan gizli. */}
+      {!radarFull && view !== "harita" && (
+        <button
+          onClick={() => setRadarFull(true)}
+          title="Radarı tam ekran aç"
+          aria-label="Radarı tam ekran aç"
+          className="fixed right-3 top-3 z-40 h-[74px] w-[74px] overflow-hidden rounded-2xl border"
+          style={{
+            borderColor: "#1c5140",
+            background: "#060d0b",
+            boxShadow: "0 0 22px rgba(52,211,153,.28)",
+          }}
+        >
+          <RadarGame active={null} voice="idle" mini />
+          <span
+            className="pointer-events-none absolute bottom-1 right-1 flex h-5 w-5 items-center justify-center rounded-md"
+            style={{ background: "rgba(6,13,11,.7)", color: "#6ee7b7" }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>
+          </span>
+        </button>
+      )}
+
+      {/* Radar tam ekran katmanı */}
+      {radarFull && (
+        <div className="fixed inset-0 z-50" style={{ background: "#060d0b" }}>
+          <RadarGame active={null} voice="idle" />
+          <button
+            onClick={() => setRadarFull(false)}
+            title="Küçült — Nova arayüzüne dön"
+            aria-label="Küçült — Nova arayüzüne dön"
+            className="absolute right-3 top-3 z-[60] flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium"
+            style={{
+              background: "rgba(12,26,22,.72)",
+              border: "1px solid #1c5140",
+              color: "#6ee7b7",
+              backdropFilter: "blur(8px)",
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 3v6H3M21 15h-6v6M9 9 3 3M21 21l-6-6" /></svg>
+            Nova&apos;ya dön
+          </button>
+        </div>
+      )}
     </div>
   );
 }

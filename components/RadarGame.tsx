@@ -32,10 +32,12 @@ export default function RadarGame({
   active,
   voice = "idle",
   customAgents = [],
+  mini = false,
 }: {
   active: AgentActivity;
   voice?: VoiceState;
   customAgents?: CustomAgent[];
+  mini?: boolean;
 }) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -63,6 +65,7 @@ export default function RadarGame({
     const reduced = window.matchMedia?.(
       "(prefers-reduced-motion: reduce)",
     ).matches;
+    const isMini = mini; // bu örnek için sabit (tam ekran vs köşe ayrı örnekler)
 
     let W = 0,
       H = 0,
@@ -190,7 +193,7 @@ export default function RadarGame({
         e.stopPropagation();
       }
     }
-    canvas.addEventListener("pointerdown", onDown);
+    if (!isMini) canvas.addEventListener("pointerdown", onDown);
 
     function ring(r: number, alpha: number) {
       ctx!.beginPath();
@@ -382,10 +385,10 @@ export default function RadarGame({
         }
       }
 
-      // --- ajan işaretleri ---
+      // --- ajan işaretleri (mini modda gizli) ---
       const act = activeRef.current;
       ctx!.textAlign = "center";
-      for (const key of AGENT_KEYS) {
+      if (!isMini) for (const key of AGENT_KEYS) {
         const pos = RADAR_POS[key];
         if (!pos) continue;
         const meta = AGENT_META[key];
@@ -418,7 +421,7 @@ export default function RadarGame({
         ctx!.fillText(meta.label.toLocaleUpperCase("tr"), ax, ay + off);
       }
       // özel ajanlar (dış halka)
-      const cus = customRef.current;
+      const cus = isMini ? [] : customRef.current;
       cus.forEach((a, i) => {
         const ang = -Math.PI / 2 + ((i + 0.5) / Math.max(1, cus.length)) * Math.PI * 2;
         const ax = cx + Math.cos(ang) * 0.94 * Rr;
@@ -435,7 +438,8 @@ export default function RadarGame({
       // --- Nova çekirdeği (ses tepkili) ---
       const vc = voiceRef.current;
       corePulse += 0.05;
-      const pr = 26 + Math.sin(corePulse) * 2;
+      const baseCore = isMini ? Math.max(6, Rr * 0.22) : 26;
+      const pr = baseCore + Math.sin(corePulse) * (isMini ? 1 : 2);
       const halo = ctx!.createRadialGradient(cx, cy, 0, cx, cy, pr + 22);
       halo.addColorStop(0, "rgba(52,211,153,.5)");
       halo.addColorStop(1, "rgba(52,211,153,0)");
@@ -467,22 +471,24 @@ export default function RadarGame({
       ctx!.arc(cx, cy, pr, 0, 6.2832);
       ctx!.fillStyle = core;
       ctx!.fill();
-      ctx!.fillStyle = "#05231a";
-      ctx!.font = "700 15px 'Space Grotesk', sans-serif";
-      ctx!.textAlign = "center";
-      ctx!.textBaseline = "middle";
-      ctx!.fillText("Nova", cx, cy + 1);
-      ctx!.textBaseline = "alphabetic";
+      if (!isMini) {
+        ctx!.fillStyle = "#05231a";
+        ctx!.font = "700 15px 'Space Grotesk', sans-serif";
+        ctx!.textAlign = "center";
+        ctx!.textBaseline = "middle";
+        ctx!.fillText("Nova", cx, cy + 1);
+        ctx!.textBaseline = "alphabetic";
+      }
 
-      // spawn + zorluk
-      if (now - lastSpawn > spawnEvery) {
+      // spawn + zorluk (mini modda oyun yok)
+      if (!isMini && now - lastSpawn > spawnEvery) {
         spawn();
         lastSpawn = now;
         spawnEvery = Math.max(820, 1700 - score.v * 2.5);
       }
 
       // HUD güncelle (seyrek)
-      if (hudDirty) {
+      if (!isMini && hudDirty) {
         hudDirty = false;
         setHud({ score: score.v, combo: score.combo, caught: score.caught });
       }
@@ -516,12 +522,21 @@ export default function RadarGame({
   }, []);
 
   return (
-    <div ref={wrapRef} className="absolute inset-0" style={{ zIndex: 1 }}>
+    <div
+      ref={wrapRef}
+      className="absolute inset-0"
+      style={{ zIndex: 1, pointerEvents: mini ? "none" : "auto" }}
+    >
       <canvas
         ref={canvasRef}
-        style={{ display: "block", touchAction: "none", cursor: "crosshair" }}
+        style={{
+          display: "block",
+          touchAction: "none",
+          cursor: mini ? "pointer" : "crosshair",
+        }}
       />
-      {/* skor rozeti */}
+      {/* skor rozeti (mini modda gizli) */}
+      {!mini && (
       <div
         className="pointer-events-none absolute left-3 top-3 z-20 flex items-center gap-4 rounded-lg px-3 py-2"
         style={{
@@ -555,6 +570,7 @@ export default function RadarGame({
           </span>
         </div>
       </div>
+      )}
     </div>
   );
 }
