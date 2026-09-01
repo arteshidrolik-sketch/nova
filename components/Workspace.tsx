@@ -26,7 +26,6 @@ export default function Workspace({
   autoSend,
   onAutoSent,
   pinnedChat = false,
-  onExpandRadar,
 }: {
   conversationId: string | null;
   onConversationUpdated?: () => void;
@@ -36,7 +35,6 @@ export default function Workspace({
   autoSend?: Kickoff;
   onAutoSent?: () => void;
   pinnedChat?: boolean;
-  onExpandRadar?: () => void;
 }) {
   const [active, setActive] = useState<AgentActivity>(null);
   const [voice, setVoice] = useState<VoiceState>("idle");
@@ -150,7 +148,6 @@ export default function Workspace({
           onMic={talk}
           wakeOn={wakeOn}
           onToggleWake={toggleWake}
-          onExpand={onExpandRadar}
         />
       </div>
 

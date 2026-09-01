@@ -278,7 +278,6 @@ ekrana tıkla: tam ekran · Boşluk: konuş · fareyi oynat: menüler
             pinnedChat={
               convs.find((c) => c.id === activeConv)?.pinned ?? false
             }
-            onExpandRadar={() => setRadarFull(true)}
           />
         ) : view === "tasks" ? (
           <Tasks onChange={refreshPending} />
@@ -310,9 +309,9 @@ ekrana tıkla: tam ekran · Boşluk: konuş · fareyi oynat: menüler
       {/* harita dışı görünümlerde menü altta */}
       {view !== "harita" && menuBarNode}
 
-      {/* Sağ üstte küçük animasyonlu radar sembolü — tıkla → tam ekran radar.
-          Harita görünümünde büyük radar zaten üstte olduğundan gizli. */}
-      {!radarFull && view !== "harita" && (
+      {/* Sağ üstte her zaman duran küçük animasyonlu radar sembolü —
+          tıkla → radar tam ekran. */}
+      {!radarFull && (
         <button
           onClick={() => setRadarFull(true)}
           title="Radarı tam ekran aç"
