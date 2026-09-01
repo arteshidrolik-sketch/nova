@@ -133,6 +133,7 @@ export default function AppShell() {
         onSelectConv={selectConversation}
         onRenameConv={renameConversation}
         onDeleteConv={deleteConversation}
+        onOpenRadar={() => setRadarFull(true)}
       />
     </div>
   );
@@ -254,30 +255,6 @@ export default function AppShell() {
 
       {/* harita dışı görünümlerde menü altta */}
       {view !== "harita" && menuBarNode}
-
-      {/* Sağ üstte her zaman duran küçük animasyonlu radar sembolü —
-          tıkla → radar tam ekran. */}
-      {!radarFull && (
-        <button
-          onClick={() => setRadarFull(true)}
-          title="Radarı tam ekran aç"
-          aria-label="Radarı tam ekran aç"
-          className="fixed right-3 top-3 z-40 h-[74px] w-[74px] overflow-hidden rounded-2xl border"
-          style={{
-            borderColor: "#1c5140",
-            background: "#060d0b",
-            boxShadow: "0 0 22px rgba(52,211,153,.28)",
-          }}
-        >
-          <RadarGame active={null} voice="idle" mini />
-          <span
-            className="pointer-events-none absolute bottom-1 right-1 flex h-5 w-5 items-center justify-center rounded-md"
-            style={{ background: "rgba(6,13,11,.7)", color: "#6ee7b7" }}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>
-          </span>
-        </button>
-      )}
 
       {/* Radar tam ekran katmanı */}
       {radarFull && (

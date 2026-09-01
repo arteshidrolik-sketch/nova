@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Icon from "./Icon";
+import RadarGame from "./RadarGame";
 
 export type ViewKey =
   | "harita"
@@ -51,6 +52,7 @@ export default function Sidebar({
   onSelectConv,
   onRenameConv,
   onDeleteConv,
+  onOpenRadar,
 }: {
   active: ViewKey;
   onSelect: (key: ViewKey) => void;
@@ -61,6 +63,7 @@ export default function Sidebar({
   onSelectConv: (id: string) => void;
   onRenameConv: (id: string, title: string) => void;
   onDeleteConv: (id: string) => void;
+  onOpenRadar?: () => void;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -130,6 +133,19 @@ export default function Sidebar({
             );
           })}
         </nav>
+
+        {/* Ayarların sağında küçük animasyonlu radar simgesi → tam ekran radar */}
+        {onOpenRadar && (
+          <button
+            onClick={onOpenRadar}
+            title="Radarı tam ekran aç"
+            aria-label="Radarı tam ekran aç"
+            className="relative h-9 w-9 shrink-0 overflow-hidden rounded-lg border"
+            style={{ borderColor: "#1c5140", background: "#060d0b" }}
+          >
+            <RadarGame active={null} voice="idle" mini />
+          </button>
+        )}
       </div>
 
       {/* satır ayracı */}
