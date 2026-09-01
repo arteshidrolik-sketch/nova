@@ -69,8 +69,6 @@ export default function AppShell() {
 
   const [convs, setConvs] = useState<ConvMeta[]>([]);
   const [activeConv, setActiveConv] = useState<string | null>(null);
-  const [immersive, setImmersive] = useState(false);
-  const [chatBusy, setChatBusy] = useState(false);
   const [kickoff, setKickoff] = useState<Kickoff>(null);
 
   const refreshPending = useCallback(async () => {
@@ -115,51 +113,9 @@ export default function AppShell() {
     return () => clearInterval(id);
   }, [refreshPending]);
 
-  // Ekran koruyucu gibi: 15 sn hiçbir hareket YOKSA tam ekran uzay modu.
-  // Sohbet akarken / ses varken (chatBusy) devreye girmez.
-  useEffect(() => {
-    if (view !== "harita") {
-      setImmersive(false);
-      return;
-    }
-    let timer: ReturnType<typeof setTimeout>;
-    const arm = () => {
-      clearTimeout(timer);
-      if (chatBusy) return; // meşgulken zamanlayıcıyı hiç kurma
-      timer = setTimeout(() => {
-        setImmersive(true);
-        // En iyi çaba: tam ekrana geç (tarayıcı izin verirse)
-        try {
-          document.documentElement.requestFullscreen?.().catch(() => {});
-        } catch {
-          /* yoksay */
-        }
-      }, 15000);
-    };
-    // Fare hareketi / dokunma → menüleri göster
-    const wake = () => {
-      setImmersive((prev) => (prev ? false : prev));
-      arm();
-    };
-    // Yazma / kaydırma / tıklama → sadece zamanlayıcıyı ertele (menüleri zorla açma)
-    const keepAwake = () => arm();
-    arm();
-    window.addEventListener("mousemove", wake, { passive: true });
-    window.addEventListener("touchstart", wake, { passive: true });
-    window.addEventListener("keydown", keepAwake);
-    window.addEventListener("wheel", keepAwake, { passive: true });
-    window.addEventListener("mousedown", keepAwake);
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener("mousemove", wake);
-      window.removeEventListener("touchstart", wake);
-      window.removeEventListener("keydown", keepAwake);
-      window.removeEventListener("wheel", keepAwake);
-      window.removeEventListener("mousedown", keepAwake);
-    };
-  }, [view, chatBusy]);
-
-  const hideUI = immersive && view === "harita";
+  // Eski uzay ekran-koruyucusu kaldırıldı. Radar artık yalnızca köşedeki mini
+  // simgeyle (deliberate) tam ekran açılır; Çalışma Alanı sade kalır.
+  const hideUI = false;
 
   const menuBarNode = (
     <div
@@ -257,22 +213,12 @@ export default function AppShell() {
 
   return (
     <div className="relative z-10 flex h-dvh flex-col overflow-hidden">
-      {hideUI && (
-        <div
-          className="pointer-events-none absolute bottom-3 right-4 z-20 text-[11px] tracking-wide"
-          style={{ color: "var(--text-muted)", opacity: 0.6 }}
-        >
-ekrana tıkla: tam ekran · Boşluk: konuş · fareyi oynat: menüler
-        </div>
-      )}
       <main className="min-h-0 flex-1 overflow-hidden">
         {view === "harita" ? (
           <Workspace
             conversationId={activeConv}
             onConversationUpdated={onConvUpdated}
-            immersive={hideUI}
             menuBar={menuBarNode}
-            onBusyChange={setChatBusy}
             autoSend={kickoff}
             onAutoSent={() => setKickoff(null)}
             pinnedChat={
