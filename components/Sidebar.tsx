@@ -1,8 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Icon from "./Icon";
 import RadarGame from "./RadarGame";
+
+// Tarayıcı tam ekran yardımcıları (Safari/eski tarayıcı prefiksleri dahil)
+type FsDoc = Document & {
+  webkitFullscreenElement?: Element;
+  webkitExitFullscreen?: () => Promise<void>;
+};
+type FsEl = HTMLElement & { webkitRequestFullscreen?: () => Promise<void> };
+function fsElement(): Element | null {
+  const d = document as FsDoc;
+  return d.fullscreenElement || d.webkitFullscreenElement || null;
+}
 
 export type ViewKey =
   | "harita"
@@ -67,6 +78,27 @@ export default function Sidebar({
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+
+  // Tarayıcı tam ekran durumu
+  const [isFs, setIsFs] = useState(false);
+  useEffect(() => {
+    const on = () => setIsFs(!!fsElement());
+    document.addEventListener("fullscreenchange", on);
+    document.addEventListener("webkitfullscreenchange", on);
+    return () => {
+      document.removeEventListener("fullscreenchange", on);
+      document.removeEventListener("webkitfullscreenchange", on);
+    };
+  }, []);
+  function toggleFs() {
+    const d = document as FsDoc;
+    const el = document.documentElement as FsEl;
+    if (fsElement()) {
+      (d.exitFullscreen || d.webkitExitFullscreen)?.call(d);
+    } else {
+      (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el);
+    }
+  }
 
   function startEdit(c: ConvMeta) {
     setEditingId(c.id);
@@ -134,18 +166,33 @@ export default function Sidebar({
           })}
         </nav>
 
-        {/* Ayarların sağında küçük animasyonlu radar simgesi → tam ekran radar */}
-        {onOpenRadar && (
+        {/* Ayarların sağında: tam ekran + küçük animasyonlu radar simgesi */}
+        <div className="flex shrink-0 items-center gap-1.5">
           <button
-            onClick={onOpenRadar}
-            title="Radarı tam ekran aç"
-            aria-label="Radarı tam ekran aç"
-            className="relative h-9 w-9 shrink-0 overflow-hidden rounded-lg border"
-            style={{ borderColor: "#1c5140", background: "#060d0b" }}
+            onClick={toggleFs}
+            title={isFs ? "Tam ekrandan çık" : "Tam ekran"}
+            aria-label={isFs ? "Tam ekrandan çık" : "Tam ekran"}
+            className="flex h-9 w-9 items-center justify-center rounded-lg border"
+            style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
           >
-            <RadarGame active={null} voice="idle" mini />
+            {isFs ? (
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 3v6H3M21 15h-6v6M9 9 3 3M21 21l-6-6" /></svg>
+            ) : (
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>
+            )}
           </button>
-        )}
+          {onOpenRadar && (
+            <button
+              onClick={onOpenRadar}
+              title="Radarı tam ekran aç"
+              aria-label="Radarı tam ekran aç"
+              className="relative h-9 w-9 overflow-hidden rounded-lg border"
+              style={{ borderColor: "#1c5140", background: "#060d0b" }}
+            >
+              <RadarGame active={null} voice="idle" mini />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* satır ayracı */}
