@@ -16,7 +16,7 @@ import {
 } from "@/lib/agents/meta";
 
 export type Attachment = {
-  kind: "image" | "pdf" | "text";
+  kind: "image" | "pdf" | "text" | "video";
   name: string;
   mediaType?: string;
   data?: string; // base64 (image/pdf)
@@ -502,11 +502,23 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     if (!files || files.length === 0) return;
     const out: Attachment[] = [];
     for (const file of Array.from(files)) {
-      if (file.size > 8 * 1024 * 1024) {
-        alert(`${file.name} çok büyük (en fazla 8 MB).`);
+      const isVideo =
+        file.type.startsWith("video/") ||
+        /\.(mp4|mov|webm|m4v)$/i.test(file.name);
+      const maxMB = isVideo ? 40 : 8;
+      if (file.size > maxMB * 1024 * 1024) {
+        alert(`${file.name} çok büyük (en fazla ${maxMB} MB).`);
         continue;
       }
-      if (file.type.startsWith("image/")) {
+      if (isVideo) {
+        const url = await readAsDataURL(file);
+        out.push({
+          kind: "video",
+          name: file.name,
+          mediaType: file.type,
+          data: url.split(",")[1],
+        });
+      } else if (file.type.startsWith("image/")) {
         const url = await readAsDataURL(file);
         out.push({
           kind: "image",
@@ -1573,7 +1585,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*,application/pdf,.docx,.xlsx,.xls,.txt,.md,.json,.csv,.ts,.tsx,.js,.jsx,.css,.html,.py"
+              accept="image/*,video/*,application/pdf,.mp4,.mov,.webm,.m4v,.docx,.xlsx,.xls,.txt,.md,.json,.csv,.ts,.tsx,.js,.jsx,.css,.html,.py"
               multiple
               className="hidden"
               onChange={(e) => handleFiles(e.target.files)}

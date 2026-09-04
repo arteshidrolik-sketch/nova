@@ -621,6 +621,114 @@ export const ACTIONS: Record<string, ActionDef> = {
     },
   },
 
+  edit_video: {
+    dangerous: true,
+    project: false,
+    description:
+      "Var olan bir VİDEOYU düzenler (ffmpeg): üzerine YAZI/altyazı bindirir ve/veya istenmeyen/hatalı bölümü keserek çıkarır. Kullanıcı 'videoya yazı ekle', 'şu yazıyı koy', 'altyazı ekle', 'şu saniyeler arasını kes/çıkar', 'baştan/sondan kırp' derse BU ARACI çağır (generate_video DEĞİL — o sıfırdan yeni video üretir). Kaynak video: kullanıcının SON yüklediği video ya da bu sohbette az önce ÜRETİLEN video otomatik alınır. NOT: Yapay zekânın ürettiği görüntüdeki bozuklukları 'boyayarak' düzeltemez; yapabildiği yazı eklemek ve bölüm kesmektir. Çağrılınca hemen çalışır, sonuç Dosyalar'a kaydedilir.",
+    input_schema: {
+      type: "object",
+      properties: {
+        text: {
+          type: "string",
+          description: "Videoya bindirilecek yazı (opsiyonel). Boşsa sadece kesme yapılır.",
+        },
+        text_position: {
+          type: "string",
+          enum: ["alt", "üst", "orta"],
+          description: "Yazının konumu (varsayılan alt)",
+        },
+        text_start: {
+          type: "number",
+          description: "Yazının görüneceği başlangıç saniyesi (opsiyonel; boşsa baştan)",
+        },
+        text_end: {
+          type: "number",
+          description: "Yazının kaybolacağı saniye (opsiyonel; boşsa sona kadar)",
+        },
+        trim_start: {
+          type: "number",
+          description: "KESME: bu saniyeden itibaren TUT (öncesini at). Opsiyonel.",
+        },
+        trim_end: {
+          type: "number",
+          description: "KESME: bu saniyeye kadar TUT (sonrasını at). Opsiyonel.",
+        },
+        filename: { type: "string", description: "Çıktı dosya adı (opsiyonel)" },
+      },
+      required: [],
+    },
+    makeTitle: (p) =>
+      `Video düzenle${p.text ? `: "${shorten(String(p.text), 32)}"` : " (kesme)"}`,
+    makeSummary: (p) => {
+      const parts: string[] = [];
+      if (p.text) parts.push(`"${shorten(String(p.text), 60)}" yazısı eklenecek (${String(p.text_position || "alt")})`);
+      if (p.trim_start != null || p.trim_end != null)
+        parts.push(`${p.trim_start ?? 0}–${p.trim_end ?? "son"} sn arası tutulacak (gerisi kesilecek)`);
+      return `Yüklenen/son videoya: ${parts.join("; ") || "(işlem belirtilmedi)"}. Sonuç yeni dosya olarak kaydedilecek.`;
+    },
+    execute: async (p) => {
+      const src = p.source_video ? String(p.source_video) : "";
+      if (!src)
+        return "Hata: Düzenlenecek video bulunamadı. Önce bir video üret ya da bir video yükle, sonra 'yazı ekle / şu kısmı kes' de.";
+      const inPath = safeWorkspacePath(src);
+      if (!(await fs.stat(inPath).catch(() => null)))
+        return `Hata: Kaynak video okunamadı (${src}).`;
+
+      const text = String(p.text ?? "").trim();
+      const tStart = p.trim_start != null ? Number(p.trim_start) : null;
+      const tEnd = p.trim_end != null ? Number(p.trim_end) : null;
+      if (!text && tStart == null && tEnd == null)
+        return "Hata: Ne yazı ne de kesme aralığı belirtildi — yapılacak işlem yok.";
+
+      const base = String(p.filename || src).replace(/\.[a-z0-9]+$/i, "");
+      const outName = `${base}_duzenli.mp4`;
+      const outPath = safeWorkspacePath(outName);
+      await fs.mkdir(WORKSPACE, { recursive: true });
+
+      // Kesme (input seeking) — istenmeyen bölümü at
+      const seek: string[] = [];
+      if (tStart != null && Number.isFinite(tStart)) seek.push(`-ss ${tStart}`);
+      if (tEnd != null && Number.isFinite(tEnd)) seek.push(`-to ${tEnd}`);
+
+      // Yazı: escape derdi olmasın diye textfile kullan (Türkçe karakter destekli font)
+      let vf = "";
+      let txtFile = "";
+      if (text) {
+        txtFile = safeWorkspacePath(`.caption_${Date.now()}.txt`);
+        await fs.writeFile(txtFile, text, "utf8");
+        const pos = String(p.text_position || "alt");
+        const y = pos === "üst" ? "40" : pos === "orta" ? "(h-text_h)/2" : "h-text_h-48";
+        const s = p.text_start != null ? Number(p.text_start) : null;
+        const e = p.text_end != null ? Number(p.text_end) : null;
+        const enable =
+          s != null || e != null
+            ? `:enable='between(t,${s ?? 0},${e ?? 1e9})'`
+            : "";
+        const font = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
+        vf =
+          `-vf "drawtext=fontfile=${font}:textfile='${txtFile}':fontcolor=white:` +
+          `fontsize=h/16:box=1:boxcolor=black@0.5:boxborderw=14:` +
+          `x=(w-text_w)/2:y=${y}${enable}"`;
+      }
+
+      const cmd =
+        `ffmpeg -y ${seek.join(" ")} -i "${inPath}" ${vf} ` +
+        `-c:v libx264 -preset veryfast -crf 23 -c:a aac -movflags +faststart "${outPath}"`;
+      try {
+        await execAsync(cmd, { timeout: 180000, maxBuffer: 16 * 1024 * 1024 });
+      } catch (e) {
+        const err = e as { stderr?: string; message?: string };
+        return `Video düzenlenemedi (ffmpeg): ${(err.stderr || err.message || "").slice(-500)}`;
+      } finally {
+        if (txtFile) await fs.unlink(txtFile).catch(() => {});
+      }
+      const buf = await fs.readFile(outPath).catch(() => null);
+      if (!buf || buf.length === 0) return "Video düzenlendi ama çıktı boş.";
+      return `!video[düzenlenmiş video](/api/files?name=${encodeURIComponent(outName)}&inline=1)`;
+    },
+  },
+
   // --- Aktif proje aksiyonları (payload'a projectPath/projectName route ekler) ---
   write_project_file: {
     dangerous: true,

@@ -130,7 +130,7 @@ function makeModelTextFilter(sink: (s: string) => void) {
 }
 
 type Attach = {
-  kind: "image" | "pdf" | "text";
+  kind: "image" | "pdf" | "text" | "video";
   name?: string;
   mediaType?: string;
   data?: string; // base64
@@ -350,6 +350,7 @@ export async function POST(req: Request) {
     "- Bir değişiklik yapacaksan, o mesajda AÇIKLAMA YAZMADAN doğrudan aracı ÇAĞIR.\n" +
     "- ASLA 'şimdi aracı çağırıyorum', 'GO'ya gönderiyorum', 'kuyruğa atıyorum', 'dosyayı yazıyorum' gibi cümle yazıp turu BİTİRME. Aracı fiilen çağırmazsan HİÇBİR ŞEY OLMAZ ve kullanıcıya yalan söylemiş olursun — bu KESİNLİKLE YASAK.\n" +
     "- Niyetini anlatmak = işi yapmak DEĞİLDİR. Sadece aracı çağırmak işi kaydeder.\n" +
+    "- 🎬 VAR OLAN VİDEO DÜZENLEME: Kullanıcı 'videoya yazı/altyazı ekle', 'şu saniyeler arasını kes/çıkar', 'baştan/sondan kırp' derse edit_video aracını çağır (generate_video DEĞİL — o sıfırdan yeni üretir). edit_video son yüklenen ya da az önce üretilen videoyu otomatik alır.\n" +
     "- 🖼️ GÖRSEL/VİDEO: Bir görsel/video üretmenin TEK yolu generate_image / generate_video aracını ÇAĞIRMAKTIR. " +
     "Sonucu (görseli/videoyu) kullanıcıya SUNUCU gösterir. ASLA kendi metninde `![...](...)`, `!video[...]` ya da " +
     "`/api/files?...` linki YAZMA — böyle bir link uydurursan dosya var olmaz, kullanıcı 404 'dosya bulunamadı' görür. " +
@@ -409,6 +410,11 @@ export async function POST(req: Request) {
           blocks.push({
             type: "text",
             text: `Ekli dosya "${a.name ?? "dosya"}" (güvenilmeyen veri):\n${wrapUntrusted(label, a.text)}`,
+          });
+        } else if (a.kind === "video") {
+          blocks.push({
+            type: "text",
+            text: `Ekli video "${a.name ?? "video"}". İçeriğini izleyemezsin; üzerine yazı eklemek ya da bir bölümü kesmek için edit_video aracını çağır.`,
           });
         }
       }
@@ -824,6 +830,44 @@ export async function POST(req: Request) {
                 }
               }
 
+              // Video düzenleme: kaynak videoyu belirle → (1) son yüklenen video
+              // workspace'e kaydedilir; yoksa (2) bu sohbette son ÜRETİLEN video.
+              if (block.name === "edit_video") {
+                let resolved = "";
+                for (let mi = messages.length - 1; mi >= 0; mi--) {
+                  const att = messages[mi].attachments?.find(
+                    (a) => a.data && /\.(mp4|mov|webm|m4v)$/i.test(a.name || ""),
+                  );
+                  if (att?.data) {
+                    try {
+                      const nm = `yuklenen-video-${runId.slice(0, 8)}.mp4`;
+                      const fp = path.join(process.cwd(), "workspace", nm);
+                      await fs.mkdir(path.dirname(fp), { recursive: true });
+                      await fs.writeFile(fp, Buffer.from(att.data, "base64"));
+                      resolved = nm;
+                    } catch {
+                      /* kaydedilemezse üretilen videoya düş */
+                    }
+                    break;
+                  }
+                  if (messages[mi].role === "user" && messages[mi].attachments?.length)
+                    break;
+                }
+                if (!resolved) {
+                  for (let mi = messages.length - 1; mi >= 0; mi--) {
+                    if (messages[mi].role !== "assistant") continue;
+                    const m = messages[mi].content?.match(
+                      /!video\[[^\]]*\]\(\/api\/files\?name=([^&)]+)/,
+                    );
+                    if (m?.[1]) {
+                      resolved = path.basename(decodeURIComponent(m[1]));
+                      break;
+                    }
+                  }
+                }
+                if (resolved) payload.source_video = resolved;
+              }
+
               const title = actionTitle(block.name, payload);
 
               // RİSKLİ aksiyon (git push, dış dünyaya giden) → İNSAN ONAYINA düşer,
@@ -913,6 +957,7 @@ export async function POST(req: Request) {
               if (
                 block.name === "generate_image" ||
                 block.name === "generate_video" ||
+                block.name === "edit_video" ||
                 block.name === "generate_document" ||
                 block.name === "write_file" ||
                 block.name === "edit_excel" ||

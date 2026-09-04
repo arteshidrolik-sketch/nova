@@ -2,9 +2,11 @@ FROM node:22-bookworm-slim
 
 WORKDIR /app
 
-# git: proje araçları (run_command/git) için; openssh-client: gerekirse
+# git: proje araçları (run_command/git); openssh-client: gerekirse;
+# ffmpeg + fonts-dejavu-core: video düzenleme (edit_video — yazı bindirme/kesme,
+# Türkçe karakter destekli font drawtext için).
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends git ca-certificates openssh-client \
+  && apt-get install -y --no-install-recommends git ca-certificates openssh-client ffmpeg fonts-dejavu-core \
   && rm -rf /var/lib/apt/lists/*
 
 # Vercel CLI: kullanıcı uygulamalarını canlıya yayınlamak için (deploy_vercel aracı).
