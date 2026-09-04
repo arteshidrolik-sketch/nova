@@ -645,17 +645,51 @@ export const ACTIONS: Record<string, ActionDef> = {
           enum: ["alt", "üst", "orta"],
           description: "Yazının konumu (varsayılan alt)",
         },
+        brightness: {
+          type: "number",
+          description:
+            "Parlaklık/aydınlık ayarı (-0.5…0.5, varsayılan 0). 'Daha aydınlık' için +0.12 gibi pozitif değer ver.",
+        },
+        contrast: {
+          type: "number",
+          description: "Kontrast (0.5…2, varsayılan 1). Aydınlatırken 1.05 civarı iyi durur.",
+        },
+        saturation: {
+          type: "number",
+          description: "Renk doygunluğu (0…2, varsayılan 1)",
+        },
+        tone: {
+          type: "string",
+          enum: ["sıcak", "soğuk", "sepya", "gri", "canlı", "soluk", "negatif"],
+          description:
+            "Renk tonu/atmosfer değişimi (opsiyonel): sıcak/soğuk ışık, sepya, siyah-beyaz (gri), canlı renkler, soluk/pastel, negatif.",
+        },
+        hue: {
+          type: "number",
+          description:
+            "Renk kaydırma — derece (0…360). Tüm renkleri döndürür (ör. maviyi yeşile). Opsiyonel.",
+        },
         filename: { type: "string", description: "Çıktı dosya adı (opsiyonel)" },
       },
       required: [],
     },
     makeTitle: (p) =>
-      `Görsel düzenle${p.text ? `: "${shorten(String(p.text), 28)}"` : " (logo/bindirme)"}`,
+      `Görsel düzenle${
+        p.text
+          ? `: "${shorten(String(p.text), 28)}"`
+          : p.overlay_image || p.base_image
+            ? p.brightness != null
+              ? " (aydınlatma)"
+              : " (logo/bindirme)"
+            : ""
+      }`,
     makeSummary: (p) => {
       const parts: string[] = [];
-      parts.push("yüklenen logo afişe birebir yerleştirilecek");
+      if (p.overlay_image) parts.push("logo afişe birebir yerleştirilecek");
+      if (p.brightness != null || p.contrast != null || p.saturation != null)
+        parts.push("parlaklık/kontrast ayarlanacak");
       if (p.text) parts.push(`"${shorten(String(p.text), 50)}" yazısı eklenecek`);
-      return `Görsel düzenlenecek (${String(p.overlay_position || "üst-orta")}): ${parts.join("; ")}. Sonuç yeni dosya olarak kaydedilecek.`;
+      return `Görsel düzenlenecek: ${parts.join("; ") || "(işlem)"}. Sonuç yeni dosya olarak kaydedilecek.`;
     },
     execute: async (p) => {
       const baseName = p.base_image ? String(p.base_image) : "";
@@ -667,8 +701,34 @@ export const ACTIONS: Record<string, ActionDef> = {
       const overlayName = p.overlay_image ? String(p.overlay_image) : "";
       const overlayPath = overlayName ? safeWorkspacePath(overlayName) : "";
       const text = String(p.text ?? "").trim();
-      if (!overlayName && !text)
-        return "Hata: Bindirilecek logo/görsel yok ve yazı da belirtilmedi — yapılacak işlem yok. İki görsel (afiş + logo) yükle.";
+      // Parlaklık/kontrast/doygunluk (eq) — "daha aydınlık" istekleri için
+      const b = p.brightness != null ? Number(p.brightness) : null;
+      const c = p.contrast != null ? Number(p.contrast) : null;
+      const sat = p.saturation != null ? Number(p.saturation) : null;
+      const hasEq = b != null || c != null || sat != null;
+      const eqStr = hasEq
+        ? `eq=brightness=${b ?? 0}:contrast=${c ?? 1}:saturation=${sat ?? 1}`
+        : "";
+      // Ton/renk presetleri (renk değişimi)
+      const TONE: Record<string, string> = {
+        sıcak: "colorbalance=rs=.15:gs=.04:bs=-.12",
+        soğuk: "colorbalance=rs=-.12:gs=0:bs=.16",
+        sepya:
+          "colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131",
+        gri: "hue=s=0",
+        canlı: "eq=saturation=1.5:contrast=1.08",
+        soluk: "eq=saturation=0.72:contrast=0.92:brightness=0.05",
+        negatif: "negate",
+      };
+      const toneStr = p.tone ? TONE[String(p.tone)] || "" : "";
+      const hueStr =
+        p.hue != null && Number.isFinite(Number(p.hue))
+          ? `hue=h=${Number(p.hue)}`
+          : "";
+      // Afişe uygulanacak renk/ışık filtreleri (logo bindirilmeden ÖNCE)
+      const baseFx = [eqStr, toneStr, hueStr].filter(Boolean).join(",");
+      if (!overlayName && !text && !baseFx)
+        return "Hata: Bindirme, yazı, parlaklık ya da renk/ton ayarı belirtilmedi — yapılacak işlem yok.";
 
       // Çıktı biçimi: baz görselin uzantısı
       const ext = (baseName.match(/\.(png|jpg|jpeg|webp)$/i)?.[1] || "png").toLowerCase();
@@ -720,11 +780,15 @@ export const ACTIONS: Record<string, ActionDef> = {
       const q = ext === "jpg" || ext === "jpeg" ? "-q:v 2" : "";
       let cmd: string;
       if (overlayPath) {
-        let fc = `[1:v]scale=${ow}:-1[lg];[0:v][lg]overlay=${xy}`;
+        // Renk/ışık AFİŞE uygulanır (logo birebir kalsın diye overlay'den ÖNCE)
+        const baseLabel = baseFx ? `[0:v]${baseFx}[bg];` : "";
+        const baseIn = baseFx ? "[bg]" : "[0:v]";
+        let fc = `${baseLabel}[1:v]scale=${ow}:-1[lg];${baseIn}[lg]overlay=${xy}`;
         if (drawtext) fc += `[ov];[ov]${drawtext}`;
         cmd = `ffmpeg -y -i "${basePath}" -i "${overlayPath}" -filter_complex "${fc}" ${q} "${outPath}"`;
       } else {
-        cmd = `ffmpeg -y -i "${basePath}" -vf "${drawtext}" ${q} "${outPath}"`;
+        const chain = [baseFx, drawtext].filter(Boolean).join(",");
+        cmd = `ffmpeg -y -i "${basePath}" -vf "${chain}" ${q} "${outPath}"`;
       }
       try {
         await execAsync(cmd, { timeout: 120000, maxBuffer: 16 * 1024 * 1024 });
@@ -737,6 +801,77 @@ export const ACTIONS: Record<string, ActionDef> = {
       const buf = await fs.readFile(outPath).catch(() => null);
       if (!buf || buf.length === 0) return "Görsel düzenlendi ama çıktı boş.";
       return `![düzenlenmiş görsel](/api/files?name=${encodeURIComponent(out)}&inline=1)`;
+    },
+  },
+
+  restyle_image: {
+    dangerous: true,
+    project: false,
+    description:
+      "Var olan bir görselin TASARIMINI/STİLİNİ yapay zekâ ile DEĞİŞTİRİR (görselden-görsele). Kullanıcı 'bu afişin tasarımını değiştir', 'daha modern/lüks/minimal yap', 'stilini şöyle yap', 'farklı bir konsept dene' derse BU ARACI çağır. Kaynak: son yüklenen ya da az önce üretilen görsel otomatik alınır. NOT: AI yeniden çizer — kompozisyon korunmaya çalışılır ama yazı/logo BİREBİR korunmayabilir; birebir logo gerekiyorsa sonrasında edit_image ile logoyu tekrar yerleştir. Çağrılınca hemen çalışır.",
+    input_schema: {
+      type: "object",
+      properties: {
+        prompt: {
+          type: "string",
+          description:
+            "Yeni tasarım/stil tarifi: renk paleti, atmosfer, düzen, his (İngilizce daha iyi sonuç verir).",
+        },
+        strength: {
+          type: "number",
+          description:
+            "Değişim şiddeti 0.2–0.9 (varsayılan 0.6). Düşük = orijinale sadık küçük dokunuş; yüksek = köklü yeni tasarım.",
+        },
+        filename: { type: "string", description: "Çıktı dosya adı (opsiyonel)" },
+      },
+      required: ["prompt"],
+    },
+    makeTitle: (p) => `Tasarım değiştir: ${shorten(String(p.prompt), 40)}`,
+    makeSummary: (p) =>
+      `Görselin tasarımı/stili yapay zekâ ile değiştirilecek: "${shorten(String(p.prompt), 120)}" (şiddet ${p.strength ?? 0.6}). Sonuç yeni dosya olarak kaydedilecek.`,
+    execute: async (p) => {
+      const key = process.env.FAL_KEY;
+      if (!key) return "Hata: FAL_KEY tanımlı değil (fal.ai anahtarı).";
+      const baseName = p.base_image ? String(p.base_image) : "";
+      if (!baseName)
+        return "Hata: Tasarımı değiştirilecek görsel bulunamadı. Bir görsel yükle ya da önce üret, sonra 'tasarımını değiştir' de.";
+      const basePath = safeWorkspacePath(baseName);
+      const buf = await fs.readFile(basePath).catch(() => null);
+      if (!buf) return `Hata: Kaynak görsel okunamadı (${baseName}).`;
+      const prompt = String(p.prompt ?? "").trim();
+      if (!prompt) return "Hata: yeni tasarım tarifi (prompt) boş.";
+      const ext = (baseName.match(/\.(png|jpg|jpeg|webp)$/i)?.[1] || "png").toLowerCase();
+      const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+      const dataUri = `data:${mime};base64,${buf.toString("base64")}`;
+      const strength = p.strength != null ? Number(p.strength) : 0.6;
+      const model = process.env.NOVA_RESTYLE_MODEL || "fal-ai/flux/dev/image-to-image";
+      try {
+        const res = await fetch(`https://fal.run/${model}`, {
+          method: "POST",
+          headers: { Authorization: `Key ${key}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt,
+            image_url: dataUri,
+            strength: Math.min(0.95, Math.max(0.1, strength)),
+            num_images: 1,
+          }),
+        });
+        const data = (await res.json()) as {
+          images?: { url?: string }[];
+          detail?: unknown;
+        };
+        if (!res.ok) {
+          const d =
+            typeof data?.detail === "string" ? data.detail : JSON.stringify(data?.detail ?? data);
+          return `Tasarım değiştirilemedi (fal): ${d}`.slice(0, 400);
+        }
+        const url = data?.images?.[0]?.url;
+        if (!url) return "Tasarım değiştirilemedi: sonuç boş.";
+        const local = await saveRemoteToWorkspace(url, "tasarim", ["jpg", "jpeg", "png", "webp"]);
+        return `![yeni tasarım](${local || url})`;
+      } catch (e) {
+        return `Tasarım değiştirme hatası: ${e instanceof Error ? e.message : "bilinmeyen"}`;
+      }
     },
   },
 
