@@ -351,6 +351,7 @@ export async function POST(req: Request) {
     "- ASLA 'şimdi aracı çağırıyorum', 'GO'ya gönderiyorum', 'kuyruğa atıyorum', 'dosyayı yazıyorum' gibi cümle yazıp turu BİTİRME. Aracı fiilen çağırmazsan HİÇBİR ŞEY OLMAZ ve kullanıcıya yalan söylemiş olursun — bu KESİNLİKLE YASAK.\n" +
     "- Niyetini anlatmak = işi yapmak DEĞİLDİR. Sadece aracı çağırmak işi kaydeder.\n" +
     "- 🎬 VAR OLAN VİDEO DÜZENLEME: Kullanıcı 'videoya yazı/altyazı ekle', 'şu saniyeler arasını kes/çıkar', 'baştan/sondan kırp' derse edit_video aracını çağır (generate_video DEĞİL — o sıfırdan yeni üretir). edit_video son yüklenen ya da az önce üretilen videoyu otomatik alır.\n" +
+    "- 🖼️ VAR OLAN GÖRSEL DÜZENLEME / LOGO YERLEŞTİRME: Kullanıcı 'afişe logomu koy', 'şu logoyu buraya yerleştir', 'görsele yazı ekle' derse edit_image aracını çağır (generate_image DEĞİL — o AI ile sıfırdan çizer, logoyu BİREBİR korumaz). İki görsel yüklenmişse büyük olan afiş, küçük olan logo kabul edilir. ASLA 'dosyalara/sandbox'a erişemiyorum, görseller ulaşılamaz' gibi BAHANE ÜRETME — edit_image aracını çağır, o yüklenen görselleri otomatik alır.\n" +
     "- 🖼️ GÖRSEL/VİDEO: Bir görsel/video üretmenin TEK yolu generate_image / generate_video aracını ÇAĞIRMAKTIR. " +
     "Sonucu (görseli/videoyu) kullanıcıya SUNUCU gösterir. ASLA kendi metninde `![...](...)`, `!video[...]` ya da " +
     "`/api/files?...` linki YAZMA — böyle bir link uydurursan dosya var olmaz, kullanıcı 404 'dosya bulunamadı' görür. " +
@@ -868,6 +869,43 @@ export async function POST(req: Request) {
                 if (resolved) payload.source_video = resolved;
               }
 
+              // Görsel düzenleme: son kullanıcı turundaki görselleri kaynak yap.
+              // 2+ görsel varsa BÜYÜK olan afiş (base), küçük olan logo (overlay).
+              if (block.name === "edit_image") {
+                let imgs: Attach[] = [];
+                for (let mi = messages.length - 1; mi >= 0; mi--) {
+                  if (messages[mi].role !== "user") continue;
+                  const found = (messages[mi].attachments ?? []).filter(
+                    (a) => a.kind === "image" && a.data,
+                  );
+                  if (found.length) {
+                    imgs = found;
+                    break;
+                  }
+                  break; // en son kullanıcı turunda görsel yoksa dur
+                }
+                if (imgs.length) {
+                  const byBig = [...imgs].sort(
+                    (a, b) => (b.data?.length ?? 0) - (a.data?.length ?? 0),
+                  );
+                  const extOf = (a: Attach) =>
+                    (a.mediaType?.includes("png") ? "png" : a.mediaType?.includes("webp") ? "webp" : "jpg");
+                  const save = async (a: Attach, tag: string) => {
+                    const nm = `duzen-${tag}-${runId.slice(0, 8)}.${extOf(a)}`;
+                    const fp = path.join(process.cwd(), "workspace", nm);
+                    await fs.mkdir(path.dirname(fp), { recursive: true });
+                    await fs.writeFile(fp, Buffer.from(a.data as string, "base64"));
+                    return nm;
+                  };
+                  try {
+                    payload.base_image = await save(byBig[0], "base");
+                    if (byBig[1]) payload.overlay_image = await save(byBig[1], "logo");
+                  } catch {
+                    /* kaydedilemezse araç uygun hatayı döner */
+                  }
+                }
+              }
+
               const title = actionTitle(block.name, payload);
 
               // RİSKLİ aksiyon (git push, dış dünyaya giden) → İNSAN ONAYINA düşer,
@@ -956,6 +994,7 @@ export async function POST(req: Request) {
               // DOĞRUDAN akışa yansıt → kullanıcı hemen görüp indirebilir.
               if (
                 block.name === "generate_image" ||
+                block.name === "edit_image" ||
                 block.name === "generate_video" ||
                 block.name === "edit_video" ||
                 block.name === "generate_document" ||

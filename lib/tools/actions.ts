@@ -621,6 +621,125 @@ export const ACTIONS: Record<string, ActionDef> = {
     },
   },
 
+  edit_image: {
+    dangerous: true,
+    project: false,
+    description:
+      "Var olan bir GÖRSELİ düzenler (ffmpeg, BİREBİR — AI ile çizmez): üzerine ikinci bir görseli (ör. LOGO) yerleştirir/bindirir, yazı ekler. Kullanıcı 'afişe logomu koy', 'şu logoyu şuraya yerleştir', 'görsele yazı ekle', 'köşeye logo ekle' derse BU ARACI çağır — generate_image DEĞİL (o sıfırdan AI çizer, logoyu birebir KORUMAZ). İki görsel yükle: BÜYÜK olan afiş/zemin, KÜÇÜK olan bindirilecek logo. Tek görsel varsa yalnız yazı eklenir. Sonuç Dosyalar'a kaydedilir.",
+    input_schema: {
+      type: "object",
+      properties: {
+        overlay_position: {
+          type: "string",
+          enum: ["sağ-üst", "sol-üst", "sağ-alt", "sol-alt", "üst-orta", "alt-orta", "orta"],
+          description: "Bindirilecek logonun/görselin konumu (varsayılan üst-orta)",
+        },
+        overlay_scale: {
+          type: "number",
+          description: "Logonun genişliği, afişin yüzdesi olarak (varsayılan 25)",
+        },
+        margin: { type: "number", description: "Kenar boşluğu px (varsayılan 28)" },
+        text: { type: "string", description: "Görsele eklenecek yazı (opsiyonel)" },
+        text_position: {
+          type: "string",
+          enum: ["alt", "üst", "orta"],
+          description: "Yazının konumu (varsayılan alt)",
+        },
+        filename: { type: "string", description: "Çıktı dosya adı (opsiyonel)" },
+      },
+      required: [],
+    },
+    makeTitle: (p) =>
+      `Görsel düzenle${p.text ? `: "${shorten(String(p.text), 28)}"` : " (logo/bindirme)"}`,
+    makeSummary: (p) => {
+      const parts: string[] = [];
+      parts.push("yüklenen logo afişe birebir yerleştirilecek");
+      if (p.text) parts.push(`"${shorten(String(p.text), 50)}" yazısı eklenecek`);
+      return `Görsel düzenlenecek (${String(p.overlay_position || "üst-orta")}): ${parts.join("; ")}. Sonuç yeni dosya olarak kaydedilecek.`;
+    },
+    execute: async (p) => {
+      const baseName = p.base_image ? String(p.base_image) : "";
+      if (!baseName)
+        return "Hata: Düzenlenecek görsel bulunamadı. Afiş/zemin görselini (ve bindirilecek logoyu) yükleyip tekrar iste.";
+      const basePath = safeWorkspacePath(baseName);
+      if (!(await fs.stat(basePath).catch(() => null)))
+        return `Hata: Kaynak görsel okunamadı (${baseName}).`;
+      const overlayName = p.overlay_image ? String(p.overlay_image) : "";
+      const overlayPath = overlayName ? safeWorkspacePath(overlayName) : "";
+      const text = String(p.text ?? "").trim();
+      if (!overlayName && !text)
+        return "Hata: Bindirilecek logo/görsel yok ve yazı da belirtilmedi — yapılacak işlem yok. İki görsel (afiş + logo) yükle.";
+
+      // Çıktı biçimi: baz görselin uzantısı
+      const ext = (baseName.match(/\.(png|jpg|jpeg|webp)$/i)?.[1] || "png").toLowerCase();
+      const out = `${String(p.filename || baseName).replace(/\.[a-z0-9]+$/i, "")}_duzenli.${ext === "jpeg" ? "jpg" : ext}`;
+      const outPath = safeWorkspacePath(out);
+      await fs.mkdir(WORKSPACE, { recursive: true });
+
+      // Baz genişliği (logoyu orantılı ölçeklemek için)
+      let W = 1000;
+      try {
+        const { stdout } = await execAsync(
+          `ffprobe -v error -select_streams v:0 -show_entries stream=width -of csv=p=0 "${basePath}"`,
+          { timeout: 20000 },
+        );
+        W = parseInt(stdout.trim(), 10) || 1000;
+      } catch {
+        /* varsayılan genişlik */
+      }
+      const m = p.margin != null ? Math.round(Number(p.margin)) : 28;
+      const scale = p.overlay_scale != null ? Number(p.overlay_scale) : 25;
+      const ow = Math.max(16, Math.round((W * scale) / 100));
+      const pos = String(p.overlay_position || "üst-orta");
+      // overlay filtresi değişkenleri: W,H (ana) w,h (bindirilen)
+      const XY: Record<string, string> = {
+        "sağ-üst": `W-w-${m}:${m}`,
+        "sol-üst": `${m}:${m}`,
+        "sağ-alt": `W-w-${m}:H-h-${m}`,
+        "sol-alt": `${m}:H-h-${m}`,
+        "üst-orta": `(W-w)/2:${m}`,
+        "alt-orta": `(W-w)/2:H-h-${m}`,
+        orta: `(W-w)/2:(H-h)/2`,
+      };
+      const xy = XY[pos] || XY["üst-orta"];
+
+      // Yazı (drawtext) — textfile ile Türkçe karakter güvenli
+      let txtFile = "";
+      let drawtext = "";
+      if (text) {
+        txtFile = safeWorkspacePath(`.cap_${Date.now()}.txt`);
+        await fs.writeFile(txtFile, text, "utf8");
+        const tp = String(p.text_position || "alt");
+        const y = tp === "üst" ? "40" : tp === "orta" ? "(h-text_h)/2" : "h-text_h-48";
+        const font = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
+        drawtext =
+          `drawtext=fontfile=${font}:textfile='${txtFile}':fontcolor=white:` +
+          `fontsize=h/18:box=1:boxcolor=black@0.5:boxborderw=14:x=(w-text_w)/2:y=${y}`;
+      }
+
+      const q = ext === "jpg" || ext === "jpeg" ? "-q:v 2" : "";
+      let cmd: string;
+      if (overlayPath) {
+        let fc = `[1:v]scale=${ow}:-1[lg];[0:v][lg]overlay=${xy}`;
+        if (drawtext) fc += `[ov];[ov]${drawtext}`;
+        cmd = `ffmpeg -y -i "${basePath}" -i "${overlayPath}" -filter_complex "${fc}" ${q} "${outPath}"`;
+      } else {
+        cmd = `ffmpeg -y -i "${basePath}" -vf "${drawtext}" ${q} "${outPath}"`;
+      }
+      try {
+        await execAsync(cmd, { timeout: 120000, maxBuffer: 16 * 1024 * 1024 });
+      } catch (e) {
+        const err = e as { stderr?: string; message?: string };
+        return `Görsel düzenlenemedi (ffmpeg): ${(err.stderr || err.message || "").slice(-500)}`;
+      } finally {
+        if (txtFile) await fs.unlink(txtFile).catch(() => {});
+      }
+      const buf = await fs.readFile(outPath).catch(() => null);
+      if (!buf || buf.length === 0) return "Görsel düzenlendi ama çıktı boş.";
+      return `![düzenlenmiş görsel](/api/files?name=${encodeURIComponent(out)}&inline=1)`;
+    },
+  },
+
   edit_video: {
     dangerous: true,
     project: false,
