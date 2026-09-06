@@ -637,7 +637,7 @@ export const ACTIONS: Record<string, ActionDef> = {
     dangerous: true,
     project: false,
     description:
-      "Var olan bir GÖRSELİ düzenler (ffmpeg, BİREBİR — AI ile çizmez): üzerine ikinci bir görseli (ör. LOGO) yerleştirir/bindirir, yazı ekler. Kullanıcı 'afişe logomu koy', 'şu logoyu şuraya yerleştir', 'görsele yazı ekle', 'köşeye logo ekle' derse BU ARACI çağır — generate_image DEĞİL (o sıfırdan AI çizer, logoyu birebir KORUMAZ). İki görsel yükle: BÜYÜK olan afiş/zemin, KÜÇÜK olan bindirilecek logo. Tek görsel varsa yalnız yazı eklenir. Sonuç Dosyalar'a kaydedilir.",
+      "Var olan bir GÖRSELİ, ORİJİNALİ BİREBİR KORUYARAK düzenler (ffmpeg — AI ile çizmez, hiçbir şeyi bozmaz). Görselde YALNIZCA istenen değişiklik olur, gerisi aynı kalır. Şu isteklerin TAMAMI bu araçla yapılır: renk/ton oynaması ('tonlarıyla oyna', 'renklerini değiştir', 'daha sıcak/soğuk/sepya/gri/canlı yap', hue), parlaklık/kontrast/aydınlatma ('daha aydınlık yap'), logo/görsel bindirme ('afişe logomu koy'), yazı ekleme, kırpma. Kullanıcı görselin KORUNMASINI isteyip üzerinde oynamak istiyorsa DAİMA bu araç (generate_image ya da restyle_image DEĞİL — onlar sıfırdan çizer, her şeyi bozar). İki görsel yüklüyse BÜYÜK olan afiş, KÜÇÜK olan logo. Kaynak: son yüklenen/üretilen görsel otomatik alınır. Sonuç Dosyalar'a kaydedilir.",
     input_schema: {
       type: "object",
       properties: {
@@ -820,7 +820,7 @@ export const ACTIONS: Record<string, ActionDef> = {
     dangerous: true,
     project: false,
     description:
-      "Var olan bir görselin TASARIMINI/STİLİNİ yapay zekâ ile DEĞİŞTİRİR (görselden-görsele). Kullanıcı 'bu afişin tasarımını değiştir', 'daha modern/lüks/minimal yap', 'stilini şöyle yap', 'farklı bir konsept dene' derse BU ARACI çağır. Kaynak: son yüklenen ya da az önce üretilen görsel otomatik alınır. NOT: AI yeniden çizer — kompozisyon korunmaya çalışılır ama yazı/logo BİREBİR korunmayabilir; birebir logo gerekiyorsa sonrasında edit_image ile logoyu tekrar yerleştir. Çağrılınca hemen çalışır.",
+      "SADECE görseli SIFIRDAN YENİDEN ÇİZMEK için (yapay zekâ, görselden-görsele). ⚠️ BU ARAÇ HER ŞEYİ DEĞİŞTİRİR: yazılar, logo, kompozisyon, nesneler — HİÇBİRİ birebir korunmaz. YALNIZCA kullanıcı açıkça 'baştan/sıfırdan yeniden tasarla', 'tamamen farklı bir konsept çiz', 'bunu AI ile yeniden yorumla' derse çağır. ⛔ Kullanıcı görselin KORUNMASINI istiyorsa (renk/ton/parlaklık/aydınlatma, 'tonlarıyla oyna', 'renklerini değiştir', 'daha sıcak/soğuk/canlı yap', logo/yazı ekle, kırp) BU ARACI KULLANMA → edit_image kullan. Şüphedeysen edit_image seç. Kaynak: son yüklenen/üretilen görsel otomatik alınır.",
     input_schema: {
       type: "object",
       properties: {
