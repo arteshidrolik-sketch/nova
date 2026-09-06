@@ -489,11 +489,23 @@ export const ACTIONS: Record<string, ActionDef> = {
         landscape: "landscape_4_3",
       };
       const image_size = sizeMap[String(p.aspect || "square")] || "square_hd";
-      // Yüz referansı varsa kimlik-koruyan model, yoksa metin→görsel
-      const model = ref ? "fal-ai/flux-pulid" : "fal-ai/flux/dev";
-      const body = ref
-        ? { prompt, reference_image_url: ref, image_size, num_images: 1 }
-        : { prompt, image_size, num_images: 1 };
+      // Yüz referansı varsa kimlik-koruyan model. Yoksa metin→görsel için
+      // varsayılan Recraft V3 — tasarım, OKUNAKLI YAZI ve logo/vektör işinde
+      // flux/dev'den çok daha iyi (afiş/kurumsal görsel). NOVA_IMAGE_MODEL ile
+      // değiştirilebilir (ör. fal-ai/ideogram/v3, fal-ai/flux-pro/v1.1).
+      const model = ref
+        ? "fal-ai/flux-pulid"
+        : process.env.NOVA_IMAGE_MODEL || "fal-ai/recraft/v3/text-to-image";
+      let body: Record<string, unknown>;
+      if (ref) {
+        body = { prompt, reference_image_url: ref, image_size, num_images: 1 };
+      } else if (model.includes("recraft")) {
+        // Recraft: 'size' (aynı enum değerleri) + 'style'
+        body = { prompt, size: image_size, style: "realistic_image" };
+      } else {
+        // flux ve benzeri: image_size + num_images
+        body = { prompt, image_size, num_images: 1 };
+      }
       try {
         const res = await fetch(`https://fal.run/${model}`, {
           method: "POST",
