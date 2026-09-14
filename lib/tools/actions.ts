@@ -891,7 +891,7 @@ export const ACTIONS: Record<string, ActionDef> = {
     dangerous: true,
     project: false,
     description:
-      "Var olan bir VİDEOYU düzenler (ffmpeg): üzerine YAZI/altyazı bindirir ve/veya istenmeyen/hatalı bölümü keserek çıkarır. Kullanıcı 'videoya yazı ekle', 'şu yazıyı koy', 'altyazı ekle', 'şu saniyeler arasını kes/çıkar', 'baştan/sondan kırp' derse BU ARACI çağır (generate_video DEĞİL — o sıfırdan yeni video üretir). Kaynak video: kullanıcının SON yüklediği video ya da bu sohbette az önce ÜRETİLEN video otomatik alınır. NOT: Yapay zekânın ürettiği görüntüdeki bozuklukları 'boyayarak' düzeltemez; yapabildiği yazı eklemek ve bölüm kesmektir. Çağrılınca hemen çalışır, sonuç Dosyalar'a kaydedilir.",
+      "Var olan bir VİDEOYU, ORİJİNALİ KORUYARAK düzenler (ffmpeg — yeniden ÜRETMEZ). Kullanıcı videoyu beğenip üstünde OYNAMAK istiyorsa DAİMA bu araç: yazı/altyazı ekleme; bölüm kesme ('şu saniyeler arasını at', 'baştan/sondan kırp'); GENEL renk/ton/parlaklık değişimi ('videonun tonlarıyla oyna', 'daha sıcak/soğuk/canlı yap', 'daha aydınlık yap', sepya/siyah-beyaz). generate_video DEĞİL (o sıfırdan yeni video üretir, beğenilen videoyu kaybeder). Kaynak: son yüklenen ya da az önce üretilen video otomatik alınır. ⚠️ SINIR: Videodaki TEK BİR NESNENİN rengini/şeklini ayrı ayrı değiştiremez (ör. 'sadece masanın rengini değiştir') — bu, tüm karede yerel düzenleme gerektirir ve mevcut teknolojiyle videoyu yeniden üretmeden yapılamaz; kullanıcıya bunu dürüstçe söyle, istersen GENEL ton değişimi öner ya da yeni video üret. Sonuç Dosyalar'a kaydedilir.",
     input_schema: {
       type: "object",
       properties: {
@@ -920,15 +920,35 @@ export const ACTIONS: Record<string, ActionDef> = {
           type: "number",
           description: "KESME: bu saniyeye kadar TUT (sonrasını at). Opsiyonel.",
         },
+        brightness: {
+          type: "number",
+          description: "Parlaklık (-0.5…0.5, 0=değişmez). 'Daha aydınlık' için +0.12 gibi.",
+        },
+        contrast: { type: "number", description: "Kontrast (0.5…2, 1=değişmez)" },
+        saturation: { type: "number", description: "Renk doygunluğu (0…2, 1=değişmez)" },
+        tone: {
+          type: "string",
+          enum: ["sıcak", "soğuk", "sepya", "gri", "canlı", "soluk", "negatif"],
+          description: "Videonun GENEL renk tonu/atmosferi (tüm kareye uygulanır).",
+        },
+        hue: { type: "number", description: "Renk kaydırma — derece (0…360). Tüm renkleri döndürür." },
         filename: { type: "string", description: "Çıktı dosya adı (opsiyonel)" },
       },
       required: [],
     },
     makeTitle: (p) =>
-      `Video düzenle${p.text ? `: "${shorten(String(p.text), 32)}"` : " (kesme)"}`,
+      `Video düzenle${
+        p.text
+          ? `: "${shorten(String(p.text), 30)}"`
+          : p.tone || p.brightness != null
+            ? " (renk/ton)"
+            : " (kesme)"
+      }`,
     makeSummary: (p) => {
       const parts: string[] = [];
       if (p.text) parts.push(`"${shorten(String(p.text), 60)}" yazısı eklenecek (${String(p.text_position || "alt")})`);
+      if (p.tone || p.brightness != null || p.contrast != null || p.saturation != null || p.hue != null)
+        parts.push("renk/ton/parlaklık ayarlanacak (video KORUNUR, yeniden üretilmez)");
       if (p.trim_start != null || p.trim_end != null)
         parts.push(`${p.trim_start ?? 0}–${p.trim_end ?? "son"} sn arası tutulacak (gerisi kesilecek)`);
       return `Yüklenen/son videoya: ${parts.join("; ") || "(işlem belirtilmedi)"}. Sonuç yeni dosya olarak kaydedilecek.`;
@@ -944,8 +964,32 @@ export const ACTIONS: Record<string, ActionDef> = {
       const text = String(p.text ?? "").trim();
       const tStart = p.trim_start != null ? Number(p.trim_start) : null;
       const tEnd = p.trim_end != null ? Number(p.trim_end) : null;
-      if (!text && tStart == null && tEnd == null)
-        return "Hata: Ne yazı ne de kesme aralığı belirtildi — yapılacak işlem yok.";
+
+      // Renk/ton/parlaklık — video YENİDEN ÜRETİLMEZ, sadece renk/ışık değişir
+      const b = p.brightness != null ? Number(p.brightness) : null;
+      const c = p.contrast != null ? Number(p.contrast) : null;
+      const sat = p.saturation != null ? Number(p.saturation) : null;
+      const eqStr =
+        b != null || c != null || sat != null
+          ? `eq=brightness=${b ?? 0}:contrast=${c ?? 1}:saturation=${sat ?? 1}`
+          : "";
+      const TONE: Record<string, string> = {
+        sıcak: "colorbalance=rs=.15:gs=.04:bs=-.12",
+        soğuk: "colorbalance=rs=-.12:gs=0:bs=.16",
+        sepya:
+          "colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131",
+        gri: "hue=s=0",
+        canlı: "eq=saturation=1.5:contrast=1.08",
+        soluk: "eq=saturation=0.72:contrast=0.92:brightness=0.05",
+        negatif: "negate",
+      };
+      const toneStr = p.tone ? TONE[String(p.tone)] || "" : "";
+      const hueStr =
+        p.hue != null && Number.isFinite(Number(p.hue)) ? `hue=h=${Number(p.hue)}` : "";
+      const colorFx = [eqStr, toneStr, hueStr].filter(Boolean).join(",");
+
+      if (!text && tStart == null && tEnd == null && !colorFx)
+        return "Hata: Yazı, kesme aralığı ya da renk/ton ayarı belirtilmedi — yapılacak işlem yok.";
 
       const base = String(p.filename || src).replace(/\.[a-z0-9]+$/i, "");
       const outName = `${base}_duzenli.mp4`;
@@ -957,8 +1001,9 @@ export const ACTIONS: Record<string, ActionDef> = {
       if (tStart != null && Number.isFinite(tStart)) seek.push(`-ss ${tStart}`);
       if (tEnd != null && Number.isFinite(tEnd)) seek.push(`-to ${tEnd}`);
 
-      // Yazı: escape derdi olmasın diye textfile kullan (Türkçe karakter destekli font)
-      let vf = "";
+      // Video filtre zinciri: renk/ton önce, yazı (drawtext) sonra
+      const filters: string[] = [];
+      if (colorFx) filters.push(colorFx);
       let txtFile = "";
       if (text) {
         txtFile = safeWorkspacePath(`.caption_${Date.now()}.txt`);
@@ -972,11 +1017,13 @@ export const ACTIONS: Record<string, ActionDef> = {
             ? `:enable='between(t,${s ?? 0},${e ?? 1e9})'`
             : "";
         const font = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
-        vf =
-          `-vf "drawtext=fontfile=${font}:textfile='${txtFile}':fontcolor=white:` +
-          `fontsize=h/16:box=1:boxcolor=black@0.5:boxborderw=14:` +
-          `x=(w-text_w)/2:y=${y}${enable}"`;
+        filters.push(
+          `drawtext=fontfile=${font}:textfile='${txtFile}':fontcolor=white:` +
+            `fontsize=h/16:box=1:boxcolor=black@0.5:boxborderw=14:` +
+            `x=(w-text_w)/2:y=${y}${enable}`,
+        );
       }
+      const vf = filters.length ? `-vf "${filters.join(",")}"` : "";
 
       const cmd =
         `ffmpeg -y ${seek.join(" ")} -i "${inPath}" ${vf} ` +
