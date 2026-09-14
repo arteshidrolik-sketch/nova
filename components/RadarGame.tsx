@@ -204,11 +204,8 @@ export default function RadarGame({
         for (let i = enemies.length - 1; i >= 0; i--) {
           const e = enemies[i];
           if (!reduced) { e.ez -= e.speed; e.ex += Math.sin((tf + e.wob * 20) / 60) * 0.002; }
-          if (e.ez < -0.04) {
-            enemies.splice(i, 1); lives -= 1; hudDirty = true;
-            boom(cx + e.ex * (W * 0.5), H - 6, "#ff5c7a", 1);
-            if (lives <= 0) { over = true; hudDirty = true; }
-          }
+          // Vurulunca oyun DURMAZ — düşman yanından geçip gider, oyun sürer.
+          if (e.ez < -0.04) enemies.splice(i, 1);
         }
       }
 
@@ -325,46 +322,30 @@ export default function RadarGame({
       {!mini && (
         <>
           {/* skor + can (oyun sırasında) */}
-          {hud.started && !hud.over && (
-            <div className="pointer-events-none absolute left-3 top-3 z-20 flex items-center gap-4 rounded-lg px-3 py-2"
+          {hud.started && (
+            <div className="pointer-events-none absolute left-3 top-3 z-20 flex items-center gap-2 rounded-lg px-3 py-2"
               style={{ background: "rgba(10,17,32,.62)", border: "1px solid #26406e", backdropFilter: "blur(8px)" }}>
-              <div className="flex items-center gap-2">
-                <span style={{ fontFamily: "var(--font-space), sans-serif", fontSize: 18, fontWeight: 700, color: "#e8eefb" }}>{hud.score}</span>
-                <span style={{ fontFamily: "var(--font-plex), monospace", fontSize: 9, letterSpacing: ".14em", color: "#8a97b5" }}>SKOR</span>
-              </div>
-              <div className="flex items-center gap-0.5">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <span key={i} style={{ fontSize: 12, opacity: i < hud.lives ? 1 : 0.22 }}>✈️</span>
-                ))}
-              </div>
+              <span style={{ fontFamily: "var(--font-space), sans-serif", fontSize: 18, fontWeight: 700, color: "#e8eefb" }}>{hud.score}</span>
+              <span style={{ fontFamily: "var(--font-plex), monospace", fontSize: 9, letterSpacing: ".14em", color: "#8a97b5" }}>SKOR</span>
             </div>
           )}
 
-          {/* başlangıç / oyun bitti perdesi */}
-          {(!hud.started || hud.over) && (
+          {/* başlangıç perdesi (oyun vurulunca DURMAZ, bitiş ekranı yok) */}
+          {!hud.started && (
             <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-5 text-center"
               style={{ background: "radial-gradient(65% 65% at 50% 45%, rgba(6,10,20,.55), rgba(6,10,20,.9))" }}>
-              {hud.over ? (
-                <>
-                  <div style={{ fontFamily: "var(--font-space), sans-serif", fontSize: 32, fontWeight: 700, color: "#ff5c7a" }}>Vuruldun!</div>
-                  <div style={{ fontFamily: "var(--font-plex), monospace", color: "#8be9ff", fontSize: 15 }}>Skor: {hud.score}</div>
-                </>
-              ) : (
-                <>
-                  <div style={{ fontFamily: "var(--font-space), sans-serif", fontSize: 30, fontWeight: 700, color: "#e8eefb" }}>
-                    Nova <span style={{ color: "#8be9ff" }}>Hava Savaşı</span>
-                  </div>
-                  <div style={{ fontFamily: "var(--font-plex), monospace", color: "#8a97b5", fontSize: 12.5, maxWidth: 340, lineHeight: 1.6 }}>
-                    Fare imleci nişangâhtır — düşmanın üstüne getir ve TIKLA. ESC ile çık.
-                  </div>
-                </>
-              )}
+              <div style={{ fontFamily: "var(--font-space), sans-serif", fontSize: 30, fontWeight: 700, color: "#e8eefb" }}>
+                Nova <span style={{ color: "#8be9ff" }}>Hava Savaşı</span>
+              </div>
+              <div style={{ fontFamily: "var(--font-plex), monospace", color: "#8a97b5", fontSize: 12.5, maxWidth: 340, lineHeight: 1.6 }}>
+                Fare imleci nişangâhtır — düşmanın üstüne getir ve TIKLA. ESC ile çık.
+              </div>
               <button
                 onClick={() => startRef.current()}
                 className="rounded-xl px-7 py-3 text-sm font-bold"
                 style={{ background: "linear-gradient(135deg,#8be9ff,#4fd8ff)", color: "#04141f", boxShadow: "0 0 26px rgba(79,216,255,.4)" }}
               >
-                {hud.over ? "↻ Tekrar oyna" : "▶ Başla"}
+                ▶ Başla
               </button>
             </div>
           )}
