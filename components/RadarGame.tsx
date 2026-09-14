@@ -1,60 +1,30 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AGENT_META, AGENT_KEYS, type AgentActivity } from "@/lib/agents/meta";
+import { type AgentActivity } from "@/lib/agents/meta";
 
 export type VoiceState = "idle" | "listening" | "speaking";
 
-type CustomAgent = { id: string; name: string; color: string };
-
-// Ajanların radar üzerindeki sabit konumları (açı radyan, yarıçap oranı)
-const RADAR_POS: Record<string, { ang: number; rr: number }> = {
-  research: { ang: -2.5, rr: 0.82 },
-  general: { ang: -1.15, rr: 0.6 },
-  codeReviewer: { ang: -0.15, rr: 0.86 },
-  releaseStore: { ang: 0.75, rr: 0.66 },
-  projectOps: { ang: 1.7, rr: 0.83 },
-  developer: { ang: 2.75, rr: 0.6 },
-};
-
-const BG_HUES = [158, 168, 150, 175, 45];
-
 /**
- * RadarGame
- * ---------
- * Çalışma Alanı'nın üst bölgesi: fosfor-yeşil kontrol ekranı.
- * - Arka planda parallax ışıma + toz + radar yankıları (derinlik).
- * - Dönen tarama ışını radara düşen sinyalleri aydınlatır; tıkla/dokun → yakala.
- * - Merkezde Nova çekirdeği (ses durumuna tepki verir), halkalarda 6 ajan + özel ajanlar.
- * Tek canvas; oyun durumu ref'lerde (React yeniden-render'ı olmadan akıcı).
+ * RadarGame → Savaş uçağı oyunu
+ * -----------------------------
+ * Oyuncu uçağı (fareyle/dokunuşla yönlendirilir, otomatik ateş eder) yukarıdan
+ * gelen düşmanlara ateş açar; vuruş = patlama + skor. Düşman alta ulaşırsa can
+ * gider (3 can). mini modda küçük, sembolik, oynanmayan bir animasyon çalışır.
+ * Aynı dosya/export adı korunur → Sidebar (mini) ve AppShell (tam ekran) aynen çalışır.
  */
 export default function RadarGame({
-  active,
-  voice = "idle",
-  customAgents = [],
   mini = false,
 }: {
-  active: AgentActivity;
+  active?: AgentActivity;
   voice?: VoiceState;
-  customAgents?: CustomAgent[];
+  customAgents?: unknown;
   mini?: boolean;
 }) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const activeRef = useRef<AgentActivity>(active);
-  const voiceRef = useRef<VoiceState>(voice);
-  const customRef = useRef<CustomAgent[]>(customAgents);
-  const [hud, setHud] = useState({ score: 0, combo: 0, caught: 0 });
-
-  useEffect(() => {
-    activeRef.current = active;
-  }, [active]);
-  useEffect(() => {
-    voiceRef.current = voice;
-  }, [voice]);
-  useEffect(() => {
-    customRef.current = customAgents;
-  }, [customAgents]);
+  const [hud, setHud] = useState({ score: 0, lives: 3, over: false });
+  const restartRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     const wrap = wrapRef.current;
@@ -62,464 +32,234 @@ export default function RadarGame({
     if (!wrap || !canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    const reduced = window.matchMedia?.(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-    const isMini = mini; // bu örnek için sabit (tam ekran vs köşe ayrı örnekler)
+    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const isMini = mini;
 
-    let W = 0,
-      H = 0,
-      dpr = 1,
-      cx = 0,
-      cy = 0,
-      Rr = 0;
-    let mx = 0,
-      my = 0,
-      tmx = 0,
-      tmy = 0;
-    let sweep = -Math.PI / 2;
-    let tf = 0,
-      corePulse = 0;
-    let lastSpawn = 0,
-      spawnEvery = 1700,
-      lastEcho = 0;
+    let W = 0, H = 0, dpr = 1, U = 100;
+    type P = { x: number; y: number; vx: number; vy: number };
+    type Enemy = P & { hp: number; wob: number };
+    type Part = { x: number; y: number; vx: number; vy: number; life: number; max: number; c: string };
+    type Star = { x: number; y: number; v: number; r: number };
 
-    type Sig = { ang: number; rr: number; state: "hidden" | "lit"; litAt: number };
-    type Rip = { x: number; y: number; t: number; good: boolean; pts: number };
-    const signals: Sig[] = [];
-    const ripples: Rip[] = [];
-    const blobs: {
-      x: number; y: number; r: number; h: number; a: number;
-      dx: number; dy: number; ph: number; ps: number; depth: number;
-    }[] = [];
-    const dust: { x: number; y: number; r: number; tw: number; twp: number; depth: number }[] = [];
-
-    const score = { v: 0, combo: 0, caught: 0 };
+    const jet = { x: 0, y: 0 };
+    let pointerX = -1;
+    let usePointer = false;
+    const bullets: P[] = [];
+    const enemies: Enemy[] = [];
+    const parts: Part[] = [];
+    const stars: Star[] = [];
+    let score = 0, lives = 3, over = false;
+    let tf = 0, lastFire = 0, lastSpawn = 0, spawnEvery = 62;
     let hudDirty = false;
 
-    function buildBg() {
-      blobs.length = 0;
-      dust.length = 0;
-      for (let i = 0; i < 5; i++) {
-        blobs.push({
-          x: Math.random() * W, y: Math.random() * H,
-          r: Math.max(W, H) * (0.34 + Math.random() * 0.3),
-          h: BG_HUES[i], a: 0.1 + Math.random() * 0.1,
-          dx: (Math.random() - 0.5) * 0.05, dy: (Math.random() - 0.5) * 0.045,
-          ph: Math.random() * 6.28, ps: 0.0005 + Math.random() * 0.0006,
-          depth: 0.15 + Math.random() * 0.4,
-        });
-      }
-      const n = Math.round((W * H) / 9000);
+    function buildStars() {
+      stars.length = 0;
+      const n = Math.round((W * H) / 6000);
       for (let i = 0; i < n; i++) {
-        const d = Math.random();
-        dust.push({
-          x: Math.random() * W, y: Math.random() * H,
-          r: 0.4 + d * 1.5, tw: 1.5 + Math.random() * 4,
-          twp: Math.random() * 6.28, depth: 0.06 + d * 0.9,
-        });
+        stars.push({ x: Math.random() * W, y: Math.random() * H, v: 0.4 + Math.random() * 1.6, r: 0.4 + Math.random() * 1.4 });
       }
     }
-
     function resize() {
       const rect = wrap!.getBoundingClientRect();
       dpr = Math.min(window.devicePixelRatio || 1, 2);
-      W = Math.max(1, rect.width);
-      H = Math.max(1, rect.height);
-      canvas!.width = Math.floor(W * dpr);
-      canvas!.height = Math.floor(H * dpr);
-      canvas!.style.width = W + "px";
-      canvas!.style.height = H + "px";
+      W = Math.max(1, rect.width); H = Math.max(1, rect.height);
+      canvas!.width = Math.floor(W * dpr); canvas!.height = Math.floor(H * dpr);
+      canvas!.style.width = W + "px"; canvas!.style.height = H + "px";
       ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
-      cx = W / 2;
-      cy = H / 2;
-      Rr = (Math.min(W, H) / 2) * 0.84;
-      buildBg();
+      U = Math.min(W, H);
+      jet.x = W / 2; jet.y = H - U * 0.14;
+      buildStars();
     }
     resize();
     const ro = new ResizeObserver(resize);
     ro.observe(wrap);
 
-    function onMove(e: MouseEvent) {
-      tmx = e.clientX / window.innerWidth - 0.5;
-      tmy = e.clientY / window.innerHeight - 0.5;
-    }
-    window.addEventListener("mousemove", onMove);
-
-    const angDist = (a: number, b: number) => {
-      let d = Math.abs(a - b) % (Math.PI * 2);
-      return d > Math.PI ? Math.PI * 2 - d : d;
-    };
-
-    function spawn() {
-      if (signals.length >= 9) return;
-      signals.push({
-        ang: Math.random() * Math.PI * 2,
-        rr: 0.24 + Math.random() * 0.7,
-        state: "hidden",
-        litAt: 0,
-      });
-    }
-
-    // sinyal yakala (aydınlanmış olana dokun)
-    function onDown(e: PointerEvent) {
+    function onMove(e: PointerEvent) {
+      if (isMini || over) return;
       const rect = canvas!.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      let bi = -1,
-        bd = 1e9;
-      for (let i = 0; i < signals.length; i++) {
-        const s = signals[i];
-        if (s.state !== "lit") continue;
-        const sx = cx + Math.cos(s.ang) * s.rr * Rr;
-        const sy = cy + Math.sin(s.ang) * s.rr * Rr;
-        const d = Math.hypot(x - sx, y - sy);
-        if (d < 28 && d < bd) {
-          bd = d;
-          bi = i;
-        }
-      }
-      if (bi >= 0) {
-        const s = signals[bi];
-        const sx = cx + Math.cos(s.ang) * s.rr * Rr;
-        const sy = cy + Math.sin(s.ang) * s.rr * Rr;
-        signals.splice(bi, 1);
-        score.combo++;
-        score.caught++;
-        const pts = 10 + Math.min(score.combo - 1, 9) * 2;
-        score.v += pts;
-        ripples.push({ x: sx, y: sy, t: performance.now(), good: true, pts });
-        hudDirty = true;
-        e.stopPropagation();
+      pointerX = e.clientX - rect.left;
+      usePointer = true;
+    }
+    if (!isMini) canvas.addEventListener("pointermove", onMove);
+    // dokunuşta da hareket
+    if (!isMini) canvas.addEventListener("pointerdown", onMove);
+
+    function reset() {
+      bullets.length = 0; enemies.length = 0; parts.length = 0;
+      score = 0; lives = 3; over = false; spawnEvery = 62;
+      jet.x = W / 2; usePointer = false; pointerX = -1;
+      hudDirty = true;
+    }
+    restartRef.current = reset;
+
+    function boom(x: number, y: number, col: string) {
+      const n = isMini ? 6 : 14;
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * 6.2832;
+        const sp = U * (0.004 + Math.random() * 0.012);
+        parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0, max: 22 + Math.random() * 16, c: col });
       }
     }
-    if (!isMini) canvas.addEventListener("pointerdown", onDown);
 
-    function ring(r: number, alpha: number) {
+    function drawJet(x: number, y: number, s: number) {
+      ctx!.save();
+      // gövde
+      ctx!.fillStyle = "#8be9ff";
       ctx!.beginPath();
-      ctx!.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx!.strokeStyle = `rgba(28,81,64,${alpha})`;
-      ctx!.lineWidth = 1.2;
-      ctx!.stroke();
+      ctx!.moveTo(x, y - 17 * s);
+      ctx!.lineTo(x - 5 * s, y + 3 * s);
+      ctx!.lineTo(x - 17 * s, y + 11 * s);
+      ctx!.lineTo(x - 5 * s, y + 7 * s);
+      ctx!.lineTo(x - 6 * s, y + 15 * s);
+      ctx!.lineTo(x + 6 * s, y + 15 * s);
+      ctx!.lineTo(x + 5 * s, y + 7 * s);
+      ctx!.lineTo(x + 17 * s, y + 11 * s);
+      ctx!.lineTo(x + 5 * s, y + 3 * s);
+      ctx!.closePath();
+      ctx!.shadowColor = "#4fd8ff"; ctx!.shadowBlur = 10 * s; ctx!.fill(); ctx!.shadowBlur = 0;
+      // kokpit
+      ctx!.fillStyle = "#06222e";
+      ctx!.beginPath(); ctx!.arc(x, y - 5 * s, 3 * s, 0, 6.2832); ctx!.fill();
+      // itki alevi
+      const fl = 15 + Math.random() * 8;
+      ctx!.fillStyle = "#ffb454";
+      ctx!.beginPath();
+      ctx!.moveTo(x - 3.5 * s, y + 15 * s);
+      ctx!.lineTo(x, y + fl * s);
+      ctx!.lineTo(x + 3.5 * s, y + 15 * s);
+      ctx!.closePath(); ctx!.fill();
+      ctx!.restore();
+    }
+    function drawEnemy(x: number, y: number, s: number) {
+      ctx!.fillStyle = "#ff5c7a";
+      ctx!.beginPath();
+      ctx!.moveTo(x, y + 15 * s);
+      ctx!.lineTo(x - 15 * s, y - 8 * s);
+      ctx!.lineTo(x - 4 * s, y - 5 * s);
+      ctx!.lineTo(x, y - 11 * s);
+      ctx!.lineTo(x + 4 * s, y - 5 * s);
+      ctx!.lineTo(x + 15 * s, y - 8 * s);
+      ctx!.closePath();
+      ctx!.shadowColor = "#ff5c7a"; ctx!.shadowBlur = 8 * s; ctx!.fill(); ctx!.shadowBlur = 0;
+      ctx!.fillStyle = "#3a0a14";
+      ctx!.beginPath(); ctx!.arc(x, y, 3 * s, 0, 6.2832); ctx!.fill();
     }
 
-    let raf = 0;
-    let running = true;
-
-    function frame(now: number) {
+    let raf = 0, running = true;
+    function frame() {
       if (!running) return;
       tf++;
-      mx += (tmx - mx) * 0.04;
-      my += (tmy - my) * 0.04;
       ctx!.clearRect(0, 0, W, H);
-
-      // --- arka plan derinliği ---
-      const base = ctx!.createRadialGradient(cx, cy, 0, cx, cy, Math.max(W, H) * 0.7);
-      base.addColorStop(0, "#0a1512");
-      base.addColorStop(1, "#05100c");
-      ctx!.globalCompositeOperation = "source-over";
-      ctx!.fillStyle = base;
-      ctx!.fillRect(0, 0, W, H);
-
-      ctx!.globalCompositeOperation = "lighter";
-      for (const b of blobs) {
-        if (!reduced) {
-          b.x += b.dx;
-          b.y += b.dy;
-          if (b.x < -b.r) b.x = W + b.r;
-          if (b.x > W + b.r) b.x = -b.r;
-          if (b.y < -b.r) b.y = H + b.r;
-          if (b.y > H + b.r) b.y = -b.r;
-        }
-        const pulse = 0.78 + Math.sin(tf * b.ps * 60 + b.ph) * 0.22;
-        const px = b.x + mx * 70 * b.depth;
-        const py = b.y + my * 70 * b.depth;
-        const rr = b.r * pulse;
-        const rad = ctx!.createRadialGradient(px, py, 0, px, py, rr);
-        rad.addColorStop(0, `hsla(${b.h},70%,52%,${b.a})`);
-        rad.addColorStop(0.5, `hsla(${b.h},70%,50%,${b.a * 0.4})`);
-        rad.addColorStop(1, `hsla(${b.h},70%,50%,0)`);
-        ctx!.fillStyle = rad;
-        ctx!.beginPath();
-        ctx!.arc(px, py, rr, 0, 6.2832);
-        ctx!.fill();
-      }
-      for (const d of dust) {
-        const tw = reduced ? 0.6 : 0.5 + Math.sin(tf / (d.tw * 6) + d.twp) * 0.45;
-        ctx!.globalAlpha = tw * 0.9;
-        ctx!.fillStyle = d.depth > 0.7 ? "#a7f3d0" : "#3f7d64";
-        ctx!.beginPath();
-        ctx!.arc(d.x + mx * 95 * d.depth, d.y + my * 95 * d.depth, d.r, 0, 6.2832);
-        ctx!.fill();
+      // arka plan gökyüzü
+      const bg = ctx!.createLinearGradient(0, 0, 0, H);
+      bg.addColorStop(0, "#0a1120"); bg.addColorStop(1, "#060a14");
+      ctx!.fillStyle = bg; ctx!.fillRect(0, 0, W, H);
+      // yıldızlar (hız hissi — aşağı akar)
+      ctx!.fillStyle = "#9fb4e0";
+      for (const st of stars) {
+        if (!reduced) st.y += st.v * (isMini ? 0.6 : 1.4);
+        if (st.y > H) { st.y = 0; st.x = Math.random() * W; }
+        ctx!.globalAlpha = 0.4 + st.r * 0.3;
+        ctx!.fillRect(st.x, st.y, st.r, st.r * 2.4);
       }
       ctx!.globalAlpha = 1;
 
-      if (!reduced && now - lastEcho > 3800) {
-        ripples.push({ x: cx, y: cy, t: now, good: true, pts: -1 }); // -1 = echo
-        lastEcho = now;
+      const js = U * 0.05 / 8; // jet ölçeği
+      const es = U * 0.05 / 8; // düşman ölçeği
+      const bulletV = U * 0.02;
+      const nowT = tf;
+
+      // hedef x: fare yoksa/mini ise en yakın düşmanı hedefle (otomatik nişan)
+      let targetX = jet.x;
+      if (!over) {
+        if (!isMini && usePointer && pointerX >= 0) targetX = pointerX;
+        else {
+          let near = -1, nd = 1e9;
+          for (const e of enemies) { const d = Math.abs(e.x - jet.x); if (d < nd) { nd = d; near = e.x; } }
+          targetX = near >= 0 ? near : W / 2;
+        }
+        jet.x += (targetX - jet.x) * 0.12;
+        jet.x = Math.max(U * 0.06, Math.min(W - U * 0.06, jet.x));
       }
 
-      ctx!.globalCompositeOperation = "source-over";
-
-      // --- radar diski ---
-      const disc = ctx!.createRadialGradient(cx, cy, 0, cx, cy, Rr);
-      disc.addColorStop(0, "#0c1a16");
-      disc.addColorStop(1, "#070f0d");
-      ctx!.beginPath();
-      ctx!.arc(cx, cy, Rr, 0, Math.PI * 2);
-      ctx!.fillStyle = disc;
-      ctx!.fill();
-
-      ring(Rr * 0.28, 0.9);
-      ring(Rr * 0.5, 0.8);
-      ring(Rr * 0.72, 0.7);
-      ring(Rr, 0.6);
-      ctx!.strokeStyle = "rgba(23,58,45,.9)";
-      ctx!.lineWidth = 1;
-      ctx!.beginPath();
-      ctx!.moveTo(cx - Rr, cy);
-      ctx!.lineTo(cx + Rr, cy);
-      ctx!.moveTo(cx, cy - Rr);
-      ctx!.lineTo(cx, cy + Rr);
-      ctx!.stroke();
-
-      // tarama ışını (fosfor kuyruğu)
-      for (let k = 0; k < 26; k++) {
-        const a = sweep - k * 0.035;
-        const alpha = (1 - k / 26) * 0.16;
-        ctx!.beginPath();
-        ctx!.moveTo(cx, cy);
-        ctx!.arc(cx, cy, Rr, a, a + 0.045);
-        ctx!.closePath();
-        ctx!.fillStyle = `rgba(52,211,153,${alpha})`;
-        ctx!.fill();
+      // ateş
+      if (!over && nowT - lastFire > (isMini ? 16 : 11)) {
+        bullets.push({ x: jet.x, y: jet.y - 16 * js, vx: 0, vy: -bulletV });
+        lastFire = nowT;
       }
-      ctx!.beginPath();
-      ctx!.moveTo(cx, cy);
-      ctx!.lineTo(cx + Math.cos(sweep) * Rr, cy + Math.sin(sweep) * Rr);
-      ctx!.strokeStyle = "rgba(110,231,183,.9)";
-      ctx!.lineWidth = 2;
-      ctx!.stroke();
+      // spawn
+      if (!over && nowT - lastSpawn > spawnEvery) {
+        const ex = U * 0.08 + Math.random() * (W - U * 0.16);
+        enemies.push({ x: ex, y: -U * 0.06, vx: (Math.random() - 0.5) * U * 0.002, vy: U * (0.0035 + Math.random() * 0.004), hp: 1, wob: Math.random() * 6.28 });
+        lastSpawn = nowT;
+        spawnEvery = Math.max(isMini ? 40 : 24, (isMini ? 70 : 62) - score * 0.5);
+      }
 
-      // --- sinyaller ---
-      for (let i = signals.length - 1; i >= 0; i--) {
-        const s = signals[i];
-        const sx = cx + Math.cos(s.ang) * s.rr * Rr;
-        const sy = cy + Math.sin(s.ang) * s.rr * Rr;
-        if (s.state === "hidden") {
-          if (angDist(sweep, s.ang) < 0.05) {
-            s.state = "lit";
-            s.litAt = now;
-          } else {
-            ctx!.beginPath();
-            ctx!.arc(sx, sy, 2, 0, 6.2832);
-            ctx!.fillStyle = "rgba(47,109,85,.5)";
-            ctx!.fill();
-            continue;
+      // mermiler
+      ctx!.fillStyle = "#8be9ff";
+      for (let i = bullets.length - 1; i >= 0; i--) {
+        const b = bullets[i]; b.y += b.vy;
+        if (b.y < -10) { bullets.splice(i, 1); continue; }
+        ctx!.shadowColor = "#4fd8ff"; ctx!.shadowBlur = 8;
+        ctx!.fillRect(b.x - 1.5, b.y - 7, 3, 10); ctx!.shadowBlur = 0;
+      }
+
+      // düşmanlar + çarpışma
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        const e = enemies[i];
+        if (!reduced) { e.y += e.vy; e.x += e.vx + Math.sin((nowT + e.wob * 20) / 40) * U * 0.0008; }
+        // mermi çarpışması
+        let hit = false;
+        for (let j = bullets.length - 1; j >= 0; j--) {
+          const b = bullets[j];
+          if (Math.abs(b.x - e.x) < U * 0.045 && Math.abs(b.y - e.y) < U * 0.05) {
+            bullets.splice(j, 1); hit = true; break;
           }
         }
-        const age = now - s.litAt;
-        if (age > 2500) {
-          signals.splice(i, 1);
-          score.combo = 0;
-          ripples.push({ x: sx, y: sy, t: now, good: false, pts: 0 });
-          hudDirty = true;
+        if (hit) {
+          enemies.splice(i, 1); boom(e.x, e.y, "#ffb454");
+          score += 1; hudDirty = true; continue;
+        }
+        if (e.y > H + U * 0.06) {
+          enemies.splice(i, 1);
+          if (!isMini) { lives -= 1; hudDirty = true; boom(e.x, H - 4, "#ff5c7a"); if (lives <= 0) { over = true; hudDirty = true; } }
           continue;
         }
-        const life = 1 - age / 2500;
-        const pulse = 0.6 + Math.sin(now / 120) * 0.4;
-        ctx!.beginPath();
-        ctx!.arc(sx, sy, 9 + (1 - life) * 10, 0, 6.2832);
-        ctx!.strokeStyle = `rgba(167,243,208,${0.5 * life})`;
-        ctx!.lineWidth = 1.5;
-        ctx!.stroke();
-        ctx!.beginPath();
-        ctx!.arc(sx, sy, 5, 0, 6.2832);
-        ctx!.fillStyle = `rgba(167,243,208,${0.55 + 0.45 * pulse})`;
-        ctx!.shadowColor = "#a7f3d0";
-        ctx!.shadowBlur = 14;
-        ctx!.fill();
-        ctx!.shadowBlur = 0;
-        ctx!.beginPath();
-        ctx!.arc(sx, sy, 13, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * life);
-        ctx!.strokeStyle = "rgba(251,191,36,.8)";
-        ctx!.lineWidth = 2;
-        ctx!.stroke();
+        drawEnemy(e.x, e.y, es);
       }
 
-      // --- ripple / yankı ---
-      for (let i = ripples.length - 1; i >= 0; i--) {
-        const rp = ripples[i];
-        const age = now - rp.t;
-        if (rp.pts === -1) {
-          // radar yankısı (dış alana açılır)
-          const dur = 4200;
-          if (age > dur) {
-            ripples.splice(i, 1);
-            continue;
-          }
-          const p = age / dur;
-          ctx!.beginPath();
-          ctx!.arc(cx, cy, p * Math.max(W, H) * 0.7, 0, 6.2832);
-          ctx!.strokeStyle = `rgba(52,211,153,${(1 - p) * 0.1})`;
-          ctx!.lineWidth = 1.4;
-          ctx!.stroke();
-          continue;
-        }
-        if (age > 520) {
-          ripples.splice(i, 1);
-          continue;
-        }
-        const p = age / 520;
-        const col = rp.good ? "110,231,183" : "244,114,182";
-        ctx!.beginPath();
-        ctx!.arc(rp.x, rp.y, 6 + p * 28, 0, 6.2832);
-        ctx!.strokeStyle = `rgba(${col},${(1 - p) * 0.9})`;
-        ctx!.lineWidth = 2.5;
-        ctx!.stroke();
-        if (rp.good && rp.pts > 0) {
-          ctx!.fillStyle = `rgba(${col},${1 - p})`;
-          ctx!.font = "700 13px 'Space Grotesk', sans-serif";
-          ctx!.textAlign = "center";
-          ctx!.fillText("+" + rp.pts, rp.x, rp.y - 18 - p * 10);
-        }
+      // patlama parçacıkları
+      for (let i = parts.length - 1; i >= 0; i--) {
+        const pt = parts[i]; pt.life++;
+        if (pt.life > pt.max) { parts.splice(i, 1); continue; }
+        pt.x += pt.vx; pt.y += pt.vy; pt.vy += U * 0.0004;
+        const a = 1 - pt.life / pt.max;
+        ctx!.globalAlpha = a; ctx!.fillStyle = pt.c;
+        ctx!.beginPath(); ctx!.arc(pt.x, pt.y, 2.2, 0, 6.2832); ctx!.fill();
       }
+      ctx!.globalAlpha = 1;
 
-      // --- ajan işaretleri (mini modda gizli) ---
-      const act = activeRef.current;
-      ctx!.textAlign = "center";
-      if (!isMini) for (const key of AGENT_KEYS) {
-        const pos = RADAR_POS[key];
-        if (!pos) continue;
-        const meta = AGENT_META[key];
-        const on = act === key;
-        const ax = cx + Math.cos(pos.ang) * pos.rr * Rr;
-        const ay = cy + Math.sin(pos.ang) * pos.rr * Rr;
-        if (on) {
-          const rp = 8 + (Math.sin(now / 180) * 0.5 + 0.5) * 10;
-          ctx!.beginPath();
-          ctx!.arc(ax, ay, rp, 0, 6.2832);
-          ctx!.strokeStyle = meta.color + "aa";
-          ctx!.lineWidth = 2;
-          ctx!.stroke();
-        }
-        ctx!.beginPath();
-        ctx!.arc(ax, ay, on ? 6 : 4.5, 0, 6.2832);
-        ctx!.fillStyle = meta.color;
-        ctx!.shadowColor = meta.color;
-        ctx!.shadowBlur = on ? 14 : 8;
-        ctx!.fill();
-        ctx!.shadowBlur = 0;
-        ctx!.beginPath();
-        ctx!.arc(ax, ay, on ? 10 : 8, 0, 6.2832);
-        ctx!.strokeStyle = meta.color + (on ? "88" : "55");
-        ctx!.lineWidth = 1;
-        ctx!.stroke();
-        ctx!.fillStyle = on ? meta.color : "rgba(190,233,210,.85)";
-        ctx!.font = "10px 'IBM Plex Mono', monospace";
-        const off = ay < cy ? -14 : 18;
-        ctx!.fillText(meta.label.toLocaleUpperCase("tr"), ax, ay + off);
-      }
-      // özel ajanlar (dış halka)
-      const cus = isMini ? [] : customRef.current;
-      cus.forEach((a, i) => {
-        const ang = -Math.PI / 2 + ((i + 0.5) / Math.max(1, cus.length)) * Math.PI * 2;
-        const ax = cx + Math.cos(ang) * 0.94 * Rr;
-        const ay = cy + Math.sin(ang) * 0.94 * Rr;
-        ctx!.beginPath();
-        ctx!.arc(ax, ay, 4, 0, 6.2832);
-        ctx!.fillStyle = a.color;
-        ctx!.shadowColor = a.color;
-        ctx!.shadowBlur = 7;
-        ctx!.fill();
-        ctx!.shadowBlur = 0;
-      });
+      // uçak
+      if (!over) drawJet(jet.x, jet.y, js);
 
-      // --- Nova çekirdeği (ses tepkili) ---
-      const vc = voiceRef.current;
-      corePulse += 0.05;
-      const baseCore = isMini ? Math.max(6, Rr * 0.22) : 26;
-      const pr = baseCore + Math.sin(corePulse) * (isMini ? 1 : 2);
-      const halo = ctx!.createRadialGradient(cx, cy, 0, cx, cy, pr + 22);
-      halo.addColorStop(0, "rgba(52,211,153,.5)");
-      halo.addColorStop(1, "rgba(52,211,153,0)");
-      ctx!.beginPath();
-      ctx!.arc(cx, cy, pr + 22, 0, 6.2832);
-      ctx!.fillStyle = halo;
-      ctx!.fill();
-      // konuşurken genişleyen halkalar
-      if (vc === "speaking") {
-        const t2 = (now / 1600) % 1;
-        ctx!.beginPath();
-        ctx!.arc(cx, cy, pr + t2 * 70, 0, 6.2832);
-        ctx!.strokeStyle = `rgba(110,231,183,${(1 - t2) * 0.8})`;
-        ctx!.lineWidth = 2.5;
-        ctx!.stroke();
-      } else if (vc === "listening") {
-        const t2 = Math.sin(now / 300) * 0.5 + 0.5;
-        ctx!.beginPath();
-        ctx!.arc(cx, cy, pr + 8 + t2 * 10, 0, 6.2832);
-        ctx!.strokeStyle = `rgba(52,211,153,${0.3 + t2 * 0.4})`;
-        ctx!.lineWidth = 2;
-        ctx!.stroke();
-      }
-      const core = ctx!.createRadialGradient(cx - 6, cy - 6, 2, cx, cy, pr);
-      core.addColorStop(0, "#a7f3d0");
-      core.addColorStop(0.6, "#34d399");
-      core.addColorStop(1, "#0f9d63");
-      ctx!.beginPath();
-      ctx!.arc(cx, cy, pr, 0, 6.2832);
-      ctx!.fillStyle = core;
-      ctx!.fill();
-      if (!isMini) {
-        ctx!.fillStyle = "#05231a";
-        ctx!.font = "700 15px 'Space Grotesk', sans-serif";
-        ctx!.textAlign = "center";
-        ctx!.textBaseline = "middle";
-        ctx!.fillText("Nova", cx, cy + 1);
-        ctx!.textBaseline = "alphabetic";
-      }
+      if (hudDirty) { hudDirty = false; setHud({ score, lives, over }); }
 
-      // spawn + zorluk (mini modda oyun yok)
-      if (!isMini && now - lastSpawn > spawnEvery) {
-        spawn();
-        lastSpawn = now;
-        spawnEvery = Math.max(820, 1700 - score.v * 2.5);
-      }
-
-      // HUD güncelle (seyrek)
-      if (!isMini && hudDirty) {
-        hudDirty = false;
-        setHud({ score: score.v, combo: score.combo, caught: score.caught });
-      }
-
-      sweep += reduced ? 0.01 : 0.02;
-      if (sweep > Math.PI) sweep -= Math.PI * 2;
       raf = requestAnimationFrame(frame);
     }
     raf = requestAnimationFrame(frame);
 
     function onVis() {
-      if (document.hidden) {
-        running = false;
-        cancelAnimationFrame(raf);
-      } else if (!running) {
-        running = true;
-        lastSpawn = performance.now();
-        raf = requestAnimationFrame(frame);
-      }
+      if (document.hidden) { running = false; cancelAnimationFrame(raf); }
+      else if (!running) { running = true; lastSpawn = tf; lastFire = tf; raf = requestAnimationFrame(frame); }
     }
     document.addEventListener("visibilitychange", onVis);
 
     return () => {
-      running = false;
-      cancelAnimationFrame(raf);
-      ro.disconnect();
-      window.removeEventListener("mousemove", onMove);
-      canvas.removeEventListener("pointerdown", onDown);
+      running = false; cancelAnimationFrame(raf); ro.disconnect();
+      if (!isMini) { canvas.removeEventListener("pointermove", onMove); canvas.removeEventListener("pointerdown", onMove); }
       document.removeEventListener("visibilitychange", onVis);
     };
-  }, []);
+  }, [mini]);
 
   return (
     <div
@@ -529,47 +269,52 @@ export default function RadarGame({
     >
       <canvas
         ref={canvasRef}
-        style={{
-          display: "block",
-          touchAction: "none",
-          cursor: mini ? "pointer" : "crosshair",
-        }}
+        style={{ display: "block", touchAction: "none", cursor: mini ? "pointer" : "crosshair" }}
       />
-      {/* skor rozeti (mini modda gizli) */}
       {!mini && (
-      <div
-        className="pointer-events-none absolute left-3 top-3 z-20 flex items-center gap-4 rounded-lg px-3 py-2"
-        style={{
-          background: "rgba(12,26,22,.62)",
-          border: "1px solid #1c5140",
-          backdropFilter: "blur(8px)",
-          fontFamily: "var(--font-plex), 'IBM Plex Mono', monospace",
-        }}
-      >
-        <div className="flex flex-col items-start leading-none">
-          <span style={{ fontFamily: "var(--font-space), 'Space Grotesk', sans-serif", fontSize: 18, fontWeight: 700, color: "#e6f3ec" }}>
-            {hud.score}
-          </span>
-          <span style={{ fontSize: 9, letterSpacing: ".16em", color: "#5f8a72", marginTop: 3 }}>
-            SKOR
-          </span>
-        </div>
-        <div className="flex flex-col items-start leading-none">
-          <span
-            style={{
-              fontFamily: "var(--font-space), 'Space Grotesk', sans-serif",
-              fontSize: 18,
-              fontWeight: 700,
-              color: hud.combo >= 3 ? "#6ee7b7" : "#e6f3ec",
-            }}
+        <>
+          {/* skor + can */}
+          <div
+            className="pointer-events-none absolute left-3 top-3 z-20 flex flex-col gap-1 rounded-lg px-3 py-2"
+            style={{ background: "rgba(10,17,32,.62)", border: "1px solid #26406e", backdropFilter: "blur(8px)" }}
           >
-            {hud.combo}
-          </span>
-          <span style={{ fontSize: 9, letterSpacing: ".16em", color: "#5f8a72", marginTop: 3 }}>
-            SERİ
-          </span>
-        </div>
-      </div>
+            <div className="flex items-center gap-3">
+              <span style={{ fontFamily: "var(--font-space), sans-serif", fontSize: 18, fontWeight: 700, color: "#e8eefb" }}>
+                {hud.score}
+              </span>
+              <span style={{ fontFamily: "var(--font-plex), monospace", fontSize: 9, letterSpacing: ".16em", color: "#8a97b5" }}>
+                SKOR
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <span key={i} style={{ fontSize: 13, opacity: i < hud.lives ? 1 : 0.22 }}>
+                  ✈️
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* oyun bitti */}
+          {hud.over && (
+            <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4"
+              style={{ background: "radial-gradient(60% 60% at 50% 45%, rgba(6,10,20,.55), rgba(6,10,20,.85))" }}>
+              <div style={{ fontFamily: "var(--font-space), sans-serif", fontSize: 34, fontWeight: 700, color: "#ff5c7a" }}>
+                Vuruldun!
+              </div>
+              <div style={{ fontFamily: "var(--font-plex), monospace", color: "#8be9ff", fontSize: 15 }}>
+                Skor: {hud.score}
+              </div>
+              <button
+                onClick={() => restartRef.current()}
+                className="rounded-xl px-6 py-3 text-sm font-bold"
+                style={{ background: "linear-gradient(135deg,#8be9ff,#4fd8ff)", color: "#04141f", boxShadow: "0 0 24px rgba(79,216,255,.4)" }}
+              >
+                ↻ Tekrar oyna
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

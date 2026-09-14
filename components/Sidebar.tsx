@@ -184,10 +184,10 @@ export default function Sidebar({
           {onOpenRadar && (
             <button
               onClick={onOpenRadar}
-              title="Radarı tam ekran aç"
-              aria-label="Radarı tam ekran aç"
+              title="Uçak oyununu tam ekran aç"
+              aria-label="Uçak oyununu tam ekran aç"
               className="relative h-9 w-9 overflow-hidden rounded-lg border"
-              style={{ borderColor: "#1c5140", background: "#060d0b" }}
+              style={{ borderColor: "#26406e", background: "#0a1120" }}
             >
               <RadarGame active={null} voice="idle" mini />
             </button>
