@@ -63,9 +63,17 @@ const TITLES: Record<ViewKey, string> = {
 export default function AppShell() {
   const [view, setView] = useState<ViewKey>("harita");
   const [pending, setPending] = useState(0);
-  // Radar tam ekran modu: true → radar tüm ekranı kaplar; false → normal Nova
-  // arayüzü + sağ üstte küçük animasyonlu radar sembolü.
+  // Radar/oyun tam ekran modu: true → tüm ekranı kaplar; false → normal Nova.
   const [radarFull, setRadarFull] = useState(false);
+  // ESC ile oyundan çık
+  useEffect(() => {
+    if (!radarFull) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setRadarFull(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [radarFull]);
 
   const [convs, setConvs] = useState<ConvMeta[]>([]);
   const [activeConv, setActiveConv] = useState<string | null>(null);
