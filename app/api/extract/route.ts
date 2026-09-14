@@ -3,6 +3,18 @@
 import mammoth from "mammoth";
 import * as XLSX from "xlsx";
 import { extractText, getDocumentProxy } from "unpdf";
+import AdmZip from "adm-zip";
+
+// XML metin varlıklarını çöz (& < > " ')
+function decodeXml(s: string): string {
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'");
+}
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -33,6 +45,29 @@ export async function POST(req: Request) {
       const { text } = await extractText(pdf, { mergePages: true });
       const out = Array.isArray(text) ? text.join("\n") : String(text ?? "");
       return Response.json({ text: out });
+    }
+    if (/\.pptx$/i.test(name)) {
+      // pptx = zip; her slaytın metnini ppt/slides/slideN.xml içindeki
+      // <a:t> parçalarından sırayla topla.
+      const zip = new AdmZip(buf);
+      const slides = zip
+        .getEntries()
+        .filter((e) => /^ppt\/slides\/slide\d+\.xml$/i.test(e.entryName))
+        .sort((a, b) => {
+          const na = parseInt(a.entryName.match(/slide(\d+)\.xml/i)?.[1] ?? "0", 10);
+          const nb = parseInt(b.entryName.match(/slide(\d+)\.xml/i)?.[1] ?? "0", 10);
+          return na - nb;
+        });
+      let txt = "";
+      slides.forEach((e, i) => {
+        const xml = e.getData().toString("utf8");
+        const runs = Array.from(xml.matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)).map((m) =>
+          decodeXml(m[1]),
+        );
+        const slideText = runs.join(" ").replace(/\s+/g, " ").trim();
+        txt += `# Slayt ${i + 1}\n${slideText}\n\n`;
+      });
+      return Response.json({ text: txt.trim() || "(sunumda metin bulunamadı)" });
     }
     return Response.json({ error: "unsupported" }, { status: 400 });
   } catch (e) {

@@ -530,7 +530,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       } else if (file.type === "application/pdf") {
         const url = await readAsDataURL(file);
         out.push({ kind: "pdf", name: file.name, data: url.split(",")[1] });
-      } else if (/\.(docx|xlsx|xls)$/i.test(file.name)) {
+      } else if (/\.(docx|xlsx|xls|pptx)$/i.test(file.name)) {
         // Office → sunucuda metne çevir
         try {
           const url = await readAsDataURL(file);
@@ -1585,7 +1585,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*,video/*,application/pdf,.mp4,.mov,.webm,.m4v,.docx,.xlsx,.xls,.txt,.md,.json,.csv,.ts,.tsx,.js,.jsx,.css,.html,.py"
+              accept="image/*,video/*,application/pdf,.mp4,.mov,.webm,.m4v,.docx,.xlsx,.xls,.pptx,.txt,.md,.json,.csv,.ts,.tsx,.js,.jsx,.css,.html,.py"
               multiple
               className="hidden"
               onChange={(e) => handleFiles(e.target.files)}
