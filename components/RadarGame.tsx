@@ -52,6 +52,7 @@ export default function RadarGame({
     type Part = { x: number; y: number; vx: number; vy: number; life: number; max: number; c: string };
     type Star = { x: number; y: number; v: number; r: number };
     const jet = { x: 0, y: 0 };
+    let tX = 0, tY = 0, hasPointer = false; // fare hedefi (oyuncu kontrolü)
     const bullets: P[] = [];
     const enemies: Enemy[] = [];
     const parts: Part[] = [];
@@ -73,11 +74,24 @@ export default function RadarGame({
       ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
       cx = W / 2; cy = H / 2; U = Math.min(W, H); Rr = (U / 2) * 0.84;
       jet.x = W / 2; jet.y = H - U * 0.12;
+      if (!hasPointer) { tX = jet.x; tY = jet.y; }
       buildStars();
     }
     resize();
     const ro = new ResizeObserver(resize);
     ro.observe(wrap);
+
+    // Oyuncu kontrolü: uçak fareyi/dokunuşu takip eder (yalnız tam ekranda)
+    function onMove(e: PointerEvent) {
+      const rect = canvas!.getBoundingClientRect();
+      tX = e.clientX - rect.left;
+      tY = e.clientY - rect.top;
+      hasPointer = true;
+    }
+    if (!isMini) {
+      canvas.addEventListener("pointermove", onMove);
+      canvas.addEventListener("pointerdown", onMove);
+    }
 
     function boom(x: number, y: number, col: string) {
       for (let i = 0; i < 12; i++) {
@@ -85,19 +99,45 @@ export default function RadarGame({
         parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0, max: 20 + Math.random() * 14, c: col });
       }
     }
+    // Gerçekçi F-16 (yukarı bakan, tepeden görünüm) — gri gövde, delta kanat,
+    // çift yatay dengeleyici, tek dikey kuyruk, kokpit ve hava alığı.
     function drawJet(x: number, y: number, s: number) {
       ctx!.save();
-      ctx!.fillStyle = "#8be9ff";
+      ctx!.translate(x, y);
+      // itki alevi (afterburner)
+      const fl = 16 + Math.random() * 10;
+      const flame = ctx!.createLinearGradient(0, 15 * s, 0, fl * s);
+      flame.addColorStop(0, "#ffd27a"); flame.addColorStop(0.5, "#ff8a3c"); flame.addColorStop(1, "rgba(255,80,40,0)");
+      ctx!.fillStyle = flame;
+      ctx!.beginPath(); ctx!.moveTo(-3.2 * s, 15 * s); ctx!.lineTo(0, fl * s); ctx!.lineTo(3.2 * s, 15 * s); ctx!.closePath(); ctx!.fill();
+
+      // ana kanatlar (delta, geriye ok)
+      ctx!.fillStyle = "#9aa7b8";
       ctx!.beginPath();
-      ctx!.moveTo(x, y - 17 * s); ctx!.lineTo(x - 5 * s, y + 3 * s); ctx!.lineTo(x - 17 * s, y + 11 * s);
-      ctx!.lineTo(x - 5 * s, y + 7 * s); ctx!.lineTo(x - 6 * s, y + 15 * s); ctx!.lineTo(x + 6 * s, y + 15 * s);
-      ctx!.lineTo(x + 5 * s, y + 7 * s); ctx!.lineTo(x + 17 * s, y + 11 * s); ctx!.lineTo(x + 5 * s, y + 3 * s);
-      ctx!.closePath();
-      ctx!.shadowColor = "#4fd8ff"; ctx!.shadowBlur = 8 * s; ctx!.fill(); ctx!.shadowBlur = 0;
-      ctx!.fillStyle = "#06222e"; ctx!.beginPath(); ctx!.arc(x, y - 5 * s, 3 * s, 0, 6.2832); ctx!.fill();
-      ctx!.fillStyle = "#ffb454";
-      const fl = 15 + Math.random() * 8;
-      ctx!.beginPath(); ctx!.moveTo(x - 3.5 * s, y + 15 * s); ctx!.lineTo(x, y + fl * s); ctx!.lineTo(x + 3.5 * s, y + 15 * s); ctx!.closePath(); ctx!.fill();
+      ctx!.moveTo(-2.5 * s, -2 * s); ctx!.lineTo(-20 * s, 8 * s); ctx!.lineTo(-19 * s, 11 * s);
+      ctx!.lineTo(-2.5 * s, 6 * s); ctx!.lineTo(2.5 * s, 6 * s); ctx!.lineTo(19 * s, 11 * s);
+      ctx!.lineTo(20 * s, 8 * s); ctx!.lineTo(2.5 * s, -2 * s); ctx!.closePath(); ctx!.fill();
+      // kuyruk yatay dengeleyiciler
+      ctx!.beginPath();
+      ctx!.moveTo(-2 * s, 9 * s); ctx!.lineTo(-9 * s, 15 * s); ctx!.lineTo(-8 * s, 16.5 * s);
+      ctx!.lineTo(-2 * s, 13 * s); ctx!.lineTo(2 * s, 13 * s); ctx!.lineTo(8 * s, 16.5 * s);
+      ctx!.lineTo(9 * s, 15 * s); ctx!.lineTo(2 * s, 9 * s); ctx!.closePath(); ctx!.fill();
+
+      // gövde (fuzelaj) — açık gri, uzun sivri burun
+      const body = ctx!.createLinearGradient(-3 * s, 0, 3 * s, 0);
+      body.addColorStop(0, "#7f8b9c"); body.addColorStop(0.5, "#cdd6e2"); body.addColorStop(1, "#7f8b9c");
+      ctx!.fillStyle = body;
+      ctx!.beginPath();
+      ctx!.moveTo(0, -20 * s);
+      ctx!.lineTo(2.2 * s, -8 * s); ctx!.lineTo(2.8 * s, 8 * s); ctx!.lineTo(2 * s, 15 * s);
+      ctx!.lineTo(-2 * s, 15 * s); ctx!.lineTo(-2.8 * s, 8 * s); ctx!.lineTo(-2.2 * s, -8 * s);
+      ctx!.closePath(); ctx!.fill();
+      // dikey kuyruk
+      ctx!.fillStyle = "#8592a4";
+      ctx!.beginPath(); ctx!.moveTo(0, 6 * s); ctx!.lineTo(-1.4 * s, 15 * s); ctx!.lineTo(1.4 * s, 15 * s); ctx!.closePath(); ctx!.fill();
+      // kokpit camı
+      ctx!.fillStyle = "#1e3a5f";
+      ctx!.beginPath(); ctx!.ellipse(0, -9 * s, 1.8 * s, 3.5 * s, 0, 0, 6.2832); ctx!.fill();
       ctx!.restore();
     }
     function drawEnemy(x: number, y: number, s: number) {
@@ -122,12 +162,11 @@ export default function RadarGame({
       }
       ctx!.globalAlpha = 1;
 
-      const js = U * 0.05 / 8, es = U * 0.05 / 8, bv = U * 0.02;
-      // otomatik hedef: en yakın düşmanın x'i
-      let tx = W / 2, nd = 1e9;
-      for (const e of enemies) { const d = Math.abs(e.x - jet.x); if (d < nd) { nd = d; tx = e.x; } }
-      jet.x += (tx - jet.x) * 0.1;
+      const js = U * 0.055 / 8, es = U * 0.025 / 8, bv = U * 0.02;
+      // OYUNCU kontrolü: uçak fareyi takip eder (2B). Fare yoksa yerinde durur.
+      if (hasPointer) { jet.x += (tX - jet.x) * 0.2; jet.y += (tY - jet.y) * 0.2; }
       jet.x = Math.max(U * 0.06, Math.min(W - U * 0.06, jet.x));
+      jet.y = Math.max(U * 0.08, Math.min(H - U * 0.06, jet.y));
 
       if (tf - lastFire > 12) { bullets.push({ x: jet.x, y: jet.y - 16 * js, vx: 0, vy: -bv }); lastFire = tf; }
       if (tf - lastSpawn > spawnEvery) {
@@ -146,7 +185,7 @@ export default function RadarGame({
         let hit = false;
         for (let j = bullets.length - 1; j >= 0; j--) {
           const b = bullets[j];
-          if (Math.abs(b.x - e.x) < U * 0.045 && Math.abs(b.y - e.y) < U * 0.05) { bullets.splice(j, 1); hit = true; break; }
+          if (Math.abs(b.x - e.x) < U * 0.03 && Math.abs(b.y - e.y) < U * 0.035) { bullets.splice(j, 1); hit = true; break; }
         }
         if (hit) { enemies.splice(i, 1); boom(e.x, e.y, "#ffb454"); continue; }
         if (e.y > H + U * 0.06) { enemies.splice(i, 1); continue; }
@@ -242,13 +281,21 @@ export default function RadarGame({
 
     return () => {
       running = false; cancelAnimationFrame(raf); ro.disconnect();
+      if (!isMini) { canvas.removeEventListener("pointermove", onMove); canvas.removeEventListener("pointerdown", onMove); }
       document.removeEventListener("visibilitychange", onVis);
     };
   }, [mini]);
 
   return (
-    <div ref={wrapRef} className="absolute inset-0" style={{ zIndex: 1, pointerEvents: "none" }}>
-      <canvas ref={canvasRef} style={{ display: "block" }} />
+    <div
+      ref={wrapRef}
+      className="absolute inset-0"
+      style={{ zIndex: 1, pointerEvents: mini ? "none" : "auto" }}
+    >
+      <canvas
+        ref={canvasRef}
+        style={{ display: "block", touchAction: "none", cursor: mini ? "pointer" : "crosshair" }}
+      />
     </div>
   );
 }
