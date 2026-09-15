@@ -279,8 +279,8 @@ type ChatProps = {
   autoSend?: Kickoff;
   onAutoSent?: () => void;
   pinned?: boolean;
-  /** Sesle verilen ARAYÜZ komutları (ör. "arayüzü aç") — sohbete gitmez, üst katman işler */
-  onUiCommand?: (cmd: "open_ui") => void;
+  /** Sesle verilen ARAYÜZ komutları ("open_ui" ya da "tab:<görünüm>") — sohbete gitmez, üst katman işler */
+  onUiCommand?: (cmd: string) => void;
 };
 
 const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
@@ -768,7 +768,10 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       return;
     }
     stopBarge();
-    if (wasGreeting) micRef.current(); // hemen komut dinle
+    // Karşılıklı konuşma: eller-serbest moddaysa Nova sustuktan sonra "Nova"
+    // demeden DOĞRUDAN dinle; sessizlikte kendiliğinden wake'e döner.
+    // (Whisper yolunda kayıt elle durduğu için otomatik başlatma yapılmaz.)
+    if (wasGreeting || (wakeOnRef.current && !preferWhisper())) micRef.current();
     else resumeWake();
   }
 
@@ -818,11 +821,42 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   // Sesle gelen metin: önce ARAYÜZ komutu mu bak ("arayüzü aç" → üst katman),
   // değilse normal sohbete gönder (cevap sesli döner). STT "ara yüzü aç" gibi
   // boşluklu/ekli yazabildiği için boşluksuz-ASCII eşleşme kullanılır.
+  // Sesle sekme gezinmesi: "<sekme> aç/git/geç/göster" ya da "<sekme> sekmesi"
+  const VOICE_TABS: [RegExp, string, string][] = [
+    [/calisma alan|sohbet|ana ekran|ana sayfa|anasayfa/, "harita", "Çalışma Alanı"],
+    [/brifing/, "brifing", "Brifing"],
+    [/gorev/, "tasks", "Görevler"],
+    [/proje/, "projeler", "Projeler"],
+    [/dosya/, "dosyalar", "Dosyalar"],
+    [/fatura/, "fatura", "Fatura"],
+    [/beceri/, "beceriler", "Beceriler"],
+    [/surum/, "surumler", "Sürümler"],
+    [/loop|dongu/, "loops", "Loops"],
+    [/ajan/, "ajanlar", "Ajanlar"],
+    [/kontrol|guardrail/, "guardrail", "Kontrol"],
+    [/denetim/, "denetim", "Denetim"],
+    [/ayar/, "ayarlar", "Ayarlar"],
+  ];
+
   function voiceSend(raw: string) {
     const t = raw.trim();
     if (!t) return;
-    const n = normTr(t).replace(/\s/g, "");
-    if (/arayuz\w{0,3}(ac|goster)|ekran\w{0,3}(ac|goster)/.test(n)) {
+    const n = normTr(t);
+    const ns = n.replace(/\s/g, "");
+    // 1) Sekme gezinmesi (gezinme fiili + sekme adı) — "fatura oku" gibi iş
+    //    istekleri fiil içermediği için sohbete gider.
+    const wantsNav = /(^|\s)(ac|git|gec|goster|gel|getir)\w*(\s|$)|sekme|ekran|bolum/.test(n);
+    if (wantsNav) {
+      for (const [re, key, label] of VOICE_TABS) {
+        if (re.test(n)) {
+          onUiCommand?.(`tab:${key}`);
+          speak(`${label} sekmesini açıyorum.`);
+          return;
+        }
+      }
+    }
+    // 2) Arayüzü aç (sesli karşılama ekranından çık)
+    if (/arayuz\w{0,3}(ac|goster)|ekran\w{0,3}(ac|goster)/.test(ns)) {
       onUiCommand?.("open_ui");
       speak("Arayüzü açıyorum.");
       return;

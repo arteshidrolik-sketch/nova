@@ -64,6 +64,8 @@ export default function Sidebar({
   onRenameConv,
   onDeleteConv,
   onOpenRadar,
+  wakeOn = false,
+  onToggleWake,
 }: {
   active: ViewKey;
   onSelect: (key: ViewKey) => void;
@@ -75,6 +77,9 @@ export default function Sidebar({
   onRenameConv: (id: string, title: string) => void;
   onDeleteConv: (id: string) => void;
   onOpenRadar?: () => void;
+  /** "Nova" ile sesli uyandırma açık mı — 👂 göstergesi/anahtarı */
+  wakeOn?: boolean;
+  onToggleWake?: () => void;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -166,8 +171,24 @@ export default function Sidebar({
           })}
         </nav>
 
-        {/* Ayarların sağında: tam ekran + küçük animasyonlu radar simgesi */}
+        {/* Ayarların sağında: 👂 sesli dinleme + tam ekran + küçük animasyonlu radar simgesi */}
         <div className="flex shrink-0 items-center gap-1.5">
+          {onToggleWake && (
+            <button
+              onClick={onToggleWake}
+              title={wakeOn ? "Nova dinliyor — 'Nova' deyip konuş (kapatmak için tıkla)" : "Sesli dinlemeyi aç ('Nova' ile uyandır)"}
+              aria-label="Sesli dinleme"
+              className="flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium"
+              style={{
+                borderColor: wakeOn ? "#10b981" : "var(--border)",
+                background: wakeOn ? "#10b98122" : "transparent",
+                color: wakeOn ? "#10b981" : "var(--text-muted)",
+              }}
+            >
+              <span>👂</span>
+              <span className="hidden xl:inline">{wakeOn ? "Dinliyor" : "Ses"}</span>
+            </button>
+          )}
           <button
             onClick={toggleFs}
             title={isFs ? "Tam ekrandan çık" : "Tam ekran"}

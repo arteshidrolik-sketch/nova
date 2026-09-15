@@ -25,6 +25,7 @@ export default function Workspace({
   onChatHandle,
   onUiCommand,
   onVoiceState,
+  onWakeState,
 }: {
   conversationId: string | null;
   onConversationUpdated?: () => void;
@@ -34,8 +35,9 @@ export default function Workspace({
   pinnedChat?: boolean;
   /** Sohbetin ses kontrolü (greet/listen) üst katmana verilir (sesli karşılama için) */
   onChatHandle?: (h: ChatHandle | null) => void;
-  onUiCommand?: (cmd: "open_ui") => void;
+  onUiCommand?: (cmd: string) => void;
   onVoiceState?: (s: "idle" | "listening" | "speaking") => void;
+  onWakeState?: (enabled: boolean) => void;
 }) {
   const chatRef = useRef<ChatHandle | null>(null);
 
@@ -126,6 +128,7 @@ export default function Workspace({
             pinned={pinnedChat}
             onUiCommand={onUiCommand}
             onVoiceState={onVoiceState}
+            onWakeState={onWakeState}
           />
         </div>
 

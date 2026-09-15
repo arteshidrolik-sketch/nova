@@ -76,6 +76,7 @@ export default function AppShell() {
   const [voiceWelcome, setVoiceWelcome] = useState(true);
   const [voiceState, setVoiceState] = useState<"idle" | "listening" | "speaking">("idle");
   const [voiceStarted, setVoiceStarted] = useState(false);
+  const [wakeOn, setWakeOn] = useState(false); // "Nova" ile uyandırma açık mı (👂)
   const chatHandleRef = useRef<ChatHandle | null>(null);
   function startVoice() {
     const h = chatHandleRef.current;
@@ -160,6 +161,8 @@ export default function AppShell() {
         onRenameConv={renameConversation}
         onDeleteConv={deleteConversation}
         onOpenRadar={() => setRadarFull(true)}
+        wakeOn={wakeOn}
+        onToggleWake={() => chatHandleRef.current?.toggleWake()}
       />
     </div>
   );
@@ -241,7 +244,10 @@ export default function AppShell() {
   return (
     <div className="relative z-10 flex h-dvh flex-col overflow-hidden">
       <main className="min-h-0 flex-1 overflow-hidden">
-        {view === "harita" ? (
+        {/* Çalışma Alanı HER ZAMAN açık kalır (sekme değişince gizlenir,
+            KAPATILMAZ): ses motoru (dinleme/konuşma) sohbetin içinde
+            yaşadığından başka sekmede de Nova duymaya/konuşmaya devam eder. */}
+        <div className={view === "harita" ? "h-full" : "hidden"}>
           <Workspace
             conversationId={activeConv}
             onConversationUpdated={onConvUpdated}
@@ -255,11 +261,23 @@ export default function AppShell() {
               chatHandleRef.current = h;
             }}
             onUiCommand={(cmd) => {
-              if (cmd === "open_ui") setVoiceWelcome(false);
+              if (cmd === "open_ui") {
+                setVoiceWelcome(false);
+                return;
+              }
+              if (cmd.startsWith("tab:")) {
+                const key = cmd.slice(4) as ViewKey;
+                if (key in TITLES) {
+                  setView(key);
+                  setVoiceWelcome(false);
+                }
+              }
             }}
             onVoiceState={setVoiceState}
+            onWakeState={setWakeOn}
           />
-        ) : view === "tasks" ? (
+        </div>
+        {view !== "harita" && (view === "tasks" ? (
           <Tasks onChange={refreshPending} />
         ) : view === "loops" ? (
           <Loops onChange={refreshPending} />
@@ -283,7 +301,7 @@ export default function AppShell() {
           <Invoices />
         ) : (
           <Placeholder title={TITLES[view]} />
-        )}
+        ))}
       </main>
 
       {/* harita dışı görünümlerde menü altta */}
