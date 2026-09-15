@@ -264,6 +264,9 @@ function AgentBadge({ m }: { m: Message }) {
 export type ChatHandle = {
   startListening: () => void;
   toggleWake: () => void;
+  /** Sesli karşılama: metni seslendir, bitince komut dinlemeye geç ve
+   *  "Nova" ile uyandırmayı aç (eller serbest). */
+  greet: (text: string) => void;
 };
 
 type ChatProps = {
@@ -276,6 +279,8 @@ type ChatProps = {
   autoSend?: Kickoff;
   onAutoSent?: () => void;
   pinned?: boolean;
+  /** Sesle verilen ARAYÜZ komutları (ör. "arayüzü aç") — sohbete gitmez, üst katman işler */
+  onUiCommand?: (cmd: "open_ui") => void;
 };
 
 const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
@@ -289,6 +294,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     autoSend,
     onAutoSent,
     pinned,
+    onUiCommand,
   },
   ref,
 ) {
@@ -723,6 +729,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     if (ttsActiveRef.current || ttsQueueRef.current.length === 0) return;
     ttsActiveRef.current = true;
     setSpeaking(true);
+    pauseWake(); // konuşurken wake dinlemesin (kendi "Nova" sözüne tetiklenmesin)
     while (ttsActiveRef.current && ttsQueueRef.current.length > 0) {
       const chunk = ttsQueueRef.current.shift();
       if (chunk == null) continue;
@@ -743,7 +750,15 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     ttsActiveRef.current = false;
     setSpeaking(false);
     stopTtsKeepAlive();
-    resumeWake();
+    if (listenAfterSpeakRef.current) {
+      // Karşılama bitti → eller serbest: wake'i aç, hemen komut dinle
+      listenAfterSpeakRef.current = false;
+      wakeOnRef.current = true;
+      onWakeState?.(true);
+      micRef.current();
+    } else {
+      resumeWake();
+    }
   }
 
   function cancelSpeak() {
@@ -772,6 +787,23 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     } catch {
       /* yoksay */
     }
+  }
+
+  // Karşılama: konuşma bitince komut dinlemeye geç (runQueue sonunda okunur)
+  const listenAfterSpeakRef = useRef(false);
+
+  // Sesle gelen metin: önce ARAYÜZ komutu mu bak ("arayüzü aç" → üst katman),
+  // değilse normal sohbete gönder (cevap sesli döner).
+  function voiceSend(raw: string) {
+    const t = raw.trim();
+    if (!t) return;
+    if (/(aray[uü]z[uü]?|ekran[ıi]?)\s*(a[cç]|g[oö]ster)/i.test(t)) {
+      onUiCommand?.("open_ui");
+      speak("Arayüzü açıyorum.");
+      return;
+    }
+    voiceReplyRef.current = true;
+    send(t);
   }
 
   function startListening() {
@@ -821,8 +853,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
             /* yoksay */
           }
           setInput("");
-          voiceReplyRef.current = true;
-          send(t);
+          voiceSend(t);
         }
       };
       rec.onend = () => {
@@ -940,10 +971,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       const text = (await transcribe(audio)).trim();
       setWhisperStatus("idle");
       onBusy?.(false);
-      if (text) {
-        voiceReplyRef.current = true;
-        send(text);
-      }
+      if (text) voiceSend(text);
     } catch {
       setWhisperStatus("idle");
       onBusy?.(false);
@@ -973,6 +1001,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   function resumeWake() {
     if (!wakeOnRef.current || recognitionRef.current || wakeRef.current) return;
     if (typeof window !== "undefined" && window.speechSynthesis?.speaking) return;
+    if (ttsActiveRef.current) return; // Nova konuşurken (neural TTS dahil) kendi sesine uyanmasın
     setTimeout(runWake, 300);
   }
 
@@ -1000,8 +1029,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
           .trim();
         pauseWake();
         if (cmd.length >= 2) {
-          voiceReplyRef.current = true;
-          send(cmd); // "Nova <komut>" — tek seferde
+          voiceSend(cmd); // "Nova <komut>" — tek seferde
         } else {
           startListening(); // sadece "Nova" dendi → komutu ayrıca dinle
         }
@@ -1076,11 +1104,17 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   micRef.current = handleMic;
   const wakeToggleRef = useRef<() => void>(() => {});
   wakeToggleRef.current = toggleWake;
+  const greetRef = useRef<(t: string) => void>(() => {});
+  greetRef.current = (text: string) => {
+    listenAfterSpeakRef.current = true;
+    speak(text);
+  };
   useImperativeHandle(
     ref,
     () => ({
       startListening: () => micRef.current(),
       toggleWake: () => wakeToggleRef.current(),
+      greet: (text: string) => greetRef.current(text),
     }),
     [],
   );

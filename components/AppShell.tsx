@@ -1,10 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Sidebar, { type ViewKey } from "./Sidebar";
 import Files from "./Files";
 import Invoices from "./Invoices";
 import RadarGame from "./RadarGame";
+import type { ChatHandle } from "./Chat";
+
+// Sesli karşılama metni: hal hatır + ne üzerine çalışılacağı
+const GREETING =
+  "Merhaba! Ben Nova. Nasılsın, bugün nasıl gidiyor? Bugün ne üzerinde çalışmak istersin? " +
+  "Hazır olduğunda 'arayüzü aç' de, ya da doğrudan ne yapmak istediğini söyle.";
 import Workspace from "./Workspace";
 import Tasks from "./Tasks";
 import Loops from "./Loops";
@@ -65,6 +71,18 @@ export default function AppShell() {
   const [pending, setPending] = useState(0);
   // Radar/oyun tam ekran modu: true → tüm ekranı kaplar; false → normal Nova.
   const [radarFull, setRadarFull] = useState(false);
+
+  // Sesli karşılama katmanı: açılışta Nova'yı sesle başlat; "arayüzü aç" kapatır.
+  const [voiceWelcome, setVoiceWelcome] = useState(true);
+  const [voiceState, setVoiceState] = useState<"idle" | "listening" | "speaking">("idle");
+  const [voiceStarted, setVoiceStarted] = useState(false);
+  const chatHandleRef = useRef<ChatHandle | null>(null);
+  function startVoice() {
+    const h = chatHandleRef.current;
+    if (!h) return;
+    setVoiceStarted(true);
+    h.greet(GREETING);
+  }
   // ESC ile oyundan çık
   useEffect(() => {
     if (!radarFull) return;
@@ -233,6 +251,13 @@ export default function AppShell() {
             pinnedChat={
               convs.find((c) => c.id === activeConv)?.pinned ?? false
             }
+            onChatHandle={(h) => {
+              chatHandleRef.current = h;
+            }}
+            onUiCommand={(cmd) => {
+              if (cmd === "open_ui") setVoiceWelcome(false);
+            }}
+            onVoiceState={setVoiceState}
           />
         ) : view === "tasks" ? (
           <Tasks onChange={refreshPending} />
@@ -263,6 +288,74 @@ export default function AppShell() {
 
       {/* harita dışı görünümlerde menü altta */}
       {view !== "harita" && menuBarNode}
+
+      {/* Sesli karşılama katmanı — tarayıcı ses/mikrofon için bir dokunuş ister.
+          "Nova ile başla" → karşılama konuşması → dinleme → "arayüzü aç" kapatır. */}
+      {voiceWelcome && (
+        <div
+          className="fixed inset-0 z-[70] flex flex-col items-center justify-center gap-6 text-center"
+          style={{ background: "radial-gradient(70% 70% at 50% 40%, #0e1a30, #060a14 75%)" }}
+        >
+          <span className="relative flex h-28 w-28 items-center justify-center rounded-full">
+            <span
+              className="nova-orb absolute inset-0 rounded-full"
+              style={{
+                boxShadow:
+                  voiceState === "listening"
+                    ? "0 0 60px rgba(79,216,255,.7)"
+                    : voiceState === "speaking"
+                      ? "0 0 60px rgba(167,139,250,.7)"
+                      : "0 0 36px rgba(79,216,255,.35)",
+                transition: "box-shadow .3s ease",
+              }}
+            />
+            <span className="relative text-3xl font-bold text-black">N</span>
+          </span>
+          <div>
+            <div style={{ fontFamily: "var(--font-space), sans-serif", fontSize: 30, fontWeight: 700, color: "#e8eefb" }}>
+              Nova
+            </div>
+            <div
+              style={{ fontFamily: "var(--font-plex), monospace", fontSize: 12, letterSpacing: ".14em", color: "#8a97b5", marginTop: 6 }}
+            >
+              {voiceState === "listening"
+                ? "DİNLİYORUM…"
+                : voiceState === "speaking"
+                  ? "KONUŞUYOR…"
+                  : voiceStarted
+                    ? "HAZIR — 'NOVA' DEYİP KONUŞ"
+                    : "SESLİ ASİSTAN"}
+            </div>
+          </div>
+          {!voiceStarted ? (
+            <button
+              onClick={startVoice}
+              className="rounded-2xl px-8 py-4 text-base font-bold"
+              style={{ background: "linear-gradient(135deg,#8be9ff,#4fd8ff)", color: "#04141f", boxShadow: "0 0 30px rgba(79,216,255,.45)" }}
+            >
+              🎙️ Nova ile başla
+            </button>
+          ) : (
+            <button
+              onClick={() => chatHandleRef.current?.startListening()}
+              className="rounded-2xl px-6 py-3 text-sm font-bold"
+              style={{ background: "rgba(79,216,255,.14)", border: "1px solid rgba(79,216,255,.5)", color: "#8be9ff" }}
+            >
+              🎤 Konuş
+            </button>
+          )}
+          <button
+            onClick={() => setVoiceWelcome(false)}
+            className="text-xs"
+            style={{ color: "#5f6f8f", textDecoration: "underline" }}
+          >
+            Arayüzü aç (sessiz devam et)
+          </button>
+          <div style={{ fontFamily: "var(--font-plex), monospace", fontSize: 11, color: "#5f6f8f", maxWidth: 360, lineHeight: 1.6 }}>
+            Nova seni sesle karşılar, ne üzerinde çalışacağını sorar. İstediğin zaman &quot;arayüzü aç&quot; de.
+          </div>
+        </div>
+      )}
 
       {/* Radar tam ekran katmanı */}
       {radarFull && (

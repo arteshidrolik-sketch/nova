@@ -22,6 +22,9 @@ export default function Workspace({
   autoSend,
   onAutoSent,
   pinnedChat = false,
+  onChatHandle,
+  onUiCommand,
+  onVoiceState,
 }: {
   conversationId: string | null;
   onConversationUpdated?: () => void;
@@ -29,8 +32,12 @@ export default function Workspace({
   autoSend?: Kickoff;
   onAutoSent?: () => void;
   pinnedChat?: boolean;
+  /** Sohbetin ses kontrolü (greet/listen) üst katmana verilir (sesli karşılama için) */
+  onChatHandle?: (h: ChatHandle | null) => void;
+  onUiCommand?: (cmd: "open_ui") => void;
+  onVoiceState?: (s: "idle" | "listening" | "speaking") => void;
 }) {
-  const chatRef = useRef<ChatHandle>(null);
+  const chatRef = useRef<ChatHandle | null>(null);
 
   // Sohbetin genişliği (%) — kullanıcı sürükleyince değişir.
   const [chatPct, setChatPct] = useState(46);
@@ -108,12 +115,17 @@ export default function Workspace({
           }}
         >
           <Chat
-            ref={chatRef}
+            ref={(h) => {
+              chatRef.current = h;
+              onChatHandle?.(h);
+            }}
             conversationId={conversationId}
             onConversationUpdated={onConversationUpdated}
             autoSend={autoSend}
             onAutoSent={onAutoSent}
             pinned={pinnedChat}
+            onUiCommand={onUiCommand}
+            onVoiceState={onVoiceState}
           />
         </div>
 
