@@ -261,6 +261,7 @@ export default function AppShell() {
               chatHandleRef.current = h;
             }}
             onUiCommand={(cmd) => {
+              const say = (t: string) => chatHandleRef.current?.say(t);
               if (cmd === "open_ui") {
                 setVoiceWelcome(false);
                 return;
@@ -270,6 +271,36 @@ export default function AppShell() {
                 if (key in TITLES) {
                   setView(key);
                   setVoiceWelcome(false);
+                }
+                return;
+              }
+              // Sohbetler arası sesli geçiş
+              if (cmd === "conv:new") {
+                newConversation();
+                setVoiceWelcome(false);
+                say("Yeni sohbet açıyorum.");
+                return;
+              }
+              if (cmd.startsWith("conv:")) {
+                const fold = (s: string) =>
+                  s
+                    .toLowerCase()
+                    .replace(/ü/g, "u").replace(/ç/g, "c").replace(/ı/g, "i")
+                    .replace(/ö/g, "o").replace(/ş/g, "s").replace(/ğ/g, "g")
+                    .replace(/[^a-z0-9]/g, "");
+                const q = fold(cmd.slice(5));
+                let hit = convs.find((c) => {
+                  const tt = fold(c.title);
+                  return tt && (tt.includes(q) || q.includes(tt));
+                });
+                if (!hit && q.length >= 3)
+                  hit = convs.find((c) => fold(c.title).startsWith(q.slice(0, 3)));
+                if (hit) {
+                  selectConversation(hit.id);
+                  setVoiceWelcome(false);
+                  say(`${hit.title} sohbetine geçiyorum.`);
+                } else {
+                  say("Bu adda bir sohbet bulamadım.");
                 }
               }
             }}

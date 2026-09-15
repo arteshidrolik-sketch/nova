@@ -267,6 +267,8 @@ export type ChatHandle = {
   /** Sesli karşılama: metni seslendir, bitince komut dinlemeye geç ve
    *  "Nova" ile uyandırmayı aç (eller serbest). */
   greet: (text: string) => void;
+  /** Kısa bir onay/bilgi cümlesi seslendir (ör. "GetDriver sohbetine geçiyorum"). */
+  say: (text: string) => void;
 };
 
 type ChatProps = {
@@ -823,7 +825,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   // boşluklu/ekli yazabildiği için boşluksuz-ASCII eşleşme kullanılır.
   // Sesle sekme gezinmesi: "<sekme> aç/git/geç/göster" ya da "<sekme> sekmesi"
   const VOICE_TABS: [RegExp, string, string][] = [
-    [/calisma alan|sohbet|ana ekran|ana sayfa|anasayfa/, "harita", "Çalışma Alanı"],
+    [/calisma alan|ana ekran|ana sayfa|anasayfa/, "harita", "Çalışma Alanı"],
     [/brifing/, "brifing", "Brifing"],
     [/gorev/, "tasks", "Görevler"],
     [/proje/, "projeler", "Projeler"],
@@ -843,9 +845,26 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     if (!t) return;
     const n = normTr(t);
     const ns = n.replace(/\s/g, "");
+    const wantsNav = /(^|\s)(ac|git|gec|goster|gel|getir)\w*(\s|$)|sekme|ekran|bolum/.test(n);
+    // 0) Sohbet gezinmesi: "yeni sohbet aç" / "<ad> sohbetine geç" → üst katman
+    //    sohbet listesinde adı eşleştirir. ("... sohbeti hakkında bilgi ver" gibi
+    //    fiilsiz cümleler sohbete gider.)
+    if (/yeni sohbet/.test(n)) {
+      onUiCommand?.("conv:new");
+      return;
+    }
+    if (wantsNav && /sohbet/.test(n)) {
+      const name = n
+        .split("sohbet")[0]
+        .replace(/(^|\s)(bana|su|bu|o|lutfen|nova)(\s|$)/g, " ")
+        .trim();
+      if (name) {
+        onUiCommand?.(`conv:${name}`);
+        return;
+      }
+    }
     // 1) Sekme gezinmesi (gezinme fiili + sekme adı) — "fatura oku" gibi iş
     //    istekleri fiil içermediği için sohbete gider.
-    const wantsNav = /(^|\s)(ac|git|gec|goster|gel|getir)\w*(\s|$)|sekme|ekran|bolum/.test(n);
     if (wantsNav) {
       for (const [re, key, label] of VOICE_TABS) {
         if (re.test(n)) {
@@ -1236,12 +1255,15 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     listenAfterSpeakRef.current = true;
     speak(text);
   };
+  const sayRef = useRef<(t: string) => void>(() => {});
+  sayRef.current = (text: string) => speak(text);
   useImperativeHandle(
     ref,
     () => ({
       startListening: () => micRef.current(),
       toggleWake: () => wakeToggleRef.current(),
       greet: (text: string) => greetRef.current(text),
+      say: (text: string) => sayRef.current(text),
     }),
     [],
   );
