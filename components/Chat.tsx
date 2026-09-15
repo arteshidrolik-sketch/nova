@@ -730,9 +730,15 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     ttsActiveRef.current = true;
     setSpeaking(true);
     pauseWake(); // konuşurken wake dinlemesin (kendi "Nova" sözüne tetiklenmesin)
+    // Araya girme: konuşma boyunca kullanıcıyı dinle (yankı filtresiyle)
+    spokenWordsRef.current = new Set();
+    bargeFiredRef.current = false;
+    stopBarge();
+    startBarge();
     while (ttsActiveRef.current && ttsQueueRef.current.length > 0) {
       const chunk = ttsQueueRef.current.shift();
       if (chunk == null) continue;
+      for (const w of normTr(chunk).split(" ")) if (w) spokenWordsRef.current.add(w);
       let played = false;
       if (neuralTtsRef.current !== false) {
         const st = await playNeural(chunk);
@@ -750,15 +756,20 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     ttsActiveRef.current = false;
     setSpeaking(false);
     stopTtsKeepAlive();
-    if (listenAfterSpeakRef.current) {
-      // Karşılama bitti → eller serbest: wake'i aç, hemen komut dinle
-      listenAfterSpeakRef.current = false;
+    const wasGreeting = listenAfterSpeakRef.current;
+    listenAfterSpeakRef.current = false;
+    if (wasGreeting) {
+      // Karşılama bitti → eller serbest: wake'i aç
       wakeOnRef.current = true;
       onWakeState?.(true);
-      micRef.current();
-    } else {
-      resumeWake();
     }
+    if (bargeFiredRef.current) {
+      // Kullanıcı araya girdi: barge dinleyicisi cümlenin sonunu alıp teslim edecek
+      return;
+    }
+    stopBarge();
+    if (wasGreeting) micRef.current(); // hemen komut dinle
+    else resumeWake();
   }
 
   function cancelSpeak() {
@@ -792,18 +803,98 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   // Karşılama: konuşma bitince komut dinlemeye geç (runQueue sonunda okunur)
   const listenAfterSpeakRef = useRef(false);
 
+  // Türkçe metni karşılaştırma için sadeleştir: küçük harf, ASCII, sadece harf/rakam
+  function normTr(s: string): string {
+    return s
+      .toLowerCase()
+      .replace(/i̇/g, "i")
+      .replace(/ü/g, "u").replace(/ç/g, "c").replace(/ı/g, "i")
+      .replace(/ö/g, "o").replace(/ş/g, "s").replace(/ğ/g, "g")
+      .replace(/[^a-z0-9\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
   // Sesle gelen metin: önce ARAYÜZ komutu mu bak ("arayüzü aç" → üst katman),
-  // değilse normal sohbete gönder (cevap sesli döner).
+  // değilse normal sohbete gönder (cevap sesli döner). STT "ara yüzü aç" gibi
+  // boşluklu/ekli yazabildiği için boşluksuz-ASCII eşleşme kullanılır.
   function voiceSend(raw: string) {
     const t = raw.trim();
     if (!t) return;
-    if (/(aray[uü]z[uü]?|ekran[ıi]?)\s*(a[cç]|g[oö]ster)/i.test(t)) {
+    const n = normTr(t).replace(/\s/g, "");
+    if (/arayuz\w{0,3}(ac|goster)|ekran\w{0,3}(ac|goster)/.test(n)) {
       onUiCommand?.("open_ui");
       speak("Arayüzü açıyorum.");
       return;
     }
     voiceReplyRef.current = true;
     send(t);
+  }
+
+  // --- Araya girme (barge-in): Nova konuşurken kullanıcı konuşursa Nova susar ---
+  // Ayrı bir tanıyıcı TTS boyunca dinler. Yankı filtresi: duyulan sözlerin
+  // yarısından fazlası Nova'nın bu turda söylediklerindeyse kendi sesidir, yok say.
+  const bargeRef = useRef<Recognition | null>(null);
+  const bargeFiredRef = useRef(false);
+  const bargeFromRef = useRef(0);
+  const spokenWordsRef = useRef<Set<string>>(new Set());
+
+  function stopBarge() {
+    try {
+      bargeRef.current?.abort();
+    } catch {
+      /* yoksay */
+    }
+    bargeRef.current = null;
+  }
+  function startBarge() {
+    if (bargeRef.current) return;
+    if (typeof window !== "undefined" && !window.isSecureContext) return;
+    const Ctor = getRecognitionCtor();
+    if (!Ctor) return;
+    try {
+      const b = new Ctor();
+      b.lang = "tr-TR";
+      b.interimResults = true;
+      b.continuous = true;
+      b.onresult = (e) => {
+        const last = e.results[e.results.length - 1];
+        const seg = last[0].transcript;
+        if (!bargeFiredRef.current) {
+          const words = normTr(seg).split(" ").filter(Boolean);
+          if (words.length < 2) return;
+          const hit = words.filter((w) => spokenWordsRef.current.has(w)).length;
+          if (hit / words.length >= 0.5) return; // Nova'nın kendi sesi (yankı)
+          bargeFiredRef.current = true;
+          bargeFromRef.current = e.results.length - 1;
+          cancelSpeak(); // kullanıcı konuşuyor → Nova sussun
+        }
+        if (last.isFinal) {
+          let t = "";
+          for (let i = bargeFromRef.current; i < e.results.length; i++)
+            t += e.results[i][0].transcript + " ";
+          stopBarge();
+          bargeFiredRef.current = false;
+          voiceSend(t.trim());
+        }
+      };
+      b.onend = () => {
+        if (bargeRef.current !== b) return;
+        bargeRef.current = null;
+        if (ttsActiveRef.current && !bargeFiredRef.current) startBarge(); // sessizlikte kapandıysa sürdür
+        else {
+          bargeFiredRef.current = false;
+          resumeWake();
+        }
+      };
+      b.onerror = () => {
+        if (bargeRef.current === b) bargeRef.current = null;
+      };
+      bargeRef.current = b;
+      b.start();
+    } catch {
+      bargeRef.current = null;
+    }
   }
 
   function startListening() {
@@ -821,6 +912,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       return;
     }
     cancelSpeak(); // konuşurken mikrofona basınca Nova sussun (kuyruk dahil)
+    stopBarge(); // araya-girme dinleyicisi de mikrofonu bıraksın
     // wake dinleyiciyi ve eski komut oturumunu kapat (mikrofon serbest kalsın)
     try {
       wakeRef.current?.abort();
@@ -1000,6 +1092,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
 
   function resumeWake() {
     if (!wakeOnRef.current || recognitionRef.current || wakeRef.current) return;
+    if (bargeRef.current) return; // araya-girme dinleyicisi mikrofonu tutuyor
     if (typeof window !== "undefined" && window.speechSynthesis?.speaking) return;
     if (ttsActiveRef.current) return; // Nova konuşurken (neural TTS dahil) kendi sesine uyanmasın
     setTimeout(runWake, 300);
