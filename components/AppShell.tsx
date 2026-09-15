@@ -264,6 +264,7 @@ export default function AppShell() {
               const say = (t: string) => chatHandleRef.current?.say(t);
               if (cmd === "open_ui") {
                 setVoiceWelcome(false);
+                setView("harita"); // "arayüzü aç" → ana sayfa (Çalışma Alanı)
                 return;
               }
               if (cmd.startsWith("tab:")) {

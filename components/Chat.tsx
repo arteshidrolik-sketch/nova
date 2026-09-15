@@ -846,14 +846,20 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     const n = normTr(t);
     const ns = n.replace(/\s/g, "");
     const wantsNav = /(^|\s)(ac|git|gec|goster|gel|getir)\w*(\s|$)|sekme|ekran|bolum/.test(n);
+    // Kısa ifadeler ("fatura", "dosyalar", "getdriver sohbeti") iş fiili
+    // taşımıyorsa gezinme sayılır — STT fiili bozuk yazsa bile çalışsın.
+    const words = n.split(" ").filter(Boolean);
+    const workVerb =
+      /(^|\s)(oku|yap|uret|hazirla|yaz|ciz|olustur|ekle|sil|duzelt|degistir|analiz|ozet|cevir|bul|ara|anlat|acikla|hesapla|gonder|kaydet|indir)\w*(\s|$)/.test(n);
+    const navLike = wantsNav || (words.length <= 3 && !workVerb);
     // 0) Sohbet gezinmesi: "yeni sohbet aç" / "<ad> sohbetine geç" → üst katman
     //    sohbet listesinde adı eşleştirir. ("... sohbeti hakkında bilgi ver" gibi
-    //    fiilsiz cümleler sohbete gider.)
+    //    iş cümleleri sohbete gider.)
     if (/yeni sohbet/.test(n)) {
       onUiCommand?.("conv:new");
       return;
     }
-    if (wantsNav && /sohbet/.test(n)) {
+    if (navLike && /sohbet/.test(n)) {
       const name = n
         .split("sohbet")[0]
         .replace(/(^|\s)(bana|su|bu|o|lutfen|nova)(\s|$)/g, " ")
@@ -863,9 +869,9 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         return;
       }
     }
-    // 1) Sekme gezinmesi (gezinme fiili + sekme adı) — "fatura oku" gibi iş
-    //    istekleri fiil içermediği için sohbete gider.
-    if (wantsNav) {
+    // 1) Sekme gezinmesi (gezinme fiili + sekme adı, ya da kısa ifade) —
+    //    "fatura oku" gibi iş istekleri (iş fiili) sohbete gider.
+    if (navLike) {
       for (const [re, key, label] of VOICE_TABS) {
         if (re.test(n)) {
           onUiCommand?.(`tab:${key}`);
@@ -874,8 +880,9 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         }
       }
     }
-    // 2) Arayüzü aç (sesli karşılama ekranından çık)
-    if (/arayuz\w{0,3}(ac|goster)|ekran\w{0,3}(ac|goster)/.test(ns)) {
+    // 2) Arayüzü aç → ana sayfa (karşılama ekranından çık). STT "ara yüz",
+    //    "arayüzü aş" gibi yazabildiği için "aray" geçmesi yeterli.
+    if (/aray/.test(ns) || /ekran\w{0,3}(ac|goster)/.test(ns)) {
       onUiCommand?.("open_ui");
       speak("Arayüzü açıyorum.");
       return;
@@ -1016,14 +1023,21 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         }
         const code = e?.error || "bilinmeyen";
         if (!isCurrent || code === "aborted" || code === "no-speech") return;
+        if (code === "network") {
+          // Yerel tanıma bu oturumda servise ulaşamıyor → sessizce tarayıcı-içi
+          // Whisper'a düş (wake de yerel tanıma istediğinden kapanır).
+          nativeFailedRef.current = true;
+          wakeOnRef.current = false;
+          onWakeState?.(false);
+          startWhisper();
+          return;
+        }
         const msg =
           code === "not-allowed" || code === "service-not-allowed"
             ? "Mikrofon izni reddedildi. Adres çubuğundaki 🔒 / kamera simgesinden mikrofona izin ver."
             : code === "audio-capture"
               ? "Mikrofon bulunamadı. Cihaz bağlı mı?"
-              : code === "network"
-                ? "Ağ hatası — sesli tanıma çevrimiçi çalışır, interneti kontrol et."
-                : `Sesli giriş hatası: ${code}`;
+              : `Sesli giriş hatası: ${code}`;
         alert(msg);
       };
       recognitionRef.current = rec;
@@ -1040,15 +1054,16 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     else startListening();
   }
 
-  // --- Tarayıcı-içi Whisper (native STT olmayan/çalışmayan tarayıcılar) ---
-  // Chrome native STT'yi iyi yapar; Edge/Safari/Firefox'ta Whisper'a düş.
+  // --- Tarayıcı-içi Whisper (yalnız native STT olmayan/çalışmayan tarayıcılar) ---
+  // Yerel (tarayıcı) tanıma varsa ONU kullan: Chromium tabanlı tarayıcılarda
+  // (Chrome, Edge, Opera) bulut destekli ve Türkçe kısa komutlarda tarayıcı-içi
+  // Whisper'dan çok daha isabetli. Whisper'a yalnız native yoksa (Safari/Firefox)
+  // ya da native bu oturumda ağ/servis hatası verdiyse düşülür.
+  const nativeFailedRef = useRef(false);
   function preferWhisper(): boolean {
     if (typeof navigator === "undefined") return false;
-    const ua = navigator.userAgent;
-    const isEdge = /Edg\//.test(ua);
-    const isChrome = /Chrome\//.test(ua) && !isEdge && !/OPR\//.test(ua);
-    // Chrome (gerçek) + native destek varsa native; aksi halde Whisper
-    return !(isChrome && !!getRecognitionCtor());
+    if (nativeFailedRef.current) return true;
+    return !getRecognitionCtor();
   }
 
   async function startWhisper() {
