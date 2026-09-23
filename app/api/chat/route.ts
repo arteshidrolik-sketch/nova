@@ -234,6 +234,15 @@ export async function POST(req: Request) {
   const ollamaUrl = process.env.OLLAMA_BASE_URL;
   const useOllama = !!ollamaUrl && !(await claudeReachable());
 
+  // Yönlendiriciye ekli dosya ipucu: son kullanıcı mesajında dosya varsa adlarını
+  // içeriğe iliştir (yalnız yönlendirme için) → veri/Excel işleri research'e gitmesin.
+  const routingMsgs = messages.map((m, i) => {
+    const names = (m.attachments ?? []).map((a) => a.name).filter(Boolean);
+    if (i === messages.length - 1 && m.role === "user" && names.length)
+      return { ...m, content: `${m.content}\n[Ekli dosyalar: ${names.join(", ")}]` };
+    return m;
+  });
+
   // 1) Ajan seçimi: özel ajan → o; kilitli yerleşik → o; beyin → developer;
   //    çevrimdışı → general (orkestratör Claude ister); değilse orkestratör
   const agent = forcedAgent
@@ -244,7 +253,7 @@ export async function POST(req: Request) {
         ? "developer"
         : useOllama
           ? "general"
-          : await selectAgent(client, ROUTER_MODEL, messages, prevAgent);
+          : await selectAgent(client, ROUTER_MODEL, routingMsgs, prevAgent);
   let answerModel = customAgent
     ? customAgent.model
     : project?.self
@@ -350,6 +359,7 @@ export async function POST(req: Request) {
     "- Bir değişiklik yapacaksan, o mesajda AÇIKLAMA YAZMADAN doğrudan aracı ÇAĞIR.\n" +
     "- ASLA 'şimdi aracı çağırıyorum', 'GO'ya gönderiyorum', 'kuyruğa atıyorum', 'dosyayı yazıyorum' gibi cümle yazıp turu BİTİRME. Aracı fiilen çağırmazsan HİÇBİR ŞEY OLMAZ ve kullanıcıya yalan söylemiş olursun — bu KESİNLİKLE YASAK.\n" +
     "- Niyetini anlatmak = işi yapmak DEĞİLDİR. Sadece aracı çağırmak işi kaydeder.\n" +
+    "- 📊 VERİ ANALİZİ / EXCEL RAPORU: Kullanıcı Excel/CSV/PDF yükleyip hesap, analiz, kâr-zarar, özet, karşılaştırma ya da rapor istiyorsa generate_document(kind:'xlsx' ya da istenen tür) aracını ÇAĞIR — yüklenen dosyalar otomatik olarak gerçek bir kod ortamına (pandas) aktarılır ve sayılar GERÇEK veriden hesaplanır. Bunun için web_search KULLANMA; sayıları sohbette KENDİN hesaplayıp yazma (uydurma riski); 'INPUT_DIR', 'sandbox', 'kum havuzu' gibi ortam sözcükleri kullanma — böyle bir ortam yalnız aracın içinde vardır.\n" +
     "- 🎬 VAR OLAN VİDEO DÜZENLEME: Kullanıcı videoyu BEĞENİP üstünde oynamak istiyorsa (yazı/altyazı ekle, şu saniyeleri kes/kırp, 'tonlarıyla oyna', 'renk/ton değiştir', 'daha sıcak/soğuk/canlı/aydınlık yap') DAİMA edit_video çağır — generate_video DEĞİL (o sıfırdan üretir, beğenilen videoyu kaybeder). edit_video son yüklenen/üretilen videoyu otomatik alır. ⚠️ Kullanıcı 'sadece şu nesnenin (ör. masanın) rengini değiştir' gibi TEK NESNE değişikliği isterse: bunu edit_video yapamaz (yerel düzenleme), generate_video ise TÜM videoyu değiştirir. Bu durumda kullanıcıya DÜRÜST ol — 'videonun bir bölgesini tek başına değiştirmek şu an mümkün değil; ya tüm videonun genel tonunu değiştirebilirim (edit_video) ya da tarifi güncelleyip yeni video üretebilirim (generate_video)' de ve NE İSTEDİĞİNİ SOR; kendiliğinden tüm videoyu yeniden üretme.\n" +
     "- 🖼️ VAR OLAN GÖRSEL DÜZENLEME / LOGO YERLEŞTİRME: Kullanıcı 'afişe logomu koy', 'şu logoyu buraya yerleştir', 'görsele yazı ekle', 'daha aydınlık yap / parlaklığı artır' derse edit_image aracını çağır (generate_image DEĞİL — o AI ile sıfırdan çizer, logoyu BİREBİR korumaz). İki görsel yüklenmişse büyük olan afiş, küçük olan logo kabul edilir. 'Daha aydınlık' için brightness parametresini (+0.12 gibi) kullan. edit_image, yeni görsel yüklenmemişse bu sohbette ÖNCEDEN ÜRETİLEN/DÜZENLENEN görseli otomatik alır — kullanıcıdan dosyayı YENİDEN YÜKLEMESİNİ İSTEME ve ASLA 'dosyalara/sandbox'a/önceki oturuma erişemiyorum' gibi BAHANE ÜRETME; doğrudan edit_image'i çağır. Renk/ton değişimi için tone (sıcak/soğuk/sepya/gri/canlı/soluk/negatif) ve hue parametrelerini kullan.\n" +
     "- 🎨 SIFIRDAN YENİDEN ÇİZME (AI, restyle_image): SADECE kullanıcı açıkça 'baştan/sıfırdan yeniden tasarla', 'tamamen farklı bir konsept çiz', 'AI ile yeniden yorumla' derse. ⚠️ restyle_image HER ŞEYİ değiştirir (yazı, logo, kompozisyon birebir KORUNMAZ). Kullanıcı görselin KORUNMASINI isteyip üstünde oynuyorsa (renk/ton/parlaklık/logo/yazı) ASLA restyle_image kullanma → edit_image kullan.\n" +
@@ -517,6 +527,8 @@ export async function POST(req: Request) {
         );
       }
       let webSearchNoticed = false; // web arama limiti uyarısı bir kez gösterilsin
+      // pause_turn (web arama) devam sayacı — sonsuz arama sarmalına tavan
+      let pauseTurns = 0;
       for (let i = 0; i < maxIter; i++) {
           // Kill switch (global) veya kullanıcı bu işi durdurduysa: kes
           if (isStopped()) {
@@ -678,6 +690,16 @@ export async function POST(req: Request) {
               const trimmed = trimTrailingThinking(final.content);
               if (trimmed.length === 0) break;
               convo.push({ role: "assistant", content: trimmed });
+              if (final.stop_reason === "pause_turn" && ++pauseTurns >= 3) {
+                // 3 tur boyunca yalnız arama yaptı, hiç iş/cevap üretmedi → kes,
+                // elindekiyle bitirmesini iste (araç sarmalı: 20 dk zaman aşımı sebebi)
+                convo.push({
+                  role: "user",
+                  content:
+                    "Aramayı BIRAK. Elindeki bilgiyle şimdi cevabı ver; bir iş yapılacaksa (belge/Excel/görsel) ilgili aracı hemen çağır.",
+                });
+                pauseTurns = -99; // bir kez
+              }
               continue;
             }
             break;
@@ -920,6 +942,44 @@ export async function POST(req: Request) {
                     }
                   }
                 }
+              }
+
+              // Belge/analiz üretimi: kullanıcının yüklediği VERİ dosyalarını araca
+              // enjekte et → Files API + container_upload ile gerçek kod ortamında
+              // (pandas) hesaplanır. En son dosya içeren kullanıcı turu esas alınır.
+              if (block.name === "generate_document") {
+                const picked: { name: string; data: string; mediaType: string }[] = [];
+                const seen = new Set<string>();
+                for (let mi = messages.length - 1; mi >= 0 && picked.length < 6; mi--) {
+                  const m = messages[mi];
+                  if (m.role !== "user") continue;
+                  const files = (m.attachments ?? []).filter(
+                    (a) =>
+                      (a.data || a.text) &&
+                      /\.(xlsx|xls|csv|pdf|docx|pptx|json|txt|md)$/i.test(a.name || ""),
+                  );
+                  for (const a of files) {
+                    const nm = a.name || "veri";
+                    if (seen.has(nm)) continue;
+                    seen.add(nm);
+                    picked.push({
+                      name: nm,
+                      // Ham binary varsa o; yoksa (csv/txt) metni base64'le
+                      data: a.data || Buffer.from(String(a.text ?? ""), "utf8").toString("base64"),
+                      mediaType:
+                        a.mediaType ||
+                        (/\.xlsx$/i.test(nm)
+                          ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                          : /\.csv$/i.test(nm)
+                            ? "text/csv"
+                            : /\.pdf$/i.test(nm)
+                              ? "application/pdf"
+                              : "application/octet-stream"),
+                    });
+                  }
+                  if (files.length) break; // en son dosyalı tur yeter
+                }
+                if (picked.length) payload.source_files = picked;
               }
 
               const title = actionTitle(block.name, payload);

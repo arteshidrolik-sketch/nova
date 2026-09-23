@@ -4,7 +4,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import { exec } from "child_process";
 import { promisify } from "util";
-import Anthropic from "@anthropic-ai/sdk";
+import Anthropic, { toFile } from "@anthropic-ai/sdk";
 import { resolveIn } from "./projectFiles";
 import { scanContent, formatFindings } from "@/lib/security/scan";
 
@@ -247,7 +247,7 @@ export const ACTIONS: Record<string, ActionDef> = {
     dangerous: true,
     project: false,
     description:
-      "Word (docx), Excel (xlsx), PowerPoint (pptx) veya PDF belgesi üretir ve workspace'e kaydeder. Kullanıcı 'bunu word/excel/sunum/pdf yap' gibi bir belge istediğinde BU ARACI DOĞRUDAN ÇAĞIR — kullanıcıya ayrıca onay sorma. Çağrılınca hemen çalışır ve belge workspace'e kaydedilir.",
+      "Word (docx), Excel (xlsx), PowerPoint (pptx) veya PDF belgesi üretir ve workspace'e kaydeder. Kullanıcı 'bunu word/excel/sunum/pdf yap' gibi bir belge istediğinde BU ARACI DOĞRUDAN ÇAĞIR — onay sorma. VERİ ANALİZİ: Kullanıcı Excel/CSV/PDF YÜKLEYİP hesap/analiz/rapor istiyorsa (kâr-zarar, aylık özet, karşılaştırma, grafik) da BU ARAÇ: yüklenen dosyalar otomatik olarak gerçek bir kod ortamına aktarılır ve pandas ile GERÇEK verilerden hesaplanır — instruction'da hangi dosyadan hangi sütunların nasıl hesaplanacağını yaz; sayıları KENDİN uydurma, web'de ARAMA. Çağrılınca hemen çalışır.",
     input_schema: {
       type: "object",
       properties: {
@@ -283,6 +283,37 @@ export const ACTIONS: Record<string, ActionDef> = {
       const instruction = String(p.instruction ?? "");
       const base = String(p.filename || "nova").replace(/\.[a-z0-9]+$/i, "");
       const client = new Anthropic();
+      const betas = ["files-api-2025-04-14"];
+
+      // Kullanıcının yüklediği veri dosyaları (route enjekte eder) → Files API'ye
+      // yükle ve container_upload ile kod ortamına aktar: hesaplar GERÇEK veriden.
+      const srcFiles = Array.isArray(p.source_files)
+        ? (p.source_files as { name?: unknown; data?: unknown; mediaType?: unknown }[])
+        : [];
+      const uploaded: { id: string; name: string }[] = [];
+      for (const f of srcFiles.slice(0, 6)) {
+        const name = path.basename(String(f.name ?? "veri.bin"));
+        const data = typeof f.data === "string" ? f.data : "";
+        if (!data) continue;
+        try {
+          const up = (await (
+            client.beta.files.upload as (a: unknown) => Promise<{ id: string }>
+          )({
+            file: await toFile(Buffer.from(data, "base64"), name, {
+              type: typeof f.mediaType === "string" && f.mediaType ? f.mediaType : "application/octet-stream",
+            }),
+            betas,
+          })) as { id: string };
+          if (up?.id) uploaded.push({ id: up.id, name });
+        } catch {
+          /* yüklenemeyen dosya atlanır; talimatta belirtilir */
+        }
+      }
+      const fileNote = uploaded.length
+        ? `\n\nKullanıcının yüklediği dosyalar çalışma dizininde HAZIR: ${uploaded
+            .map((u) => u.name)
+            .join(", ")}. Önce bunları oku (pandas/openpyxl), sütunları incele; hesapları YALNIZCA bu gerçek verilerden yap — asla örnek/varsayılan sayı uydurma. Türkçe sayı biçimlerini (1.234,56) doğru çevir.`
+        : "";
 
       // Agent Skills + code execution ile belgeyi üret
       const params = {
@@ -290,11 +321,17 @@ export const ACTIONS: Record<string, ActionDef> = {
         max_tokens: 16000,
         container: { skills: [{ type: "anthropic", skill_id: kind, version: "latest" }] },
         tools: [{ type: "code_execution_20250825", name: "code_execution" }],
-        betas: ["code-execution-2025-08-25", "skills-2025-10-02"],
+        betas: ["code-execution-2025-08-25", "skills-2025-10-02", ...betas],
         messages: [
           {
             role: "user",
-            content: `${instruction}\n\nSonucu indirilebilir bir ${kind.toUpperCase()} dosyası olarak üret.`,
+            content: [
+              ...uploaded.map((u) => ({ type: "container_upload", file_id: u.id })),
+              {
+                type: "text",
+                text: `${instruction}${fileNote}\n\nSonucu indirilebilir bir ${kind.toUpperCase()} dosyası olarak üret.`,
+              },
+            ],
           },
         ],
       };
@@ -309,8 +346,9 @@ export const ACTIONS: Record<string, ActionDef> = {
 
       await fs.mkdir(WORKSPACE, { recursive: true });
       const saved: string[] = [];
-      const betas = ["files-api-2025-04-14"];
+      const inputIds = new Set(uploaded.map((u) => u.id));
       for (const id of ids) {
+        if (inputIds.has(id)) continue; // girdi dosyalarını çıktı sanma
         let fname = `${base}.${kind}`;
         try {
           const meta = (await (

@@ -14,7 +14,11 @@ ${AGENT_KEYS.map((k) => `- ${k}: ${ROUTER_DESCRIPTIONS[k]}`).join("\n")}
 
 Kurallar:
 - Mutlaka "select_agent" aracını çağır, başka bir şey yazma.
-- Net bir uzmanlık yoksa "general" seç.`;
+- Net bir uzmanlık yoksa "general" seç.
+- Kullanıcı DOSYA yüklemişse (mesajda "[Ekli dosyalar: …]" işareti) ya da yüklü
+  veriden hesap/analiz/rapor/Excel/kâr-zarar/özet istiyorsa ASLA "research" seçme
+  → "general" seç. "research" yalnız web'den GÜNCEL bilgi gerektiğinde (haber,
+  fiyat, sürüm, karşılaştırma) seçilir; dosya işlemek araştırma değildir.`;
 
 export async function selectAgent(
   client: Anthropic,
