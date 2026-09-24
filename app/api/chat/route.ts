@@ -393,7 +393,8 @@ export async function POST(req: Request) {
     "- Aracı çağırınca iş HEMEN çalışır (GO onayı KALDIRILDI; artık elle onay yok). Yaptığın iş anında uygulanır ve Görevler'e 'tamamlandı' olarak düşer. O yüzden çekinmeden çağır ama ne yaptığına DİKKAT ET — geri alınması zor işlerde (komut çalıştırma, git push, dosya silme) emin ol.\n" +
     "- Akış: gerekiyorsa önce oku (list_files/read_file/search_files) → SONRA aynı konuşmada değişiklik aracını ÇAĞIR. Okuyup durma, mutlaka aksiyonu çağır.\n" +
     "- Birden çok dosya değişecekse her biri için ayrı ayrı aracı çağır (birini atlama)." +
-    "\n\n## İnternet\nİNTERNETE ERİŞİMİN VAR. Güncel bilgi, haber, fiyat, sürüm, dokümantasyon veya emin olmadığın her şey için web_search aracını kullan. ASLA 'internete bağlı değilim', 'erişemiyorum' veya 'gerçek zamanlı bilgiye ulaşamam' DEME — bunun yerine hemen web_search yap, sonra kaynaklı cevap ver." +
+    "\n\n## İnternet\nİNTERNETE ERİŞİMİN VAR. Güncel bilgi, haber, fiyat, sürüm, dokümantasyon veya emin olmadığın her şey için web_search aracını kullan. ASLA 'internete bağlı değilim', 'erişemiyorum' veya 'gerçek zamanlı bilgiye ulaşamam' DEME — bunun yerine hemen web_search yap, sonra kaynaklı cevap ver. " +
+    "Arama aracı 'max_uses_exceeded' ya da 'too_many_requests' hatası verirse: ÖZÜR DİLEME, 'arama hakkım sınırlandı, bir sonraki mesajda tekrar sor' DEME, yeni arama deneme; o ana kadarki BAŞARILI sonuçlarla cevabı hemen yaz (sonuç yoksa bildiğin kadarıyla cevapla ve bunu tek cümleyle belirt)." +
     "\n\n## Belge / fatura / tablo okuma — EKSİKSİZ\nBir PDF/görsel/belge (özellikle FATURA) okurken tablodaki TÜM sütunları ve TÜM satırları eksiksiz çıkar. Kalem tablolarında şu sütunları ASLA atlama: sıra no, ürün/hizmet adı, açıklama, **miktar/adet**, birim, birim fiyat, toplam. Faturalarda ayrıca: fatura no, tarih, satıcı+VKN, alıcı+VKN, mal/hizmet toplamı, indirim, KDV oranı ve tutarı, ödenecek tutar. Kalemleri MARKDOWN TABLO olarak ver (her kalem için miktar dahil). Bir değeri belgede göremiyorsan 'belirtilmemiş' de — ASLA uydurma, ama okunabilen hiçbir alanı da (miktar gibi) atlama. " +
     "Kullanıcı faturaları düzenli olarak okutup Excel'e işlemek istiyorsa Nova'nın **Fatura sekmesini** öner: " +
     "orada fotoğraf/PDF atınca otomatik okunur, kontrol edilir, deftere kaydedilir ve tek tıkla Excel alınır. " +
@@ -411,7 +412,9 @@ export async function POST(req: Request) {
 
   // Araçlar. Web arama sayısını sınırla → hesap hız limitine daha zor takılır
   // (env ile ayarlanabilir; varsayılan 3, eskiden 5'ti).
-  const webSearchMaxUses = Number(process.env.NOVA_WEB_SEARCH_MAX_USES) || 3;
+  // İstek başına tavan = iş başına tavan (8): model tek istekte 3'ü aşınca
+  // "max_uses_exceeded" alıp özür dileyip pes ediyordu; asıl sınır döngüde.
+  const webSearchMaxUses = Number(process.env.NOVA_WEB_SEARCH_MAX_USES) || 8;
   const tools = [
     GITHUB_TOOL,
     { type: "web_search_20260209", name: "web_search", max_uses: webSearchMaxUses },
@@ -559,9 +562,11 @@ export async function POST(req: Request) {
       let totalSearches = 0;
       let pauseTurns = 0; // pause_turn (arama yarıda) devam sayacı
       let wrapUp = false; // araçlar kapatıldı, bu tur son cevap turu
+      let rateLimitWaits = 0; // hesap hız limitinde bekleme hakkı (bir kez)
       const WRAP_UP_NOTE =
         "Web araması KAPATILDI (arama tavanı doldu). Elindeki bilgiyle ŞİMDİ nihai cevabı yaz: " +
-        "bulduklarını kaynaklarıyla özetle; eksik kalan noktaları açıkça belirt. Yeni arama yapma.";
+        "başarılı arama sonuçlarını kaynaklarıyla özetle; hiç sonuç yoksa bildiğin kadarıyla cevapla ve " +
+        "bunu tek cümleyle belirt. ÖZÜR DİLEME, 'bir sonraki mesajda tekrar sor' DEME, erteleme. Yeni arama yapma.";
       const searchExhausted = () =>
         totalSearches >= maxSearches ||
         (totalSearches > 0 && Date.now() - runStartedAt > searchDeadlineMs);
@@ -662,33 +667,31 @@ export async function POST(req: Request) {
 
           const final = await stream.finalMessage();
 
-          // Web arama aracı hata verdi mi? (hesap hız limiti / istek başına sınır)
-          // → uydurma yerine kullanıcıya NET, tutarlı bir not göster (bir kez).
-          if (!webSearchNoticed) {
-            for (const b of final.content as unknown as Array<{
-              type?: string;
-              content?: { type?: string; error_code?: string };
-            }>) {
-              if (
-                b.type === "web_search_tool_result" &&
-                b.content?.type === "web_search_tool_result_error"
-              ) {
-                webSearchNoticed = true;
-                const code = b.content.error_code || "";
-                if (code === "too_many_requests" || code === "rate_limited") {
-                  emit(
-                    "\n\n🔎 **Web arama limiti (hesap hız sınırı) şu an dolu.** Birkaç dakika sonra tekrar dene; şimdilik elimdeki bilgiyle yanıtlıyorum.\n",
-                  );
-                } else if (code === "max_uses_exceeded") {
-                  emit(
-                    "\n\n🔎 Bu araştırmadaki arama sınırına ulaşıldı; bulduğum kaynaklarla özetliyorum.\n",
-                  );
-                } else if (code) {
-                  emit(
-                    `\n\n🔎 Web araması şu an kullanılamıyor (${code}); elimdeki bilgiyle yanıtlıyorum.\n`,
-                  );
-                }
-                break;
+          // Web arama aracı hataları (istek başına sınır / hesap hız limiti):
+          // hatalı denemeler tavandan düşülür; kullanıcıya bir kez not gösterilir.
+          const searchErrs: string[] = [];
+          for (const b of final.content as unknown as Array<{
+            type?: string;
+            content?: { type?: string; error_code?: string };
+          }>) {
+            if (
+              b.type === "web_search_tool_result" &&
+              b.content?.type === "web_search_tool_result_error"
+            )
+              searchErrs.push(b.content.error_code || "unknown");
+          }
+          if (searchErrs.length) {
+            totalSearches = Math.max(0, totalSearches - searchErrs.length);
+            console.warn("[chat] web_search hataları:", searchErrs.join(","), "run", runId);
+            if (!webSearchNoticed) {
+              webSearchNoticed = true;
+              const code = searchErrs[0];
+              if (code === "too_many_requests" || code === "rate_limited") {
+                emit("\n\n🔎 Web arama hız limiti doldu; kısa bekleyip elimdekiyle sürdürüyorum.\n");
+              } else if (code === "max_uses_exceeded") {
+                emit("\n\n🔎 Bu araştırmadaki arama sınırına ulaşıldı; bulduğum kaynaklarla özetliyorum.\n");
+              } else {
+                emit(`\n\n🔎 Web araması şu an kullanılamıyor (${code}); elimdeki bilgiyle yanıtlıyorum.\n`);
               }
             }
           }
@@ -739,17 +742,44 @@ export async function POST(req: Request) {
 
           if (!hasToolUse) {
             if (final.stop_reason === "pause_turn") pauseTurns++;
-            // Arama yarıda kaldı (pause_turn), token bitti (max_tokens) ya da
-            // yalnız arama yapıp hiç metin üretmeden durdu → devam ettir.
+            // Arama hatası alıp KISA bir özür/erteleme yazarak pes etti mi?
+            // ("arama hakkım sınırlandı, bir sonraki mesajda tekrar sor" — canlıda
+            // görüldü) → bunu cevap sayma, elindekiyle nihai cevabı zorla.
+            const textLen = final.content.reduce(
+              (n, b) => n + (b.type === "text" ? b.text.length : 0),
+              0,
+            );
+            const gaveUp = searchErrs.length > 0 && hasText && textLen < 700;
+            // Arama yarıda kaldı (pause_turn), token bitti (max_tokens), yalnız
+            // arama yapıp hiç metin üretmedi ya da pes etti → devam ettir.
             const unfinished =
               final.stop_reason === "pause_turn" ||
               final.stop_reason === "max_tokens" ||
-              (!hasText && totalSearches > 0);
+              (!hasText && totalSearches > 0) ||
+              gaveUp;
             if (!unfinished) break;
             const trimmed = trimTrailingThinking(final.content);
             if (trimmed.length === 0) break;
             convo.push({ role: "assistant", content: trimmed });
-            if (searchExhausted() || pauseTurns >= 3) {
+            const rateLimited =
+              searchErrs.includes("too_many_requests") || searchErrs.includes("rate_limited");
+            if (gaveUp && rateLimited && rateLimitWaits < 1 && !searchExhausted()) {
+              // Hesap hız limiti: bir kez 25 sn bekle, sonra kısa bir devam hakkı ver
+              rateLimitWaits++;
+              emit("\n\n⏳ Arama hız limiti — 25 sn bekleyip sürdürüyorum…\n");
+              await new Promise((r) => setTimeout(r, 25_000));
+              if (isCanceled(runId) || isStopped()) {
+                finishRun(runId, "done");
+                return;
+              }
+              convo.push({
+                role: "user",
+                content:
+                  "Hız limiti geçti. En fazla 3 arama daha yap, sonra cevabı yaz. Özür dileme, erteleme yazma.",
+              });
+              continue;
+            }
+            if (searchExhausted() || pauseTurns >= 3 || gaveUp) {
               // Arama tavanı/süre doldu ya da 3 tur yalnız arama yaptı → araçları
               // kapatıp son cevap turuna geç (sarmal: 20 dk zaman aşımının sebebi).
               wrapUp = true;
