@@ -338,6 +338,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   // Tek yeniden-kullanılabilir <audio> — tarayıcı otomatik-oynatma kilidini aşmak
   // için (her cümlede yeni Audio yaratınca ilk hariç hepsi engellenebiliyor).
   const audioElRef = useRef<HTMLAudioElement | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null); // dudak senkronu analizörü
   // Tarayıcı-içi Whisper (Edge/Safari/Firefox — native STT çalışmaz)
   const [whisperStatus, setWhisperStatus] = useState<
     "idle" | "loading" | "recording" | "transcribing"
@@ -697,7 +698,29 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
           if (!audio) {
             audio = new Audio();
             audioElRef.current = audio;
+            // Dudak senkronu: ses öğesini Web Audio analizörüne bağla ve analizörü
+            // global olayla yayınla (panodaki yüz, ağzı gerçek ses şiddetiyle oynatır).
+            try {
+              const AC =
+                window.AudioContext ||
+                (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+              if (AC) {
+                const actx = new AC();
+                const src = actx.createMediaElementSource(audio);
+                const an = actx.createAnalyser();
+                an.fftSize = 1024;
+                an.smoothingTimeConstant = 0.4;
+                src.connect(an);
+                an.connect(actx.destination);
+                audioCtxRef.current = actx;
+                (window as unknown as { __novaAnalyser?: AnalyserNode }).__novaAnalyser = an;
+                window.dispatchEvent(new CustomEvent("nova:audio", { detail: an }));
+              }
+            } catch {
+              /* analizör yoksa yüz kelime-sınırı sinyaliyle idare eder */
+            }
           }
+          audioCtxRef.current?.resume().catch(() => {});
           const el = audio;
           currentAudioRef.current = el;
           let settled = false;
@@ -743,6 +766,13 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       }
       u.rate = 1;
       u.pitch = 1;
+      // Tarayıcı sesinde dalga verisi yok → her kelime sınırında yüzün ağzına
+      // "hece" darbesi gönder (panodaki yüz kelimeleri takip etsin).
+      u.onboundary = (ev) => {
+        window.dispatchEvent(
+          new CustomEvent("nova:mouth", { detail: { len: ev.charLength || 4 } }),
+        );
+      };
       u.onend = () => resolve();
       u.onerror = () => resolve();
       synth.speak(u);
