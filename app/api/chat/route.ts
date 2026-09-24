@@ -243,10 +243,31 @@ export async function POST(req: Request) {
     return m;
   });
 
+  // "Araştırma" sohbetine kilitli olsa bile DOSYA İŞİ araştırma değildir: kullanıcı
+  // dosya yükleyip (ya da az önce yüklediği dosyalar için) Excel/tablo/belge
+  // istiyorsa research ajanı sonsuz web araması yapıp 20 dk zaman aşımına düşüyordu
+  // (canlıda 3 kez görüldü). Böyle isteklerde genel ajana devret.
+  const lastUserIdx = (() => {
+    for (let i = messages.length - 1; i >= 0; i--)
+      if (messages[i].role === "user") return i;
+    return -1;
+  })();
+  const lastUserMsg = lastUserIdx >= 0 ? messages[lastUserIdx] : undefined;
+  const lastHasFiles = (lastUserMsg?.attachments?.length ?? 0) > 0;
+  const recentHadFiles = messages
+    .slice(Math.max(0, lastUserIdx - 8), lastUserIdx)
+    .some((m) => m.role === "user" && (m.attachments?.length ?? 0) > 0);
+  const FILE_JOB = /excel|xlsx|csv|tablo|dosya|belge|rapor|pdf|docx|word|pptx|sunum/i;
+  const fileJob =
+    lastHasFiles ||
+    (recentHadFiles && FILE_JOB.test(String(lastUserMsg?.content ?? "")));
+  const effectiveForced =
+    forcedAgent === "research" && fileJob ? "general" : forcedAgent;
+
   // 1) Ajan seçimi: özel ajan → o; kilitli yerleşik → o; beyin → developer;
   //    çevrimdışı → general (orkestratör Claude ister); değilse orkestratör
-  const agent = forcedAgent
-    ? forcedAgent
+  const agent = effectiveForced
+    ? effectiveForced
     : customAgent
       ? "general" // yerleşik-anahtar gerektiren yerler için güvenli varsayılan
       : project?.self
@@ -527,8 +548,23 @@ export async function POST(req: Request) {
         );
       }
       let webSearchNoticed = false; // web arama limiti uyarısı bir kez gösterilsin
-      // pause_turn (web arama) devam sayacı — sonsuz arama sarmalına tavan
-      let pauseTurns = 0;
+      // Web arama sarmalı tavanı (canlıda 32 arama / 20 dk zaman aşımı görüldü):
+      // iş başına toplam arama sayısı ve arama yapılan işlerde duvar-saati bütçesi.
+      // Tavan aşılınca SON bir tur açılır: araçlar kapalı (tool_choice none) →
+      // model elindekiyle cevabı yazmak zorunda kalır; sonra döngü biter.
+      const maxSearches = Number(process.env.NOVA_MAX_WEB_SEARCHES_PER_RUN) || 8;
+      const searchDeadlineMs =
+        (Number(process.env.NOVA_SEARCH_DEADLINE_MIN) || 6) * 60_000;
+      const runStartedAt = Date.now();
+      let totalSearches = 0;
+      let pauseTurns = 0; // pause_turn (arama yarıda) devam sayacı
+      let wrapUp = false; // araçlar kapatıldı, bu tur son cevap turu
+      const WRAP_UP_NOTE =
+        "Web araması KAPATILDI (arama tavanı doldu). Elindeki bilgiyle ŞİMDİ nihai cevabı yaz: " +
+        "bulduklarını kaynaklarıyla özetle; eksik kalan noktaları açıkça belirt. Yeni arama yapma.";
+      const searchExhausted = () =>
+        totalSearches >= maxSearches ||
+        (totalSearches > 0 && Date.now() - runStartedAt > searchDeadlineMs);
       for (let i = 0; i < maxIter; i++) {
           // Kill switch (global) veya kullanıcı bu işi durdurduysa: kes
           if (isStopped()) {
@@ -555,6 +591,11 @@ export async function POST(req: Request) {
             const p = streamParams as unknown as Record<string, unknown>;
             p.thinking = { type: "adaptive" };
             p.output_config = { effort: "high" };
+          }
+          if (wrapUp) {
+            // Son tur: hiçbir araç (web_search dahil) çağrılamaz → metin cevap.
+            // Araç listesi aynı kalır (geçmişteki arama blokları için gerekli).
+            streamParams.tool_choice = { type: "none" };
           }
           const stream = client.messages.stream(streamParams);
 
@@ -592,7 +633,8 @@ export async function POST(req: Request) {
               (event.content_block as { type?: string })?.type ===
                 "server_tool_use"
             ) {
-              emit("\n\n🌐 web araması…\n");
+              totalSearches++;
+              emit(`\n\n🌐 web araması… (${totalSearches}/${maxSearches})\n`);
             }
           }
           textFilter.done(); // tampondaki son güvenli metni bas
@@ -681,28 +723,48 @@ export async function POST(req: Request) {
 
           // Araç çağrısı içeriyor mu? İçeriyorsa HER tool_use için tool_result üretmeliyiz.
           const hasToolUse = final.content.some((b) => b.type === "tool_use");
-          if (!hasToolUse) {
-            // Araç yok: web-arama/token sınırında yarıda kaldıysa devam ettir, değilse bitir
-            if (
-              final.stop_reason === "pause_turn" ||
-              final.stop_reason === "max_tokens"
-            ) {
-              const trimmed = trimTrailingThinking(final.content);
-              if (trimmed.length === 0) break;
-              convo.push({ role: "assistant", content: trimmed });
-              if (final.stop_reason === "pause_turn" && ++pauseTurns >= 3) {
-                // 3 tur boyunca yalnız arama yaptı, hiç iş/cevap üretmedi → kes,
-                // elindekiyle bitirmesini iste (araç sarmalı: 20 dk zaman aşımı sebebi)
-                convo.push({
-                  role: "user",
-                  content:
-                    "Aramayı BIRAK. Elindeki bilgiyle şimdi cevabı ver; bir iş yapılacaksa (belge/Excel/görsel) ilgili aracı hemen çağır.",
-                });
-                pauseTurns = -99; // bir kez
-              }
-              continue;
+          const hasText = final.content.some(
+            (b) => b.type === "text" && b.text.trim().length > 0,
+          );
+
+          // Son cevap turuydu (araçlar kapalı): ne olursa olsun burada bitir.
+          if (wrapUp) {
+            if (!hasText) {
+              emit(
+                "\n\n⚠️ Arama tavanına ulaşıldı ve elimdeki bilgiyle bir yanıt üretilemedi. Soruyu daraltıp tekrar dener misin?",
+              );
             }
             break;
+          }
+
+          if (!hasToolUse) {
+            if (final.stop_reason === "pause_turn") pauseTurns++;
+            // Arama yarıda kaldı (pause_turn), token bitti (max_tokens) ya da
+            // yalnız arama yapıp hiç metin üretmeden durdu → devam ettir.
+            const unfinished =
+              final.stop_reason === "pause_turn" ||
+              final.stop_reason === "max_tokens" ||
+              (!hasText && totalSearches > 0);
+            if (!unfinished) break;
+            const trimmed = trimTrailingThinking(final.content);
+            if (trimmed.length === 0) break;
+            convo.push({ role: "assistant", content: trimmed });
+            if (searchExhausted() || pauseTurns >= 3) {
+              // Arama tavanı/süre doldu ya da 3 tur yalnız arama yaptı → araçları
+              // kapatıp son cevap turuna geç (sarmal: 20 dk zaman aşımının sebebi).
+              wrapUp = true;
+              emit("\n\n🔎 Arama tavanı doldu; bulduklarımla özetliyorum.\n");
+              convo.push({ role: "user", content: WRAP_UP_NOTE });
+            } else if (final.stop_reason === "end_turn") {
+              // Turu bitirdi ama metin yazmadı (yalnız arama): son mesaj asistan
+              // kalamaz (prefill 400) → kısa bir dürtme ile cevabı iste.
+              convo.push({
+                role: "user",
+                content:
+                  "Arama sonuçlarını kullanarak cevabı ŞİMDİ yaz (kaynaklarıyla).",
+              });
+            }
+            continue;
           }
 
           convo.push({
@@ -1108,7 +1170,17 @@ export async function POST(req: Request) {
           }
 
           if (toolResults.length === 0) break;
-          convo.push({ role: "user", content: toolResults });
+          if (searchExhausted()) {
+            // Araç sonuçlarıyla birlikte "arama kapandı" notu: bir sonraki tur son turdur.
+            wrapUp = true;
+            emit("\n\n🔎 Arama tavanı doldu; bulduklarımla özetliyorum.\n");
+            convo.push({
+              role: "user",
+              content: [...toolResults, { type: "text", text: WRAP_UP_NOTE }],
+            });
+          } else {
+            convo.push({ role: "user", content: toolResults });
+          }
         }
         finishRun(runId, "done");
       } catch (err) {

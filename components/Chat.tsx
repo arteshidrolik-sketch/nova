@@ -1416,6 +1416,10 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         }
         if (Date.now() - startedAt > 20 * 60 * 1000) {
           acc += "\n\n⚠️ Zaman aşımı (20 dk).";
+          // Sunucudaki işi de iptal et → arka planda token yakmaya devam etmesin
+          fetch(`/api/chat?id=${encodeURIComponent(runId)}`, {
+            method: "DELETE",
+          }).catch(() => {});
           break;
         }
         let p: {
