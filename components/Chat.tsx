@@ -506,6 +506,23 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     });
   }
 
+  // Sohbeti temizle: sohbet kalır (başlık/ajan kilidi korunur), mesajlar silinir.
+  // Çalışan bir yanıt varsa önce durdurulur; sunucudaki kayıt da boşaltılır.
+  function clearChat() {
+    if (messages.length === 0 && !loading) return;
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm("Bu sohbetteki tüm mesajlar silinsin mi? Geri alınamaz.")
+    )
+      return;
+    const cid = conversationId ?? "";
+    if (runningRef.current.has(cid)) stopChat();
+    cancelSpeak();
+    setMessages([]);
+    onAgentActivity?.(null);
+    if (cid) persist([], cid);
+  }
+
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
     const out: Attachment[] = [];
@@ -1601,6 +1618,19 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
             }}
           >
             {speakEnabled ? "🔊 Sesli açık" : "🔇 Sesli kapalı"}
+          </button>
+          <button
+            onClick={clearChat}
+            disabled={messages.length === 0 && !loading}
+            title="Sohbeti temizle (mesajları sil, sohbet kalır)"
+            className="rounded-lg border px-3 py-1.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+            style={{
+              borderColor: "var(--border)",
+              color: "var(--text-muted)",
+              background: "transparent",
+            }}
+          >
+            🧹 Temizle
           </button>
         </div>
       </header>
