@@ -826,8 +826,11 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       // Tarayıcı sesinde dalga verisi yok → her kelime sınırında yüzün ağzına
       // "hece" darbesi gönder (panodaki yüz kelimeleri takip etsin).
       u.onboundary = (ev) => {
+        // charIndex: yüz zaman çizelgesini gerçek konuşma ilerleyişiyle hizalar
         window.dispatchEvent(
-          new CustomEvent("nova:mouth", { detail: { len: ev.charLength || 4 } }),
+          new CustomEvent("nova:mouth", {
+            detail: { len: ev.charLength || 4, charIndex: ev.charIndex ?? -1 },
+          }),
         );
       };
       // Metin tabanlı zaman çizelgesi (Chrome'un çevrimiçi sesleri boundary

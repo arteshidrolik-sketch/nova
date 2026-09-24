@@ -64,30 +64,69 @@ export default function MatrixFace() {
     let td: Uint8Array<ArrayBuffer> | null = null;
     function onAudio(e: Event) { analyser = (e as CustomEvent<AnalyserNode>).detail ?? null; td = null; }
     let pulse = 0;
-    function onMouth() { pulse = 1; }
-    // Metin tabanlı hece zaman çizelgesi: sesli harfler → ağız şekli + zaman
-    type Syl = { t: number; open: number; wide: number };
+    // Metin tabanlı hece zaman çizelgesi: harfler → ağız şekli + zaman.
+    // Sesli harf açar (a geniş, e/i yana geniş, o/u yuvarlak); m/b/p dudakları
+    // kapatır; s/ş/z/c/ç dişleri gösterir; f/v dar. Noktalama ve boşluklar
+    // duraklama olarak zamanı uzatır. Heceler arasında vurgu farkı var.
+    type Syl = { t: number; open: number; wide: number; kind: "v" | "c" | "close" };
     let timeline: Syl[] = [], tlStart = 0, tlDur = 0, tlSource: "neural" | "browser" = "browser";
+    let charTime: number[] = []; // her karakterin çizelgedeki zamanı (ms) — boundary hizalama
+    function onMouth(e: Event) {
+      pulse = 1;
+      const ci = (e as CustomEvent<{ charIndex?: number }>).detail?.charIndex ?? -1;
+      // Tarayıcı kelime sınırı: gerçek ilerleyişle çizelgeyi hizala (kayma düzelt)
+      if (ci >= 0 && ci < charTime.length && timeline.length) {
+        const offset = (performance.now() - tlStart) - charTime[ci];
+        if (Math.abs(offset) < 1500) tlStart += offset * 0.8;
+      }
+    }
     function onSpeak(e: Event) {
       const d = (e as CustomEvent<{ text?: string; durationMs?: number; source?: string }>).detail || {};
-      const text = String(d.text || ""), dur = Math.max(300, Number(d.durationMs) || text.length * 72);
-      const lead = d.source === "neural" ? 60 : 140; // ilk sesten önceki gecikme (ms)
-      const tl: Syl[] = [];
-      const n = Math.max(1, text.length);
-      for (let i = 0; i < text.length; i++) {
-        const ch = text[i].toLowerCase();
-        let open = 0, wide = 1;
-        if ("a".includes(ch)) { open = 1; wide = 1.02; }
-        else if ("eıi".includes(ch)) { open = 0.5; wide = 1.14; }
-        else if ("oöuü".includes(ch)) { open = 0.7; wide = 0.86; }
-        else if ("mbp".includes(ch)) { open = 0.0; wide = 1; }
-        else continue;
-        tl.push({ t: lead + ((i + 0.5) / n) * (dur - lead), open, wide });
+      const text = String(d.text || "");
+      const src: "neural" | "browser" = d.source === "neural" ? "neural" : "browser";
+      const lead = src === "neural" ? 60 : 160; // ilk sesten önceki gecikme (ms)
+      // karakter ağırlıkları: harf 1, sesli 1.15, boşluk .55, virgül 3.5, nokta 7
+      const weights: number[] = [];
+      for (const raw of text) {
+        const ch = raw.toLowerCase();
+        if (/[aeıioöuü]/.test(ch)) weights.push(1.15);
+        else if (/[a-zçğş]/.test(ch)) weights.push(0.95);
+        else if (ch === " ") weights.push(0.55);
+        else if (/[,;:]/.test(ch)) weights.push(3.5);
+        else if (/[.!?…]/.test(ch)) weights.push(7);
+        else weights.push(0.3);
       }
-      timeline = tl; tlStart = performance.now(); tlDur = dur;
-      tlSource = d.source === "neural" ? "neural" : "browser";
+      const total = weights.reduce((a, b) => a + b, 0) || 1;
+      const dur = Math.max(300, Number(d.durationMs) || total * 62 + lead);
+      const scale = (dur - lead) / total;
+      charTime = []; let cum = 0;
+      const tl: Syl[] = [];
+      let vi = 0;
+      for (let i = 0; i < text.length; i++) {
+        const t = lead + (cum + weights[i] * 0.5) * scale;
+        charTime.push(lead + cum * scale);
+        cum += weights[i];
+        const ch = text[i].toLowerCase();
+        if (/[aeıioöuü]/.test(ch)) {
+          let open = 0.55, wide = 1;
+          if (ch === "a") { open = 1; wide = 1.02; }
+          else if (ch === "e") { open = 0.6; wide = 1.12; }
+          else if (ch === "ı" || ch === "i") { open = 0.42; wide = 1.16; }
+          else if (ch === "o" || ch === "ö") { open = 0.72; wide = 0.86; }
+          else { open = 0.58; wide = 0.82; } // u/ü
+          // vurgu: her hece aynı güçte değil (deterministik küçük çeşitleme)
+          const r = (((Math.sin(vi * 12.9898 + i * 78.233) * 43758.5453) % 1) + 1) % 1; // 0..1
+          const vary = 0.72 + 0.28 * r;
+          vi++;
+          tl.push({ t, open: open * vary, wide, kind: "v" });
+        } else if (/[mbp]/.test(ch)) tl.push({ t, open: 0, wide: 1, kind: "close" });
+        else if (/[fv]/.test(ch)) tl.push({ t, open: 0.12, wide: 1.06, kind: "c" });
+        else if (/[sşzcçj]/.test(ch)) tl.push({ t, open: 0.2, wide: 1.12, kind: "c" });
+        else if (/[tdnlrkgyh]/.test(ch)) tl.push({ t, open: 0.22, wide: 1, kind: "c" });
+      }
+      timeline = tl; tlStart = performance.now(); tlDur = dur; tlSource = src;
     }
-    function onSpeakEnd() { timeline = []; }
+    function onSpeakEnd() { timeline = []; charTime = []; }
     window.addEventListener("nova:audio", onAudio);
     window.addEventListener("nova:mouth", onMouth);
     window.addEventListener("nova:speak", onSpeak);
@@ -96,14 +135,16 @@ export default function MatrixFace() {
       if (!timeline.length) return null;
       const t = now - tlStart;
       if (t > tlDur + 200) return { open: 0, wide: 1 };
-      // komşu hecelerin gauss zarfı (±150 ms) — heceler arasında ağız kapanır
-      let open = 0, ws = 0, wsum = 0;
+      // sesli/sessiz gauss zarfları (±150 ms); m/b/p kapanışı çarpımsal
+      let open = 0, ws = 0, wsum = 0, close = 0;
       for (const s of timeline) {
-        const dt = t - s.t; if (dt < -170 || dt > 170) continue;
-        const w = Math.exp(-(dt * dt) / (2 * 62 * 62));
+        const dt = t - s.t; if (dt < -160 || dt > 160) continue;
+        if (s.kind === "close") { close = Math.max(close, Math.exp(-(dt * dt) / (2 * 34 * 34))); continue; }
+        const sig = s.kind === "v" ? 58 : 40;
+        const w = Math.exp(-(dt * dt) / (2 * sig * sig));
         open = Math.max(open, s.open * w); ws += s.wide * w; wsum += w;
       }
-      return { open, wide: wsum > 0 ? ws / wsum : 1 };
+      return { open: open * (1 - close * 0.95), wide: wsum > 0 ? ws / wsum : 1 };
     }
 
     let W = 0, H = 0, dpr = 1, scale = 1, ox = 0, oy = 0;
@@ -169,6 +210,13 @@ export default function MatrixFace() {
       const chinTop = M.lip + lipH, chinDestTop = M.lip + lipDestH, chinDestBot = M.chin + d * 0.45;
       jctx.drawImage(video!, x0, chinTop, w, M.chin - chinTop, x0, chinDestTop, w, chinDestBot - chinDestTop);
       jctx.drawImage(video!, x0, M.chin, w, M.neck - M.chin, x0, chinDestBot, w, M.neck - chinDestBot);
+      // 3b) alt dudağın altına yumuşak gölge: çene açılınca derinlik hissi
+      if (d > 3) {
+        const sy = M.lip + lipDestH;
+        const sh = jctx.createLinearGradient(0, sy - 2, 0, sy + 10 + d * 0.3);
+        sh.addColorStop(0, `rgba(0,0,0,${Math.min(0.35, d / 60)})`); sh.addColorStop(1, "rgba(0,0,0,0)");
+        jctx.fillStyle = sh; jctx.fillRect(M.cx - M.hw * 1.5, sy - 2, M.hw * 3, 12 + d * 0.3);
+      }
       // 4) üst dudak hafif yukarı çekilir (dudak açılırken üst dudak da hareket eder)
       const up = d * 0.14;
       if (up > 0.3) jctx.drawImage(video!, M.cx - M.hw * 1.3, M.top - 4, M.hw * 2.6, M.lip - M.top + 4, M.cx - M.hw * 1.3, M.top - 4 - up, M.hw * 2.6, M.lip - M.top + 4);
@@ -230,16 +278,17 @@ export default function MatrixFace() {
     function frame(t: number) {
       if (!running) return;
       raf = requestAnimationFrame(frame);
-      if (t - last < 33) return; // ~30 fps
+      if (t - last < 24) return; // ~40 fps (ağız geçişleri akıcı olsun)
       last = t;
       const target = mouthTarget(t);
-      open += (target.open - open) * (target.open > open ? 0.6 : 0.3);
-      wide += (target.wide - wide) * 0.35;
+      open += (target.open - open) * (target.open > open ? 0.5 : 0.32);
+      wide += (target.wide - wide) * 0.3;
       if (video!.readyState >= 2) drawFace(open * MAX_OPEN, wide);
       drawRain(t);
       if (!reduced) {
-        const ry = Math.sin(t * 0.00045) * 3.2, rx = Math.sin(t * 0.00032 + 1.3) * 1.8;
-        tilt!.style.transform = `rotateY(${ry}deg) rotateX(${rx}deg)`;
+        // 3B salınım + konuşurken hecelerle hafif baş kıpırtısı (nod)
+        const ry = Math.sin(t * 0.00045) * 3.2, rx = Math.sin(t * 0.00032 + 1.3) * 1.8 + open * 0.9;
+        tilt!.style.transform = `rotateY(${ry}deg) rotateX(${rx}deg) translateY(${open * 1.6}px)`;
       }
     }
     raf = requestAnimationFrame(frame);
