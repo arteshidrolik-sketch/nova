@@ -1,243 +1,106 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 
-// MatrixFace — panodaki boşluğu dolduran "Matrix" tarzı kadın yüzü silueti.
-// Yüz, akan yeşil karakter yağmurunun içinde parlayan bir maske olarak belirir;
-// üstüne ince ışıklı hatlarla göz, kaş, burun ve dudaklar çizilir.
-// Nova konuşurken (window "nova:voice" olayı → "speaking") dudaklar hece ritmiyle
-// açılıp kapanır; boşta göz kırpar, bakışını kaydırır, kaşını kaldırır, başını
-// hafifçe eğer — sürekli küçük, rastgele mimikler.
+// MatrixFace — panodaki boşluğu dolduran fotogerçekçi "Nova" yüzü.
+// İki kısa video döngüsü (public/avatar): boşta nefes alıp göz kırpan, konuşan.
+// Nova konuşurken (window "nova:voice" olayı → "speaking") konuşan döngüye
+// yumuşak geçilir; dinlerken hafif yakınlaşma + yeşil ışık. Üstte hafif Matrix
+// karakter yağmuru ve tarama çizgileri; kart 3B perspektifle hafifçe salınır.
 
 export type VoiceState = "idle" | "listening" | "speaking";
 export const VOICE_EVENT = "nova:voice";
 
-const GLYPHS = "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ0123456789ｦ";
+const GLYPHS = "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ0123456789";
 
 export default function MatrixFace() {
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const idleRef = useRef<HTMLVideoElement | null>(null);
+  const talkRef = useRef<HTMLVideoElement | null>(null);
+  const rainRef = useRef<HTMLCanvasElement | null>(null);
+  const tiltRef = useRef<HTMLDivElement | null>(null);
+  const [voice, setVoice] = useState<VoiceState>("idle");
+  const [ready, setReady] = useState(false);
 
+  // Ses durumu (Chat'ten global olay)
   useEffect(() => {
-    const wrap = wrapRef.current;
-    const canvas = canvasRef.current;
-    if (!wrap || !canvas) return;
+    function onVoice(e: Event) {
+      const d = (e as CustomEvent<VoiceState>).detail;
+      if (d === "idle" || d === "listening" || d === "speaking") setVoice(d);
+    }
+    window.addEventListener(VOICE_EVENT, onVoice);
+    return () => window.removeEventListener(VOICE_EVENT, onVoice);
+  }, []);
+
+  // Videoları oynat/duraklat: görünen döngü oynar, diğeri (geçiş bitince) durur
+  useEffect(() => {
+    const idle = idleRef.current, talk = talkRef.current;
+    if (!idle || !talk) return;
+    const speaking = voice === "speaking";
+    const show = speaking ? talk : idle, hide = speaking ? idle : talk;
+    show.play().catch(() => {});
+    const t = setTimeout(() => hide.pause(), 700); // crossfade süresi kadar bekle
+    return () => clearTimeout(t);
+  }, [voice]);
+
+  // Sekme görünür olunca oynatmayı sürdür (tarayıcı arka planda durdurur)
+  useEffect(() => {
+    function onVis() {
+      if (document.hidden) return;
+      const v = voice === "speaking" ? talkRef.current : idleRef.current;
+      v?.play().catch(() => {});
+    }
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [voice]);
+
+  // Hafif Matrix yağmuru + 3B salınım (perspektif)
+  useEffect(() => {
+    const canvas = rainRef.current, tilt = tiltRef.current;
+    if (!canvas || !tilt) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-
-    let W = 0, H = 0, dpr = 1;
-    const CELL = 13; // karakter hücresi (px)
-    type Col = { y: number; v: number; len: number };
-    let cols: Col[] = [];
-    let glyphs: string[] = []; // hücre başına karakter (ara sıra değişir)
-    let rows = 0, ncol = 0;
-
-    // Mimik durumu (0..1 aralıkları); hedefe doğru yumuşak geçiş
-    const st = {
-      blink: 0, browLift: 0, browT: 0, tilt: 0, tiltT: 0,
-      gazeX: 0, gazeY: 0, gazeXT: 0, gazeYT: 0,
-      smile: 0.35, smileT: 0.35, mouth: 0, mouthT: 0, wide: 0,
-    };
-    let voice: VoiceState = "idle";
-    let nextBlink = 0, blinkStart = -1, nextMicro = 0, nextSyl = 0;
-
+    const CELL = 14;
+    let W = 0, H = 0, ncol = 0, rows = 0;
+    let cols: { y: number; v: number; len: number }[] = [];
     function resize() {
-      const rect = wrap!.getBoundingClientRect();
-      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const rect = canvas!.parentElement!.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
       W = Math.max(1, rect.width); H = Math.max(1, rect.height);
       canvas!.width = Math.floor(W * dpr); canvas!.height = Math.floor(H * dpr);
       canvas!.style.width = W + "px"; canvas!.style.height = H + "px";
       ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
       ncol = Math.ceil(W / CELL) + 1; rows = Math.ceil(H / CELL) + 1;
-      cols = Array.from({ length: ncol }, () => ({
-        y: Math.random() * rows, v: 0.08 + Math.random() * 0.18, len: 6 + Math.floor(Math.random() * 12),
-      }));
-      glyphs = Array.from({ length: ncol * rows }, () => GLYPHS[Math.floor(Math.random() * GLYPHS.length)]);
+      cols = Array.from({ length: ncol }, () => ({ y: Math.random() * rows, v: 0.05 + Math.random() * 0.12, len: 5 + Math.floor(Math.random() * 10) }));
     }
     resize();
     const ro = new ResizeObserver(resize);
-    ro.observe(wrap);
-
-    function onVoice(e: Event) {
-      const d = (e as CustomEvent<VoiceState>).detail;
-      if (d === "idle" || d === "listening" || d === "speaking") voice = d;
-    }
-    window.addEventListener(VOICE_EVENT, onVoice);
-
-    // Yüz geometrisi — baş merkezi ve yarıçaplar (kart boyutuna göre)
-    function geom() {
-      const U = Math.min(W, H * 0.78);
-      const rx = U * 0.24, ry = U * 0.31;
-      return { cx: W / 2, cy: H * 0.40, rx, ry, U };
-    }
-    // Nokta yüz maskesinde mi? 0 = dışarı, 1 = yüz, 2 = saç, 3 = boyun/omuz
-    function region(x: number, y: number, g: ReturnType<typeof geom>, ang: number): number {
-      // baş eğimini tersine uygula
-      const dx0 = x - g.cx, dy0 = y - g.cy;
-      const c = Math.cos(-ang), s = Math.sin(-ang);
-      const dx = dx0 * c - dy0 * s, dy = dx0 * s + dy0 * c;
-      // yüz: hafif sivri çeneli oval
-      const chin = dy > 0 ? 1 + (dy / g.ry) * 0.18 : 1;
-      const fx = dx / (g.rx / chin), fy = dy / g.ry;
-      if (fx * fx + fy * fy <= 1) return 1;
-      // saç: daha büyük oval (yukarı kaymış) + iki yandan aşağı inen tutamlar
-      const hx = dx / (g.rx * 1.42), hy = (dy + g.ry * 0.16) / (g.ry * 1.22);
-      if (hx * hx + hy * hy <= 1 && dy < g.ry * 0.9) return 2;
-      const strandW = g.rx * 0.5;
-      if (dy > -g.ry * 0.2 && dy < g.ry * 2.1) {
-        const edge = g.rx * (1.02 + Math.max(0, dy / g.ry) * 0.12);
-        if (Math.abs(dx) > edge && Math.abs(dx) < edge + strandW) return 2;
-      }
-      // boyun + omuzlar
-      if (dy > g.ry * 0.7 && dy < g.ry * 1.45 && Math.abs(dx) < g.rx * 0.42) return 3;
-      if (dy >= g.ry * 1.45) {
-        const sh = g.rx * (1.2 + (dy - g.ry * 1.45) / g.ry * 1.6);
-        if (Math.abs(dx) < sh) return 3;
-      }
-      return 0;
-    }
-
-    const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
-    const rnd = (a: number, b: number) => a + Math.random() * (b - a);
-
-    function update(t: number) {
-      // göz kırpma
-      if (blinkStart < 0 && t > nextBlink) { blinkStart = t; nextBlink = t + rnd(1800, 5200); }
-      if (blinkStart >= 0) {
-        const p = (t - blinkStart) / 170;
-        st.blink = p < 0.5 ? p * 2 : Math.max(0, 2 - p * 2);
-        if (p >= 1) { blinkStart = -1; st.blink = 0; }
-      }
-      // rastgele mikro mimikler: yeni hedefler
-      if (t > nextMicro) {
-        nextMicro = t + rnd(1400, 3800);
-        st.browT = Math.random() < 0.3 ? rnd(0.25, 0.7) : 0;
-        st.tiltT = rnd(-1, 1) * (Math.PI / 180) * 2.2;
-        st.gazeXT = rnd(-1, 1); st.gazeYT = rnd(-0.5, 0.5);
-        st.smileT = rnd(0.2, 0.6);
-      }
-      // dinlerken: dikkat — gözler biraz daha açık, kaş hafif yukarı
-      const wideT = voice === "listening" ? 1 : 0;
-      // konuşurken: hece ritmi (90-170 ms'de bir yeni ağız hedefi)
-      if (voice === "speaking") {
-        if (t > nextSyl) { nextSyl = t + rnd(90, 170); st.mouthT = Math.random() < 0.18 ? 0.05 : rnd(0.25, 1); }
-        st.mouth = lerp(st.mouth, st.mouthT, 0.45);
-      } else {
-        st.mouthT = 0; st.mouth = lerp(st.mouth, 0, 0.2);
-      }
-      st.browLift = lerp(st.browLift, st.browT + wideT * 0.25, 0.06);
-      st.tilt = lerp(st.tilt, st.tiltT, 0.03);
-      st.gazeX = lerp(st.gazeX, st.gazeXT, 0.05); st.gazeY = lerp(st.gazeY, st.gazeYT, 0.05);
-      st.smile = lerp(st.smile, st.smileT, 0.04);
-      st.wide = lerp(st.wide, wideT, 0.08);
-    }
-
-    function drawRain(t: number, g: ReturnType<typeof geom>, ang: number) {
-      ctx!.font = `${CELL - 1}px 'Courier New', monospace`;
-      ctx!.textBaseline = "top";
-      for (let c = 0; c < ncol; c++) {
-        const col = cols[c];
-        if (!reduced) col.y += col.v;
-        if (col.y - col.len > rows) { col.y = -rnd(0, rows * 0.5); col.v = 0.08 + Math.random() * 0.18; col.len = 6 + Math.floor(Math.random() * 12); }
-        for (let r = 0; r < rows; r++) {
-          const x = c * CELL, y = r * CELL;
-          const reg = region(x + CELL / 2, y + CELL / 2, g, ang);
-          // damla izi parlaklığı
-          const d = col.y - r;
-          const trail = d >= 0 && d < col.len ? 1 - d / col.len : 0;
-          let a = trail * 0.35;
-          if (reg === 1) a = Math.max(a, 0.62 + trail * 0.3);
-          else if (reg === 2) a = Math.max(a, 0.30 + trail * 0.25);
-          else if (reg === 3) a = Math.max(a, 0.18 + trail * 0.2);
-          if (a < 0.03) continue;
-          const i = c * rows + r;
-          if (Math.random() < 0.02) glyphs[i] = GLYPHS[Math.floor(Math.random() * GLYPHS.length)];
-          ctx!.fillStyle = reg === 1 ? `rgba(190,255,205,${a})` : `rgba(80,230,130,${a})`;
-          ctx!.fillText(glyphs[i], x, y);
-        }
-      }
-    }
-
-    function glowLine(path: () => void, w: number, a: number) {
-      ctx!.strokeStyle = `rgba(200,255,215,${a})`; ctx!.lineWidth = w;
-      ctx!.shadowColor = "#5ef58a"; ctx!.shadowBlur = 10;
-      ctx!.beginPath(); path(); ctx!.stroke(); ctx!.shadowBlur = 0;
-    }
-
-    function drawFeatures(g: ReturnType<typeof geom>, ang: number) {
-      ctx!.save(); ctx!.translate(g.cx, g.cy); ctx!.rotate(ang);
-      ctx!.lineCap = "round"; ctx!.lineJoin = "round";
-      const ex = g.rx * 0.42, ey = -g.ry * 0.10, ew = g.rx * 0.30;
-      const eh = ew * 0.42 * (1 - st.blink) * (1 + st.wide * 0.18);
-      // gözler (badem) + iris
-      for (const sgn of [-1, 1]) {
-        const x = sgn * ex;
-        glowLine(() => {
-          ctx!.moveTo(x - ew, ey);
-          ctx!.quadraticCurveTo(x, ey - eh * 2, x + ew, ey);
-          ctx!.quadraticCurveTo(x, ey + eh * 1.6, x - ew, ey);
-        }, 1.6, 0.9);
-        if (st.blink < 0.85) {
-          const ix = x + st.gazeX * ew * 0.35, iy = ey + st.gazeY * eh * 0.5;
-          ctx!.fillStyle = "rgba(160,255,190,0.85)"; ctx!.shadowColor = "#7dffa6"; ctx!.shadowBlur = 12;
-          ctx!.beginPath(); ctx!.ellipse(ix, iy, ew * 0.22, Math.max(0.5, eh * 0.75), 0, 0, 6.2832); ctx!.fill();
-          ctx!.fillStyle = "rgba(5,20,10,0.9)"; ctx!.shadowBlur = 0;
-          ctx!.beginPath(); ctx!.ellipse(ix, iy, ew * 0.10, Math.max(0.3, eh * 0.4), 0, 0, 6.2832); ctx!.fill();
-        }
-        // kaş
-        const by = ey - ew * 0.75 - st.browLift * ew * 0.35;
-        glowLine(() => {
-          ctx!.moveTo(x - ew * 1.05, by + ew * 0.12);
-          ctx!.quadraticCurveTo(x + sgn * ew * 0.1, by - ew * 0.28 - st.browLift * ew * 0.12, x + ew * 1.05, by + ew * 0.1);
-        }, 2.2, 0.75);
-      }
-      // burun (ince ipucu)
-      glowLine(() => {
-        ctx!.moveTo(-g.rx * 0.06, ey + g.ry * 0.12);
-        ctx!.lineTo(-g.rx * 0.13, ey + g.ry * 0.46);
-        ctx!.quadraticCurveTo(0, ey + g.ry * 0.53, g.rx * 0.13, ey + g.ry * 0.46);
-      }, 1.2, 0.45);
-      // dudaklar — üst dudak sabit, alt dudak açılır; gülümseme köşeleri kaldırır
-      const my = g.ry * 0.50, mw = g.rx * 0.36, open = st.mouth * g.ry * 0.16, sm = st.smile * mw * 0.18;
-      glowLine(() => {
-        ctx!.moveTo(-mw, my - sm);
-        ctx!.quadraticCurveTo(-mw * 0.45, my - mw * 0.16, -mw * 0.12, my - mw * 0.05);
-        ctx!.quadraticCurveTo(0, my + mw * 0.02, mw * 0.12, my - mw * 0.05);
-        ctx!.quadraticCurveTo(mw * 0.45, my - mw * 0.16, mw, my - sm);
-      }, 1.8, 0.9);
-      glowLine(() => {
-        ctx!.moveTo(-mw, my - sm);
-        ctx!.quadraticCurveTo(0, my + mw * 0.22 + open, mw, my - sm);
-      }, 1.8, 0.9);
-      if (st.mouth > 0.08) {
-        // açık ağız iç karanlığı
-        ctx!.fillStyle = "rgba(3,14,8,0.85)";
-        ctx!.beginPath();
-        ctx!.moveTo(-mw * 0.95, my - sm * 0.8);
-        ctx!.quadraticCurveTo(0, my + mw * 0.02, mw * 0.95, my - sm * 0.8);
-        ctx!.quadraticCurveTo(0, my + mw * 0.2 + open, -mw * 0.95, my - sm * 0.8);
-        ctx!.fill();
-      }
-      ctx!.restore();
-    }
-
+    ro.observe(canvas.parentElement!);
     let raf = 0, running = true, last = 0;
     function frame(t: number) {
       if (!running) return;
       raf = requestAnimationFrame(frame);
-      if (t - last < 33) return; // ~30 fps yeter
+      if (t - last < 50) return; // 20 fps yeter (üst katman, hafif)
       last = t;
-      update(t);
-      const g = geom();
-      const ang = st.tilt + (reduced ? 0 : Math.sin(t * 0.0006) * (Math.PI / 180) * 1.2);
       ctx!.clearRect(0, 0, W, H);
-      drawRain(t, g, ang);
-      drawFeatures(g, ang);
-      // alt kenara doğru kararma (kart içine oturur)
-      const fade = ctx!.createLinearGradient(0, H * 0.7, 0, H);
-      fade.addColorStop(0, "rgba(4,18,10,0)"); fade.addColorStop(1, "rgba(4,18,10,0.85)");
-      ctx!.fillStyle = fade; ctx!.fillRect(0, H * 0.7, W, H * 0.3);
+      ctx!.font = `${CELL - 2}px 'Courier New', monospace`; ctx!.textBaseline = "top";
+      for (let c = 0; c < ncol; c++) {
+        const col = cols[c];
+        if (!reduced) col.y += col.v;
+        if (col.y - col.len > rows) { col.y = -Math.random() * rows; col.v = 0.05 + Math.random() * 0.12; }
+        const head = Math.floor(col.y);
+        for (let k = 0; k < col.len; k++) {
+          const r = head - k; if (r < 0 || r >= rows) continue;
+          const a = (1 - k / col.len) * 0.22;
+          ctx!.fillStyle = k === 0 ? `rgba(200,255,215,${a + 0.15})` : `rgba(90,235,140,${a})`;
+          ctx!.fillText(GLYPHS[(c * 31 + r * 7 + Math.floor(t / 400)) % GLYPHS.length], c * CELL, r * CELL);
+        }
+      }
+      // 3B salınım: kart hafifçe döner (perspektif üst kapsayıcıda)
+      if (!reduced) {
+        const ry = Math.sin(t * 0.00045) * 3.2, rx = Math.sin(t * 0.00032 + 1.3) * 1.8;
+        tilt!.style.transform = `rotateY(${ry}deg) rotateX(${rx}deg)`;
+      }
     }
     raf = requestAnimationFrame(frame);
     function onVis() {
@@ -245,17 +108,45 @@ export default function MatrixFace() {
       else if (!running) { running = true; raf = requestAnimationFrame(frame); }
     }
     document.addEventListener("visibilitychange", onVis);
-
-    return () => {
-      running = false; cancelAnimationFrame(raf); ro.disconnect();
-      window.removeEventListener(VOICE_EVENT, onVoice);
-      document.removeEventListener("visibilitychange", onVis);
-    };
+    return () => { running = false; cancelAnimationFrame(raf); ro.disconnect(); document.removeEventListener("visibilitychange", onVis); };
   }, []);
 
+  const speaking = voice === "speaking", listening = voice === "listening";
+  const vidStyle = (visible: boolean): CSSProperties => ({
+    position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "50% 22%",
+    opacity: visible ? 1 : 0, transition: "opacity .6s ease",
+  });
+
   return (
-    <div ref={wrapRef} className="absolute inset-0">
-      <canvas ref={canvasRef} style={{ display: "block" }} />
+    <div className="absolute inset-0" style={{ perspective: "900px" }}>
+      <div
+        ref={tiltRef}
+        className="absolute inset-0 overflow-hidden rounded-2xl"
+        style={{
+          transformStyle: "preserve-3d", transition: "box-shadow .4s ease, scale .6s ease",
+          scale: listening ? "1.03" : "1",
+          boxShadow: speaking ? "inset 0 0 60px rgba(120,255,170,.25)" : listening ? "inset 0 0 60px rgba(79,216,255,.22)" : "inset 0 0 40px rgba(0,0,0,.5)",
+        }}
+      >
+        {/* poster: videolar yüklenene kadar */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/avatar/nova.jpg" alt="" style={{ ...vidStyle(!ready), transition: "opacity .8s ease" }} />
+        <video ref={idleRef} src="/avatar/nova-idle.mp4" poster="/avatar/nova.jpg" muted loop playsInline autoPlay preload="auto"
+          onCanPlay={() => setReady(true)} style={vidStyle(ready && !speaking)} />
+        <video ref={talkRef} src="/avatar/nova-talk.mp4" muted loop playsInline preload="auto" style={vidStyle(ready && speaking)} />
+        {/* Matrix yağmuru (ekran karışımı, hafif) */}
+        <canvas ref={rainRef} style={{ position: "absolute", inset: 0, display: "block", mixBlendMode: "screen", opacity: 0.7, pointerEvents: "none" }} />
+        {/* tarama çizgileri + yeşil ton + kenar kararması */}
+        <div className="pointer-events-none absolute inset-0" style={{
+          background: "repeating-linear-gradient(0deg, rgba(0,0,0,.14) 0 1px, transparent 1px 3px), radial-gradient(80% 70% at 50% 40%, rgba(40,160,90,.08), rgba(2,12,6,.55) 100%)",
+        }} />
+        {/* durum ışığı */}
+        <div className="pointer-events-none absolute bottom-2 right-3 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[.16em]"
+          style={{ color: speaking ? "#9dffb9" : listening ? "#8be9ff" : "rgba(180,240,200,.5)" }}>
+          <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: "currentColor", boxShadow: "0 0 8px currentColor" }} />
+          {speaking ? "Konuşuyor" : listening ? "Dinliyor" : "Nova"}
+        </div>
+      </div>
     </div>
   );
 }

@@ -165,9 +165,6 @@ export default function Dashboard() {
       {/* Matrix yüzü — kalan boşluğu doldurur; Nova konuşurken dudakları oynar */}
       <div className="relative min-h-[220px] flex-1 overflow-hidden rounded-2xl border border-emerald-400/30 bg-[#04120a] shadow-[0_0_35px_-12px_rgba(52,211,153,0.6)]">
         <MatrixFace />
-        <div className="pointer-events-none absolute left-3 top-2 text-[10px] font-semibold uppercase tracking-[.18em] text-emerald-200/50">
-          Nova
-        </div>
       </div>
 
       <div className="text-center text-[11px] text-white/40">
