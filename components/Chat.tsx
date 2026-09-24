@@ -339,6 +339,8 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   // için (her cümlede yeni Audio yaratınca ilk hariç hepsi engellenebiliyor).
   const audioElRef = useRef<HTMLAudioElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null); // dudak senkronu analizörü
+  const utterRef = useRef<SpeechSynthesisUtterance | null>(null); // GC koruması
+  const [ttsNote, setTtsNote] = useState<string | null>(null); // ses tanı notu (başlıkta)
   // Tarayıcı-içi Whisper (Edge/Safari/Firefox — native STT çalışmaz)
   const [whisperStatus, setWhisperStatus] = useState<
     "idle" | "loading" | "recording" | "transcribing"
@@ -687,7 +689,12 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
             body: JSON.stringify({ text }),
           });
           if (res.status === 501) return resolve("nokey"); // anahtar yok → tarayıcıya düş
-          if (!res.ok) return resolve("fail");
+          if (!res.ok) {
+            const why = (await res.text().catch(() => "")).slice(0, 120);
+            console.warn("[tts] bulut sesi", res.status, why);
+            setTtsNote(`Bulut sesi kapalı (${res.status}${why ? ": " + why : ""}) — tarayıcı sesi kullanılıyor.`);
+            return resolve("fail");
+          }
           const blob = await res.blob();
           if (!blob.size) return resolve("fail");
           const url = URL.createObjectURL(blob);
@@ -738,6 +745,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
           };
           el.onended = () => done("ok");
           el.onerror = () => done("fail");
+          el.onplaying = () => setTtsNote(null);
           // Dudak senkronu zaman çizelgesi: metin + gerçek süre (metadata gelince)
           el.onloadedmetadata = () => {
             const ms = Number.isFinite(el.duration) ? el.duration * 1000 : text.length * 70;
@@ -751,7 +759,11 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
               // Çalmaya başladı; bundan SONRAKİ pause = cancelSpeak (iptal)
               el.onpause = () => done("ok");
             })
-            .catch(() => done("fail"));
+            .catch((e) => {
+              console.warn("[tts] ses oynatılamadı", e);
+              setTtsNote("Ses oynatma engellendi: sayfaya bir kez tıklayıp tekrar dene.");
+              done("fail");
+            });
         } catch {
           resolve("fail");
         }
@@ -760,13 +772,27 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   }
 
   // Tarayıcı Web Speech ile çal (yedek). Promise: bitince çözülür.
-  function playBrowser(text: string): Promise<void> {
+  async function playBrowser(text: string): Promise<void> {
+    const synth = typeof window !== "undefined" ? window.speechSynthesis : null;
+    if (!synth) {
+      setTtsNote("Bu tarayıcıda ses sentezi yok.");
+      return;
+    }
+    // Chrome takılması: önceki sentez askıda kaldıysa (speaking/pending) yeni
+    // utterance hiç çalmaz → önce iptal et, kısa bekle.
+    if (synth.speaking || synth.pending) {
+      try {
+        synth.cancel();
+      } catch {
+        /* yoksay */
+      }
+      await new Promise((r) => setTimeout(r, 80));
+    }
     return new Promise((resolve) => {
-      const synth = typeof window !== "undefined" ? window.speechSynthesis : null;
-      if (!synth) return resolve();
       startTtsKeepAlive();
       const voice = pickVoice(synth);
       const u = new SpeechSynthesisUtterance(text);
+      utterRef.current = u; // Chrome: referans tutulmazsa GC → onend gelmez, ses kesilir
       if (voice) {
         u.voice = voice;
         u.lang = voice.lang;
@@ -775,6 +801,28 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       }
       u.rate = 1;
       u.pitch = 1;
+      let settled = false;
+      let started = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(guard);
+        clearTimeout(startGuard);
+        window.dispatchEvent(new CustomEvent("nova:speakend"));
+        resolve();
+      };
+      // Süre sigortası: onend hiç gelmezse kuyruk sonsuza dek beklemesin
+      const guard = setTimeout(finish, text.length * 90 + 5000);
+      // Başlangıç sigortası: 1.5 sn'de başlamadıysa duraklamış olabilir → resume
+      const startGuard = setTimeout(() => {
+        if (!started) {
+          try {
+            synth.resume();
+          } catch {
+            /* yoksay */
+          }
+        }
+      }, 1500);
       // Tarayıcı sesinde dalga verisi yok → her kelime sınırında yüzün ağzına
       // "hece" darbesi gönder (panodaki yüz kelimeleri takip etsin).
       u.onboundary = (ev) => {
@@ -785,21 +833,34 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       // Metin tabanlı zaman çizelgesi (Chrome'un çevrimiçi sesleri boundary
       // olayı göndermez): ~14 karakter/sn Türkçe konuşma hızı varsayımı
       u.onstart = () => {
+        started = true;
+        setTtsNote(null); // ses çalıyor → eski uyarıyı kaldır
         window.dispatchEvent(
           new CustomEvent("nova:speak", {
             detail: { text, durationMs: Math.max(400, text.length * 72), source: "browser" },
           }),
         );
       };
-      u.onend = () => {
-        window.dispatchEvent(new CustomEvent("nova:speakend"));
-        resolve();
+      u.onend = finish;
+      u.onerror = (ev) => {
+        const code = (ev as { error?: string }).error || "bilinmeyen";
+        if (code !== "interrupted" && code !== "canceled") {
+          console.warn("[tts] tarayıcı sesi hatası:", code);
+          setTtsNote(
+            code === "not-allowed"
+              ? "Tarayıcı sesi engellendi: sayfaya bir kez tıklayıp tekrar dene."
+              : `Tarayıcı sesi hatası: ${code}`,
+          );
+        }
+        finish();
       };
-      u.onerror = () => {
-        window.dispatchEvent(new CustomEvent("nova:speakend"));
-        resolve();
-      };
-      synth.speak(u);
+      try {
+        synth.speak(u);
+      } catch (e) {
+        console.warn("[tts] speak() hatası", e);
+        setTtsNote("Tarayıcı sesi başlatılamadı.");
+        finish();
+      }
     });
   }
 
@@ -1677,6 +1738,15 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
           >
             {speakEnabled ? "🔊 Sesli açık" : "🔇 Sesli kapalı"}
           </button>
+          {ttsNote && (
+            <span
+              className="max-w-[260px] truncate text-[11px]"
+              title={ttsNote}
+              style={{ color: "#fbbf24" }}
+            >
+              ⚠ {ttsNote}
+            </span>
+          )}
           <button
             onClick={clearChat}
             disabled={messages.length === 0 && !loading}
