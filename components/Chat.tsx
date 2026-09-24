@@ -458,7 +458,9 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     // değişse bile cevap DOĞRU sohbete kaydedilsin — yanlış sohbete sızmasın)
     const cid = convId ?? conversationId;
     if (!cid) return;
-    // Ekleri hafifet (base64 veri saklama, sadece ad/tür)
+    // Ekleri hafifet: ağır binary (base64 data) saklanmaz; ama çıkarılmış METİN
+    // (Excel→CSV, PDF/Word metni) saklanır → sohbet yeniden açıldığında model
+    // yüklenen dosyayı yine okuyup analiz edebilir (ör. kâr-zarar hesabı).
     const light = msgs.map((m) =>
       m.attachments
         ? {
@@ -466,6 +468,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
             attachments: m.attachments.map((a) => ({
               kind: a.kind,
               name: a.name,
+              ...(a.text ? { text: a.text } : {}),
             })),
           }
         : m,

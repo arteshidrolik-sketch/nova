@@ -1012,6 +1012,11 @@ export async function POST(req: Request) {
               if (block.name === "generate_document") {
                 const picked: { name: string; data: string; mediaType: string }[] = [];
                 const seen = new Set<string>();
+                // En son ARDIŞIK dosya kümesini topla: "raporu çıkar" mesajı
+                // dosyasız olabilir (o zaman geriye tarayıp önceki turlardaki
+                // gider+satış gibi dosyaları da al). Kümeye başladıktan sonra
+                // dosyasız bir tura gelince dur → alakasız eski dosyaları çekme.
+                let sawFiles = false;
                 for (let mi = messages.length - 1; mi >= 0 && picked.length < 6; mi--) {
                   const m = messages[mi];
                   if (m.role !== "user") continue;
@@ -1020,26 +1025,42 @@ export async function POST(req: Request) {
                       (a.data || a.text) &&
                       /\.(xlsx|xls|csv|pdf|docx|pptx|json|txt|md)$/i.test(a.name || ""),
                   );
-                  for (const a of files) {
-                    const nm = a.name || "veri";
-                    if (seen.has(nm)) continue;
-                    seen.add(nm);
-                    picked.push({
-                      name: nm,
-                      // Ham binary varsa o; yoksa (csv/txt) metni base64'le
-                      data: a.data || Buffer.from(String(a.text ?? ""), "utf8").toString("base64"),
-                      mediaType:
-                        a.mediaType ||
-                        (/\.xlsx$/i.test(nm)
-                          ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                          : /\.csv$/i.test(nm)
-                            ? "text/csv"
-                            : /\.pdf$/i.test(nm)
-                              ? "application/pdf"
-                              : "application/octet-stream"),
-                    });
+                  if (files.length === 0) {
+                    if (sawFiles) break; // dosya kümesi bitti
+                    continue; // henüz dosya görmedik (ör. dosyasız istek turu) → geriye devam
                   }
-                  if (files.length) break; // en son dosyalı tur yeter
+                  sawFiles = true;
+                  for (const a of files) {
+                    const rawName = a.name || "veri";
+                    if (seen.has(rawName)) continue;
+                    seen.add(rawName);
+                    if (a.data) {
+                      // Ham binary var (aynı oturum) → gerçek dosyayı olduğu gibi geçir
+                      picked.push({
+                        name: rawName,
+                        data: a.data,
+                        mediaType:
+                          a.mediaType ||
+                          (/\.xlsx$/i.test(rawName)
+                            ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            : /\.csv$/i.test(rawName)
+                              ? "text/csv"
+                              : /\.pdf$/i.test(rawName)
+                                ? "application/pdf"
+                                : "application/octet-stream"),
+                      });
+                    } else if (a.text) {
+                      // Binary yok (sohbet yeniden açılmış; kayıtta yalnız çıkarılmış
+                      // metin kaldı) → metni okunabilir bir .txt olarak geçir. Model
+                      // bu tablosal metinden GERÇEK sayıları hesaplar.
+                      const base = rawName.replace(/\.[a-z0-9]+$/i, "");
+                      picked.push({
+                        name: `${base}.txt`,
+                        data: Buffer.from(String(a.text), "utf8").toString("base64"),
+                        mediaType: "text/plain",
+                      });
+                    }
+                  }
                 }
                 if (picked.length) payload.source_files = picked;
               }
