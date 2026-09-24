@@ -1012,6 +1012,11 @@ export async function POST(req: Request) {
               if (block.name === "generate_document") {
                 const picked: { name: string; data: string; mediaType: string }[] = [];
                 const seen = new Set<string>();
+                // En son ARDIŞIK dosya kümesini topla: "raporu çıkar" mesajı
+                // dosyasız olabilir (o zaman geriye tarayıp önceki turlardaki
+                // gider+satış gibi dosyaları da al). Kümeye başladıktan sonra
+                // dosyasız bir tura gelince dur → alakasız eski dosyaları çekme.
+                let sawFiles = false;
                 for (let mi = messages.length - 1; mi >= 0 && picked.length < 6; mi--) {
                   const m = messages[mi];
                   if (m.role !== "user") continue;
@@ -1020,6 +1025,11 @@ export async function POST(req: Request) {
                       (a.data || a.text) &&
                       /\.(xlsx|xls|csv|pdf|docx|pptx|json|txt|md)$/i.test(a.name || ""),
                   );
+                  if (files.length === 0) {
+                    if (sawFiles) break; // dosya kümesi bitti
+                    continue; // henüz dosya görmedik (ör. dosyasız istek turu) → geriye devam
+                  }
+                  sawFiles = true;
                   for (const a of files) {
                     const nm = a.name || "veri";
                     if (seen.has(nm)) continue;
@@ -1039,7 +1049,6 @@ export async function POST(req: Request) {
                               : "application/octet-stream"),
                     });
                   }
-                  if (files.length) break; // en son dosyalı tur yeter
                 }
                 if (picked.length) payload.source_files = picked;
               }
