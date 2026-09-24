@@ -390,7 +390,11 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     speakRef.current = speakEnabled;
   }, [speakEnabled]);
   useEffect(() => {
-    onVoiceState?.(listening ? "listening" : speaking ? "speaking" : "idle");
+    const s = listening ? "listening" : speaking ? "speaking" : "idle";
+    onVoiceState?.(s);
+    // Panodaki Matrix yüzü gibi bağımsız bileşenler için global sinyal
+    if (typeof window !== "undefined")
+      window.dispatchEvent(new CustomEvent("nova:voice", { detail: s }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listening, speaking]);
 
