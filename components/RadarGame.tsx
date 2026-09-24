@@ -81,7 +81,7 @@ export default function RadarGame({
 
     function startGame() {
       enemies.length = 0; tracers.length = 0; parts.length = 0;
-      score = 0; lives = 3; over = false; started = true; spawnEvery = 46; jetEx = 0;
+      score = 0; lives = 3; over = false; started = true; spawnEvery = 40; jetEx = 0;
       lastSpawn = tf; lastFire = tf; hudDirty = true;
     }
     startRef.current = startGame;
@@ -101,7 +101,8 @@ export default function RadarGame({
       for (let i = 0; i < enemies.length; i++) {
         const en = enemies[i];
         const d = Math.hypot(ret.x - en.sx, ret.y - en.sy);
-        if (d < en.rad + U * 0.03 && d < bd) { bd = d; bi = i; }
+        // Cömert vuruş alanı: uzaktaki (küçük) düşman için de en az U*0.06 tolerans
+        if (d < Math.max(en.rad * 1.6, U * 0.06) && d < bd) { bd = d; bi = i; }
       }
       if (bi >= 0) {
         const en = enemies[bi];
@@ -121,8 +122,9 @@ export default function RadarGame({
     function proj(ex: number, ez: number) {
       const hy = horizon();
       const p = Math.max(0, Math.min(1.05, 1 - ez));
-      const persp = Math.pow(Math.max(0, p), 1.35);
-      return { sx: cx + ex * (W * 0.6) * (0.1 + persp), sy: hy + persp * (H - hy), sc: 0.14 + persp * 2.6, p };
+      // Daha yumuşak perspektif: düşman uzaktayken de görünür boyutta, son anda "fırlamaz"
+      const persp = Math.pow(Math.max(0, p), 1.15);
+      return { sx: cx + ex * (W * 0.6) * (0.1 + persp), sy: hy + persp * (H - hy), sc: 0.3 + persp * 2.3, p };
     }
     function boom(sx: number, sy: number, col: string, scl: number) {
       for (let i = 0; i < 12; i++) {
@@ -197,9 +199,12 @@ export default function RadarGame({
       const jetS = U * 0.05 / 8;
 
       if (started && !over) {
+        // Zorluk skora göre kademeli artar (0 → 1, 40 skorda tavan):
+        // başta düşman ~6-9 sn'de yaklaşır ve seyrek gelir; ilerledikçe hızlanır/sıklaşır.
+        const diff = Math.min(1, score / 40);
         if (tf - lastSpawn > spawnEvery) {
-          enemies.push({ ex: (Math.random() * 2 - 1) * 0.85, ez: 1, speed: 0.004 + Math.random() * 0.004, wob: Math.random() * 6.28, sx: 0, sy: 0, rad: 0 });
-          lastSpawn = tf; spawnEvery = 30 + Math.floor(Math.random() * 28);
+          enemies.push({ ex: (Math.random() * 2 - 1) * 0.85, ez: 1, speed: (0.002 + Math.random() * 0.0018) * (1 + diff * 0.8), wob: Math.random() * 6.28, sx: 0, sy: 0, rad: 0 });
+          lastSpawn = tf; spawnEvery = Math.floor(70 - diff * 30 + Math.random() * 40);
         }
         for (let i = enemies.length - 1; i >= 0; i--) {
           const e = enemies[i];
