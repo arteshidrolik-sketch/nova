@@ -871,13 +871,15 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     pauseWake(); // konuşurken wake dinlemesin (kendi "Nova" sözüne tetiklenmesin)
     // Araya girme: konuşma boyunca kullanıcıyı dinle (yankı filtresiyle)
     spokenWordsRef.current = new Set();
+    spokenListRef.current = [];
+    spokenTrigramsRef.current = new Set();
     bargeFiredRef.current = false;
     stopBarge();
     startBarge();
     while (ttsActiveRef.current && ttsQueueRef.current.length > 0) {
       const chunk = ttsQueueRef.current.shift();
       if (chunk == null) continue;
-      for (const w of normTr(chunk).split(" ")) if (w) spokenWordsRef.current.add(w);
+      rememberSpoken(chunk);
       let played = false;
       if (neuralTtsRef.current !== false) {
         const st = await playNeural(chunk);
@@ -893,6 +895,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       if (!played) await playBrowser(chunk);
     }
     ttsActiveRef.current = false;
+    lastTtsEndRef.current = Date.now(); // konuşma sonrası yankı penceresi başlangıcı
     setSpeaking(false);
     stopTtsKeepAlive();
     const wasGreeting = listenAfterSpeakRef.current;
@@ -910,7 +913,9 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     // Karşılıklı konuşma: eller-serbest moddaysa Nova sustuktan sonra "Nova"
     // demeden DOĞRUDAN dinle; sessizlikte kendiliğinden wake'e döner.
     // (Whisper yolunda kayıt elle durduğu için otomatik başlatma yapılmaz.)
-    if (wasGreeting || (wakeOnRef.current && !preferWhisper())) micRef.current();
+    // Hoparlörün kuyruğu (yankı) mikrofona girmesin diye kısa bir nefes payı
+    if (wasGreeting || (wakeOnRef.current && !preferWhisper()))
+      setTimeout(() => { if (!ttsActiveRef.current) micRef.current(); }, 550);
     else resumeWake();
   }
 
@@ -1035,6 +1040,84 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   const bargeFiredRef = useRef(false);
   const bargeFromRef = useRef(0);
   const spokenWordsRef = useRef<Set<string>>(new Set());
+  // Yankı filtresi için bu turda söylenenlerin listesi + harf üçlüleri; TTS bitiş anı
+  const spokenListRef = useRef<string[]>([]);
+  const spokenTrigramsRef = useRef<Set<string>>(new Set());
+  const lastTtsEndRef = useRef(0);
+
+  // Duyulan parça Nova'nın KENDİ sesi mi (hoparlör → mikrofon yankısı)?
+  // STT yankıyı bozuk yazar ("skorla"→"sporla", "Anthropic'in"→"Atropi'nin"), bu
+  // yüzden birebir kelime eşleşmesi yetmez: bulanık kelime benzerliği (önek /
+  // Levenshtein) + harf üçlüsü örtüşmesi birlikte kullanılır.
+  function lev(a: string, b: string): number {
+    const m = a.length, n = b.length;
+    if (!m) return n;
+    if (!n) return m;
+    let prev = Array.from({ length: n + 1 }, (_, j) => j);
+    for (let i = 1; i <= m; i++) {
+      const cur = [i];
+      for (let j = 1; j <= n; j++) {
+        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      }
+      prev = cur;
+    }
+    return prev[n];
+  }
+  function wordSim(a: string, b: string): boolean {
+    if (a === b) return true;
+    if (/^\d+$/.test(a) && /^\d+$/.test(b)) return a.length >= 2 && a.slice(0, 2) === b.slice(0, 2); // 2025~2000 (STT sayı bozması)
+    if (a.length < 4 || b.length < 4) return false; // kısa kelimeler yalnız birebir
+    if (a.length >= 5 && b.length >= 5 && a.slice(0, 5) === b.slice(0, 5)) return true; // ortak önek (ek farkı)
+    if (Math.abs(a.length - b.length) > 2) return false;
+    return lev(a, b) <= (Math.max(a.length, b.length) >= 7 ? 2 : 1);
+  }
+  const STOP = new Set(["bu","bir","ve","ile","de","da","mi","mu","ne","o","su","icin","ama","peki","tamam","evet","hayir","ki","cok","daha","gibi","ya","hem","ise","sen","ben"]);
+  // strict=true: konuşma SONRASI pencere — kullanıcı Nova'nın önerisini tekrar
+  // edebilir ("Türkiye'deki gelişmeleri anlat"), o yüzden yalnız çok güçlü
+  // benzerlik yankı sayılır. strict=false: Nova konuşurken (araya girme).
+  function isEcho(seg: string, strict = false): boolean {
+    const heard = normTr(seg).split(" ").filter((w) => w.length >= 2);
+    if (heard.length === 0) return true;
+    const list = spokenListRef.current;
+    if (list.length === 0) return false;
+    const sim = (w: string) => spokenWordsRef.current.has(w) || list.some((s) => wordSim(w, s));
+    // 1) içerik kelimesi oranı (dolgu sözcükler sayılmaz)
+    const content = heard.filter((w) => !STOP.has(w));
+    const hit = content.filter(sim).length;
+    const ratio = content.length >= 2 ? hit / content.length : 0;
+    // 2) sıralı örtüşme: yankı, söylenenin kelime SIRASINI korur
+    let run = 0;
+    for (let i = 0; i < heard.length; i++) {
+      for (let j = 0; j < list.length; j++) {
+        if (!wordSim(heard[i], list[j])) continue;
+        let k = 1;
+        while (i + k < heard.length && j + k < list.length && wordSim(heard[i + k], list[j + k])) k++;
+        if (k > run) run = k;
+      }
+    }
+    // 3) harf üçlüsü örtüşmesi (bozuk STT'ye dayanıklı)
+    let tri = 0;
+    const h = heard.join(" ");
+    if (h.length >= 10) {
+      const tg = spokenTrigramsRef.current;
+      let c = 0, n = 0;
+      for (let i = 0; i + 3 <= h.length; i++) { n++; if (tg.has(h.slice(i, i + 3))) c++; }
+      tri = n ? c / n : 0;
+    }
+    // üçlü ölçütü yalnız uzun parçalarda anlamlı (kısa cümlelerde ortak kelimeler şişirir)
+    const longEnough = h.length >= 28;
+    if (strict) return run >= 4 || ratio >= 0.75 || (longEnough && tri >= 0.85);
+    return run >= 3 || ratio >= 0.5 || (longEnough && tri >= 0.75);
+  }
+  function rememberSpoken(chunk: string) {
+    const nt = normTr(chunk);
+    for (const w of nt.split(" ")) {
+      if (!w) continue;
+      spokenWordsRef.current.add(w);
+      spokenListRef.current.push(w);
+    }
+    for (let i = 0; i + 3 <= nt.length; i++) spokenTrigramsRef.current.add(nt.slice(i, i + 3));
+  }
 
   function stopBarge() {
     try {
@@ -1059,9 +1142,8 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         const seg = last[0].transcript;
         if (!bargeFiredRef.current) {
           const words = normTr(seg).split(" ").filter(Boolean);
-          if (words.length < 2) return;
-          const hit = words.filter((w) => spokenWordsRef.current.has(w)).length;
-          if (hit / words.length >= 0.5) return; // Nova'nın kendi sesi (yankı)
+          if (words.length < 3) return; // tek-iki bozuk kelimeyle araya girme
+          if (isEcho(seg)) return; // Nova'nın kendi sesi (yankı) → yok say
           bargeFiredRef.current = true;
           bargeFromRef.current = e.results.length - 1;
           cancelSpeak(); // kullanıcı konuşuyor → Nova sussun
@@ -1072,7 +1154,14 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
             t += e.results[i][0].transcript + " ";
           stopBarge();
           bargeFiredRef.current = false;
-          voiceSend(t.trim());
+          const txt = t.trim();
+          // İkinci savunma: tamamlanan metin yine Nova'nın sözüyse GÖNDERME
+          // (kendi cümlesini soru sanıp kısır döngüye girmesin)
+          if (!txt || isEcho(txt)) {
+            resumeWake();
+            return;
+          }
+          voiceSend(txt);
         }
       };
       b.onend = () => {
@@ -1142,6 +1231,9 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
             /* yoksay */
           }
           setInput("");
+          // Konuşma bittikten hemen sonra duyulan şey Nova'nın kendi kuyruğu
+          // (hoparlör yankısı) olabilir → kendi sözüne benziyorsa gönderme
+          if (Date.now() - lastTtsEndRef.current < 4000 && isEcho(t, true)) return;
           voiceSend(t);
         }
       };
