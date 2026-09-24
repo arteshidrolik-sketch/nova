@@ -730,12 +730,21 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
             el.onended = null;
             el.onerror = null;
             el.onpause = null;
+            el.onloadedmetadata = null;
+            window.dispatchEvent(new CustomEvent("nova:speakend"));
             URL.revokeObjectURL(url);
             if (currentAudioRef.current === el) currentAudioRef.current = null;
             resolve(r);
           };
           el.onended = () => done("ok");
           el.onerror = () => done("fail");
+          // Dudak senkronu zaman çizelgesi: metin + gerçek süre (metadata gelince)
+          el.onloadedmetadata = () => {
+            const ms = Number.isFinite(el.duration) ? el.duration * 1000 : text.length * 70;
+            window.dispatchEvent(
+              new CustomEvent("nova:speak", { detail: { text, durationMs: ms, source: "neural" } }),
+            );
+          };
           el.src = url;
           el.play()
             .then(() => {
@@ -773,8 +782,23 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
           new CustomEvent("nova:mouth", { detail: { len: ev.charLength || 4 } }),
         );
       };
-      u.onend = () => resolve();
-      u.onerror = () => resolve();
+      // Metin tabanlı zaman çizelgesi (Chrome'un çevrimiçi sesleri boundary
+      // olayı göndermez): ~14 karakter/sn Türkçe konuşma hızı varsayımı
+      u.onstart = () => {
+        window.dispatchEvent(
+          new CustomEvent("nova:speak", {
+            detail: { text, durationMs: Math.max(400, text.length * 72), source: "browser" },
+          }),
+        );
+      };
+      u.onend = () => {
+        window.dispatchEvent(new CustomEvent("nova:speakend"));
+        resolve();
+      };
+      u.onerror = () => {
+        window.dispatchEvent(new CustomEvent("nova:speakend"));
+        resolve();
+      };
       synth.speak(u);
     });
   }

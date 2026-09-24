@@ -18,7 +18,7 @@ const GLYPHS = "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅ�
 // Video (480x640) içindeki ağız/çene işaretleri (kare üzerinde ölçüldü)
 const VW = 480, VH = 640;
 const M = { cx: 241, top: 358, lip: 382, bot: 401, hw: 44, chin: 468, neck: 545 };
-const MAX_OPEN = 26; // px (video uzayı) — tam açık ağız
+const MAX_OPEN = 30; // px (video uzayı) — tam açık ağız
 
 export default function MatrixFace() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -65,8 +65,46 @@ export default function MatrixFace() {
     function onAudio(e: Event) { analyser = (e as CustomEvent<AnalyserNode>).detail ?? null; td = null; }
     let pulse = 0;
     function onMouth() { pulse = 1; }
+    // Metin tabanlı hece zaman çizelgesi: sesli harfler → ağız şekli + zaman
+    type Syl = { t: number; open: number; wide: number };
+    let timeline: Syl[] = [], tlStart = 0, tlDur = 0, tlSource: "neural" | "browser" = "browser";
+    function onSpeak(e: Event) {
+      const d = (e as CustomEvent<{ text?: string; durationMs?: number; source?: string }>).detail || {};
+      const text = String(d.text || ""), dur = Math.max(300, Number(d.durationMs) || text.length * 72);
+      const lead = d.source === "neural" ? 60 : 140; // ilk sesten önceki gecikme (ms)
+      const tl: Syl[] = [];
+      const n = Math.max(1, text.length);
+      for (let i = 0; i < text.length; i++) {
+        const ch = text[i].toLowerCase();
+        let open = 0, wide = 1;
+        if ("a".includes(ch)) { open = 1; wide = 1.02; }
+        else if ("eıi".includes(ch)) { open = 0.5; wide = 1.14; }
+        else if ("oöuü".includes(ch)) { open = 0.7; wide = 0.86; }
+        else if ("mbp".includes(ch)) { open = 0.0; wide = 1; }
+        else continue;
+        tl.push({ t: lead + ((i + 0.5) / n) * (dur - lead), open, wide });
+      }
+      timeline = tl; tlStart = performance.now(); tlDur = dur;
+      tlSource = d.source === "neural" ? "neural" : "browser";
+    }
+    function onSpeakEnd() { timeline = []; }
     window.addEventListener("nova:audio", onAudio);
     window.addEventListener("nova:mouth", onMouth);
+    window.addEventListener("nova:speak", onSpeak);
+    window.addEventListener("nova:speakend", onSpeakEnd);
+    function textMouth(now: number): { open: number; wide: number } | null {
+      if (!timeline.length) return null;
+      const t = now - tlStart;
+      if (t > tlDur + 200) return { open: 0, wide: 1 };
+      // komşu hecelerin gauss zarfı (±150 ms) — heceler arasında ağız kapanır
+      let open = 0, ws = 0, wsum = 0;
+      for (const s of timeline) {
+        const dt = t - s.t; if (dt < -170 || dt > 170) continue;
+        const w = Math.exp(-(dt * dt) / (2 * 62 * 62));
+        open = Math.max(open, s.open * w); ws += s.wide * w; wsum += w;
+      }
+      return { open, wide: wsum > 0 ? ws / wsum : 1 };
+    }
 
     let W = 0, H = 0, dpr = 1, scale = 1, ox = 0, oy = 0;
     const CELL = 14; let ncol = 0, rows = 0;
@@ -89,55 +127,84 @@ export default function MatrixFace() {
     const ro = new ResizeObserver(resize);
     ro.observe(face.parentElement!);
 
-    let open = 0; // 0..1 ağız açıklığı (yumuşatılmış)
-    function mouthTarget(): number {
-      if (voiceRef.current !== "speaking") return 0;
-      if (analyser) {
+    let open = 0, wide = 1; // ağız açıklığı 0..1 ve genişliği (yumuşatılmış)
+    function mouthTarget(now: number): { open: number; wide: number } {
+      if (voiceRef.current !== "speaking") return { open: 0, wide: 1 };
+      const tm = textMouth(now);
+      // Gerçek ses dalgası (OpenAI/fal TTS): şiddet → açıklık; şekil metinden
+      if (analyser && tlSource === "neural" && timeline.length) {
         if (!td || td.length !== analyser.fftSize) td = new Uint8Array(analyser.fftSize) as Uint8Array<ArrayBuffer>;
         analyser.getByteTimeDomainData(td);
         let sum = 0;
         for (let i = 0; i < td.length; i++) { const v = (td[i] - 128) / 128; sum += v * v; }
         const rms = Math.sqrt(sum / td.length);
-        // konuşma RMS'i ~0.02-0.25 → 0..1 (sessiz aralıklarda ağız kapanır)
-        return Math.max(0, Math.min(1, (rms - 0.012) * 6.5));
+        const amp = Math.max(0, Math.min(1, (rms - 0.012) * 6.5));
+        return { open: Math.max(amp, (tm?.open ?? 0) * 0.35 * Math.min(1, amp * 4)), wide: tm?.wide ?? 1 };
       }
-      // tarayıcı sesi: kelime darbesi → sönümlenen hece hareketi
+      if (tm) return tm; // metin zaman çizelgesi (tarayıcı sesi)
+      // hiçbir çizelge yok: kelime darbesi ya da hafif genel hece ritmi
       pulse *= 0.86;
-      return pulse > 0.08 ? Math.min(1, pulse * (0.7 + 0.3 * Math.sin(performance.now() / 38))) : 0;
+      if (pulse > 0.08) return { open: Math.min(1, pulse * (0.7 + 0.3 * Math.sin(now / 38))), wide: 1 };
+      const s = Math.sin(now / 95) * 0.5 + 0.5;
+      return { open: 0.15 + s * 0.45, wide: 1 + (Math.sin(now / 210) * 0.08) };
     }
 
-    function drawFace(d: number) {
+    function drawFace(d: number, wd: number) {
       fctx!.setTransform(dpr * scale, 0, 0, dpr * scale, ox * dpr, oy * dpr);
       fctx!.drawImage(video!, 0, 0, VW, VH);
-      if (d < 0.6) return;
+      if (d < 0.5 && Math.abs(wd - 1) < 0.02) return;
       jctx.setTransform(1, 0, 0, 1, 0, 0);
       jctx.clearRect(0, 0, VW, VH);
-      const x0 = M.cx - M.hw * 2.6, w = M.hw * 5.2;
-      // alt dudak + çene bandı aşağı kayar (hafif sıkışarak); boyun bandı sıkışır
-      jctx.drawImage(video!, x0, M.lip, w, M.chin - M.lip, x0, M.lip + d, w, (M.chin - M.lip) - d * 0.55);
-      jctx.drawImage(video!, x0, M.chin, w, M.neck - M.chin, x0, M.chin + d * 0.45, w, (M.neck - M.chin) - d * 0.45);
+      const x0 = M.cx - M.hw * 2.7, w = M.hw * 5.4;
+      const lipH = M.bot - M.lip + 12; // alt dudak şeridi
+      // 1) alt dudak şeridi: aşağı ESNER (köşeler yerinde kalır, ortası ağız içiyle
+      //    örtülür) + sesli harfe göre yatay genişler/daralır
+      const lipDestH = d + lipH * (1 - d / 120);
+      jctx.save();
+      jctx.translate(M.cx, 0); jctx.scale(wd, 1); jctx.translate(-M.cx, 0);
+      jctx.drawImage(video!, x0, M.lip, w, lipH, x0, M.lip, w, lipDestH);
+      jctx.restore();
+      // 2) çene bandı: dudağın bittiği yerden başlar, aşağı kayar ve sıkışır;
+      // 3) boyun bandı sıkışır (bantlar arasında boşluk kalmaz)
+      const chinTop = M.lip + lipH, chinDestTop = M.lip + lipDestH, chinDestBot = M.chin + d * 0.45;
+      jctx.drawImage(video!, x0, chinTop, w, M.chin - chinTop, x0, chinDestTop, w, chinDestBot - chinDestTop);
+      jctx.drawImage(video!, x0, M.chin, w, M.neck - M.chin, x0, chinDestBot, w, M.neck - chinDestBot);
+      // 4) üst dudak hafif yukarı çekilir (dudak açılırken üst dudak da hareket eder)
+      const up = d * 0.14;
+      if (up > 0.3) jctx.drawImage(video!, M.cx - M.hw * 1.3, M.top - 4, M.hw * 2.6, M.lip - M.top + 4, M.cx - M.hw * 1.3, M.top - 4 - up, M.hw * 2.6, M.lip - M.top + 4);
       // kenarları yumuşat (dairesel maske)
       const my = (M.lip + M.chin) / 2 + d * 0.3;
       jctx.globalCompositeOperation = "destination-in";
-      const g = jctx.createRadialGradient(M.cx, my, M.hw * 0.9, M.cx, my, M.hw * 2.6);
-      g.addColorStop(0, "rgba(0,0,0,1)"); g.addColorStop(0.7, "rgba(0,0,0,1)"); g.addColorStop(1, "rgba(0,0,0,0)");
+      const g = jctx.createRadialGradient(M.cx, my, M.hw * 1.0, M.cx, my, M.hw * 2.7);
+      g.addColorStop(0, "rgba(0,0,0,1)"); g.addColorStop(0.68, "rgba(0,0,0,1)"); g.addColorStop(1, "rgba(0,0,0,0)");
       jctx.fillStyle = g; jctx.fillRect(0, 0, VW, VH);
       jctx.globalCompositeOperation = "source-over";
-      // ağız içi (üst dudak ile kayan alt dudak arasındaki boşluk) + dişler
-      jctx.save();
-      jctx.beginPath(); jctx.ellipse(M.cx, M.lip + d / 2, M.hw * 0.98, d / 2 + 1.5, 0, 0, 6.2832); jctx.clip();
-      const gi = jctx.createLinearGradient(0, M.lip, 0, M.lip + d);
-      gi.addColorStop(0, "#1c0709"); gi.addColorStop(1, "#4a1a1e");
-      jctx.fillStyle = gi; jctx.fillRect(M.cx - M.hw, M.lip - 2, M.hw * 2, d + 4);
-      if (d > 6) {
-        jctx.fillStyle = "rgba(236,226,214,0.92)";
-        const th = Math.min(7, d * 0.36);
-        jctx.beginPath();
-        if (typeof jctx.roundRect === "function") jctx.roundRect(M.cx - M.hw * 0.62, M.lip - 1, M.hw * 1.24, th, 3);
-        else jctx.rect(M.cx - M.hw * 0.62, M.lip - 1, M.hw * 1.24, th);
-        jctx.fill();
+      // 5) ağız içi: üst dudak (kalkmış) ile kayan alt dudak arasındaki boşluk
+      if (d > 0.5) {
+        const topY = M.lip - up, h = d + up;
+        jctx.save();
+        jctx.beginPath(); jctx.ellipse(M.cx, topY + h / 2, M.hw * 0.98 * wd, h / 2 + 1.5, 0, 0, 6.2832); jctx.clip();
+        const gi = jctx.createLinearGradient(0, topY, 0, topY + h);
+        gi.addColorStop(0, "#160507"); gi.addColorStop(0.55, "#3a1216"); gi.addColorStop(1, "#5a2226");
+        jctx.fillStyle = gi; jctx.fillRect(M.cx - M.hw * 1.2, topY - 2, M.hw * 2.4, h + 4);
+        // dil ipucu (ağız iyice açıkken altta kırmızımsı yumuşak leke)
+        if (h > 12) {
+          jctx.fillStyle = "rgba(150,60,70,0.55)";
+          jctx.beginPath(); jctx.ellipse(M.cx, topY + h * 0.95, M.hw * 0.5 * wd, h * 0.28, 0, 0, 6.2832); jctx.fill();
+        }
+        // üst dişler: açıklıkla belirir, hafif ayrımlı
+        if (h > 5) {
+          const th = Math.min(8, h * 0.4), tw = M.hw * 1.2 * wd;
+          jctx.fillStyle = "rgba(238,229,218,0.94)";
+          jctx.beginPath();
+          if (typeof jctx.roundRect === "function") jctx.roundRect(M.cx - tw / 2, topY - 1, tw, th, [0, 0, 4, 4]);
+          else jctx.rect(M.cx - tw / 2, topY - 1, tw, th);
+          jctx.fill();
+          jctx.strokeStyle = "rgba(120,100,95,0.35)"; jctx.lineWidth = 0.8;
+          for (let k = -2; k <= 2; k++) { const x = M.cx + k * (tw / 5.2); jctx.beginPath(); jctx.moveTo(x, topY); jctx.lineTo(x, topY + th * 0.9); jctx.stroke(); }
+        }
+        jctx.restore();
       }
-      jctx.restore();
       fctx!.drawImage(jaw, 0, 0);
     }
 
@@ -165,9 +232,10 @@ export default function MatrixFace() {
       raf = requestAnimationFrame(frame);
       if (t - last < 33) return; // ~30 fps
       last = t;
-      const target = mouthTarget();
-      open += (target - open) * (target > open ? 0.55 : 0.28);
-      if (video!.readyState >= 2) drawFace(open * MAX_OPEN);
+      const target = mouthTarget(t);
+      open += (target.open - open) * (target.open > open ? 0.6 : 0.3);
+      wide += (target.wide - wide) * 0.35;
+      if (video!.readyState >= 2) drawFace(open * MAX_OPEN, wide);
       drawRain(t);
       if (!reduced) {
         const ry = Math.sin(t * 0.00045) * 3.2, rx = Math.sin(t * 0.00032 + 1.3) * 1.8;
@@ -183,6 +251,7 @@ export default function MatrixFace() {
     return () => {
       running = false; cancelAnimationFrame(raf); ro.disconnect();
       window.removeEventListener("nova:audio", onAudio); window.removeEventListener("nova:mouth", onMouth);
+      window.removeEventListener("nova:speak", onSpeak); window.removeEventListener("nova:speakend", onSpeakEnd);
       document.removeEventListener("visibilitychange", onVis);
     };
   }, []);
