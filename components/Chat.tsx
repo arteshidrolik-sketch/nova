@@ -643,9 +643,30 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     }
   }
 
+  // Sunucunun durum satırları (araştırma/arama/araç/uyarı) — seslendirilmez.
+  // Model metninde bu işaretler nötrleştirildiği için yalnız sunucu satırlarıdır.
+  const STATUS_LINE = /^[ \t]*(?:🔎|🌐|⏳|⚙️?|📂|🔧|🛡️?|⛔|✅|⚠️?|💸)/u;
+  function stripStatus(text: string): string {
+    return text
+      .split("\n")
+      .filter((l) => !STATUS_LINE.test(l))
+      .join("\n")
+      .replace(/💭/gu, " ");
+  }
+  // Cevapta arama/araç adımı var mı? Varsa yalnız SON adımdan sonraki metin okunur.
+  const hasStatus = (text: string) => text.split("\n").some((l) => STATUS_LINE.test(l));
+  function finalSegment(text: string): string {
+    const lines = text.split("\n");
+    let last = -1;
+    lines.forEach((l, i) => {
+      if (STATUS_LINE.test(l)) last = i;
+    });
+    return lines.slice(last + 1).join("\n");
+  }
+
   // Sadece Türkçe düz metni bırak — kodları/teknik kısımları SESLENDİRME.
   function cleanForSpeech(text: string): string {
-    return text
+    return stripStatus(text)
       .replace(/```[\s\S]*?```/g, " ") // fenced kod blokları
       .replace(/~~~[\s\S]*?~~~/g, " ")
       .replace(/!\[[^\]]*\]\([^)]+\)/g, " ") // markdown görsel → at
@@ -1659,8 +1680,19 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       const willSpeak = speakRef.current || voiceReplyRef.current;
       if (willSpeak) cancelSpeak(); // önceki cevabın sesini durdur
       let spokenChar = 0;
+      let hold = false; // arama/araç adımı görüldü → yalnız nihai cevabı, sonda oku
       const pump = (final: boolean) => {
         if (!willSpeak || !active()) return; // arka plandaki sohbet sesli okumasın
+        if (!hold && hasStatus(acc)) {
+          hold = true;
+          if (spokenChar > 0) cancelSpeak(); // ara metni okumaya başlamışsa sustur
+        }
+        if (hold) {
+          if (!final) return;
+          const cleaned = cleanForSpeech(finalSegment(acc));
+          if (cleaned) enqueueSpeak(cleaned);
+          return;
+        }
         let end = acc.length;
         if (!final) {
           // açık kod bloğu içindeysek kapanana kadar bekle (kodu okumayalım)
