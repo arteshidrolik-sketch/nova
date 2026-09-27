@@ -111,7 +111,7 @@ export default function MatrixFace() {
       for (const p of m.patches) out[p.label].push(p.k);
       return out;
     };
-    fetch("/avatar/lip.json").then((r) => r.json()).then((m: LipMeta) => {
+    fetch("/avatar/lip.json?v=loop2").then((r) => r.json()).then((m: LipMeta) => {
       if (alive) { meta = m; groups = byLabel(m); }
     }).catch(() => {});
 
@@ -365,7 +365,7 @@ export default function MatrixFace() {
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/avatar/nova.jpg" alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "50% 22%", opacity: ready ? 0 : 1, transition: "opacity .8s ease" }} />
-        <video ref={videoRef} src="/avatar/nova-idle.mp4" muted loop playsInline autoPlay preload="auto"
+        <video ref={videoRef} src="/avatar/nova-idle.mp4?v=loop2" muted loop playsInline autoPlay preload="auto"
           onPlaying={() => setReady(true)}
           style={{ position: "absolute", width: 2, height: 2, opacity: 0, pointerEvents: "none" }} />
         <canvas ref={faceRef} style={{ position: "absolute", inset: 0, display: "block" }} />
