@@ -343,6 +343,17 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   const audioCtxRef = useRef<AudioContext | null>(null); // dudak senkronu analizörü
   const utterRef = useRef<SpeechSynthesisUtterance | null>(null); // GC koruması
   const neuralRetryAtRef = useRef(0); // bulut sesi kapalıyken bir sonraki deneme anı
+  // Tarayıcı sesinin öğrenilmiş hızı (ms/karakter); her cümleden sonra güncellenir
+  const msPerCharRef = useRef<number>(
+    (() => {
+      try {
+        const v = Number(typeof window !== "undefined" ? localStorage.getItem("nova_ms_per_char") : 0);
+        return v >= 45 && v <= 160 ? v : 88;
+      } catch {
+        return 88;
+      }
+    })(),
+  );
   const [ttsNote, setTtsNote] = useState<string | null>(null); // ses tanı notu (başlıkta)
   // Tarayıcı-içi Whisper (Edge/Safari/Firefox — native STT çalışmaz)
   const [whisperStatus, setWhisperStatus] = useState<
@@ -827,7 +838,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         resolve();
       };
       // Süre sigortası: onend hiç gelmezse kuyruk sonsuza dek beklemesin
-      const guard = setTimeout(finish, text.length * 90 + 5000);
+      const guard = setTimeout(finish, text.length * 170 + 5000);
       // Başlangıç sigortası: 1.5 sn'de başlamadıysa duraklamış olabilir → resume
       const startGuard = setTimeout(() => {
         if (!started) {
@@ -850,16 +861,31 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       };
       // Metin tabanlı zaman çizelgesi (Chrome'un çevrimiçi sesleri boundary
       // olayı göndermez): ~14 karakter/sn Türkçe konuşma hızı varsayımı
+      let startedAt = 0;
       u.onstart = () => {
         started = true;
+        startedAt = performance.now();
         setTtsNote(null); // ses çalıyor → eski uyarıyı kaldır
         window.dispatchEvent(
           new CustomEvent("nova:speak", {
-            detail: { text, durationMs: Math.max(400, text.length * 72), source: "browser" },
+            detail: { text, durationMs: Math.max(400, text.length * msPerCharRef.current), source: "browser" },
           }),
         );
       };
-      u.onend = finish;
+      u.onend = () => {
+        // Konuşma hızını öğren: gerçek süre / karakter (yüzün ağız zamanlaması için)
+        const el = performance.now() - startedAt;
+        if (startedAt && text.length >= 12 && el > 300) {
+          const r = Math.min(160, Math.max(45, el / text.length));
+          msPerCharRef.current = msPerCharRef.current * 0.6 + r * 0.4;
+          try {
+            localStorage.setItem("nova_ms_per_char", String(Math.round(msPerCharRef.current)));
+          } catch {
+            /* yoksay */
+          }
+        }
+        finish();
+      };
       u.onerror = (ev) => {
         const code = (ev as { error?: string }).error || "bilinmeyen";
         if (code !== "interrupted" && code !== "canceled") {

@@ -120,28 +120,38 @@ export default function MatrixFace() {
         else weights.push(0.3);
       }
       const total = weights.reduce((a, b) => a + b, 0) || 1;
-      const dur = Math.max(300, Number(d.durationMs) || total * 62 + lead);
+      const dur = Math.max(300, Number(d.durationMs) || text.length * 88 + lead);
       const scale = (dur - lead) / total;
       charTime = []; cues = [];
-      let cum = 0, vi = 0, prev: Viseme | null = null;
+      // HECE düzeyi: ağız yalnız sesli harflerde (hecenin çekirdeği) ve dudak
+      // kapanan sessizlerde (m/b/p) şekil değiştirir; diğer sessizler geçişte
+      // kalır. İki şekil arası en az MIN_GAP ms — gerçek konuşmada ağız harf harf
+      // değil hece hece hareket eder.
+      const MIN_GAP = 150;
+      let cum = 0, vi = 0, lastT = -1e9;
       for (let i = 0; i < text.length; i++) {
         const t = lead + (cum + weights[i] * 0.5) * scale;
         charTime.push(lead + cum * scale);
         cum += weights[i];
         const ch = text[i].toLocaleLowerCase("tr");
         const isVowel = /[aeıioöuü]/.test(ch);
+        if (/[,;:.!?…]/.test(ch)) { cues.push({ t, v: "rest", k: -1 }); lastT = t; continue; } // duraklama
+        if (ch === " ") continue;
         const v = visemeOf(ch, vi);
         if (isVowel) vi++;
-        if (v === null) {
-          // boşluk/noktalama: duraklama — virgül/noktada ağız dinlenir
-          if (/[,;:.!?…]/.test(ch)) cues.push({ t, v: "rest", k: -1 });
+        if (v === null) continue;
+        const important = isVowel || v === "closed";
+        if (!important) continue; // s/t/n/r… ayrı şekil almaz
+        if (t - lastT < MIN_GAP) {
+          // çok sık: öncekini bu heceyle değiştir (sesli, kapanmadan önceliklidir)
+          const p = cues[cues.length - 1];
+          if (p && p.v !== "rest" && isVowel && p.v === "closed") continue;
+          if (p && p.v !== "rest" && isVowel) { p.v = v; const l = groups?.[v] ?? []; p.k = l.length ? l[(i * 7 + vi) % l.length] : -1; }
           continue;
         }
-        if (v === "rest" && prev === "rest") continue; // art arda sessizleri tek hareket say
         const list = groups?.[v] ?? [];
-        const k = list.length ? list[(i * 7 + vi) % list.length] : -1;
-        cues.push({ t, v, k });
-        prev = v;
+        cues.push({ t, v, k: list.length ? list[(i * 7 + vi) % list.length] : -1 });
+        lastT = t;
       }
       tlStart = performance.now(); tlDur = dur; tlSource = src;
     }
@@ -183,15 +193,15 @@ export default function MatrixFace() {
         // uzun duraklamada (virgül/nokta) ağız boşta haline döner
         if (gap > 380 && t - c0.t > 180) return { a: pick(c0), b: -1, w: 0, open: 0, on: false };
         const f = c1 ? Math.min(1, Math.max(0, (t - c0.t) / gap)) : 0;
-        const w = f < 0.5 ? 0 : (f - 0.5) / 0.5; // ikinci yarıda sıradakine geç
+        const w = f < 0.3 ? 0 : (f - 0.3) / 0.7; // aralığın büyük kısmında yumuşak geçiş
         const ww = w * w * (3 - 2 * w);
         return { a: pick(c0), b: c1 ? pick(c1) : -1, w: ww, open: OPEN[c0.v] * (1 - ww) + (c1 ? OPEN[c1.v] * ww : 0), on: true };
       }
       // çizelge yok: doğal görünen genel konuşma ritmi
       const seq: Viseme[] = ["a", "rest", "e", "o", "rest", "i", "am", "closed", "e", "u"];
-      if (now - fallbackAt > 130) { fallbackAt = now; fallbackI = (fallbackI + 1) % seq.length; }
+      if (now - fallbackAt > 210) { fallbackAt = now; fallbackI = (fallbackI + 1) % seq.length; }
       const l1 = groups[seq[fallbackI]], l2 = groups[seq[(fallbackI + 1) % seq.length]];
-      const w = Math.min(1, (now - fallbackAt) / 130);
+      const w = Math.min(1, (now - fallbackAt) / 210);
       return { a: l1[fallbackI % l1.length] ?? -1, b: l2[fallbackI % l2.length] ?? -1, w: w * w, open: OPEN[seq[fallbackI]], on: true };
     }
 
