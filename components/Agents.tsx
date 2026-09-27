@@ -15,7 +15,8 @@ type CustomAgent = {
 type Skill = { id: string; name: string };
 
 const MODELS = [
-  { id: "claude-opus-5", label: "Opus 5 — en güçlü" },
+  { id: "claude-opus-5-5", label: "Opus 5.5 — en güçlü" },
+  { id: "claude-opus-5", label: "Opus 5" },
   { id: "claude-sonnet-5", label: "Sonnet 5 — dengeli/ucuz" },
   { id: "claude-opus-4-8", label: "Opus 4.8 — önceki nesil" },
   { id: "claude-fable-5", label: "Fable 5 — üst seviye (pahalı)" },
@@ -27,7 +28,7 @@ const empty = {
   description: "",
   emoji: "🤖",
   color: "#4fd8ff",
-  model: "claude-opus-5",
+  model: "claude-opus-5-5",
   systemPrompt: "",
   skillIds: [] as string[],
 };

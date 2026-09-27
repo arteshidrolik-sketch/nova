@@ -278,7 +278,7 @@ export async function POST(req: Request) {
   let answerModel = customAgent
     ? customAgent.model
     : project?.self
-      ? "claude-opus-5"
+      ? "claude-opus-5-5"
       : modelForAgent(agent);
   // Büyük dosya yazımı kesilmesin diye güçlü modellerde daha yüksek çıktı limiti
   let maxTokens = /opus|sonnet/.test(answerModel) ? 16000 : 8000;

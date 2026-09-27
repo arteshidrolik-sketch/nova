@@ -1,9 +1,12 @@
 // Ajana göre model seçimi: hafif işler ucuz/hızlı modelde, kodlama en güçlü modelde.
 import type { AgentKey } from "./meta";
 
-// Kullanıcı tercihi (27.09.2026): tüm ajanlar en güncel Opus'ta (Claude Opus 5).
+// Kullanıcı tercihi (27.09.2026): tüm ajanlar en güncel Opus'ta (Claude Opus 5.5).
 // Daha ucuz/hızlı bir ajan istenirse NOVA_MODEL_<AJAN>=claude-sonnet-5 ile ezilebilir.
-const OPUS = "claude-opus-5"; // en güçlü güncel Opus
+// NOT: Opus 5.5 zorunlu araç seçimini (tool_choice "tool"/"any") 400 ile reddeder.
+// Onu kullanan yerler (fatura, hafıza, sürüm notu, yönlendirici) NOVA_MODEL /
+// NOVA_ROUTER_MODEL ile ayrı modelde çalışır — NOVA_MODEL'i Opus 5.5 yapma.
+const OPUS = "claude-opus-5-5"; // en güçlü güncel Opus
 
 export const AGENT_MODELS: Record<AgentKey, string> = {
   general: OPUS,
