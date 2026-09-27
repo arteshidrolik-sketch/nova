@@ -29,8 +29,23 @@ type LipMeta = {
   patches: { k: number; label: Viseme }[];
   idleOff: [number, number][];
 };
-// Baş kıpırtısı için yaklaşık açıklık
-const OPEN: Record<Viseme, number> = { closed: 0, rest: 0.15, a: 1, am: 0.7, e: 0.5, i: 0.35, o: 0.6, u: 0.3 };
+// Baş kıpırtısı için yaklaşık açıklık (minimal hareket: küçük değerler)
+const OPEN: Record<Viseme, number> = { closed: 0, rest: 0.1, a: 0.3, am: 0.2, e: 0.2, i: 0.15, o: 0.2, u: 0.1 };
+// MİNİMAL ağız seti (kullanıcı: "iki dudak arası çok açılıyor, minimal hareket daha
+// gerçekçi"). Atlas parça numaraları (lip.json sırası): 0-1 kapalı, 2 hafif aralık,
+// 3-4 diş ucu, 18-19 hafif aralık (dişsiz), 20 küçük diş, 21-22 büzük.
+// Geniş açık "a" (5-10) ve tam dişli "e/i" (11-17) kareleri KULLANILMAZ.
+const MINIMAL: Record<Viseme, number[]> = {
+  closed: [0, 1],
+  rest: [2, 19],
+  a: [3, 4, 20],
+  am: [2, 18],
+  e: [2, 3, 19],
+  i: [2, 18],
+  o: [18, 19],
+  u: [21, 22],
+};
+const LAYER_MAX = 0.82; // boşta ağzıyla hafif karışım: değişimler yumuşak kalsın
 
 function visemeOf(ch: string, vowelIdx: number): Viseme | null {
   if (ch === "a") return vowelIdx % 3 === 1 ? "am" : "a"; // vurgu çeşitlemesi
@@ -86,6 +101,10 @@ export default function MatrixFace() {
     atlas.src = "/avatar/lip-atlas.webp";
     let groups: Record<Viseme, number[]> | null = null;
     const byLabel = (m: LipMeta): Record<Viseme, number[]> => {
+      // Minimal set; atlasta olmayan numara varsa etiket gruplarına düş
+      const n = m.patches.length;
+      const ok = Object.values(MINIMAL).every((l) => l.every((k) => k < n));
+      if (ok) return MINIMAL;
       const out = { closed: [], rest: [], a: [], am: [], e: [], i: [], o: [], u: [] } as Record<Viseme, number[]>;
       for (const p of m.patches) out[p.label].push(p.k);
       return out;
@@ -198,7 +217,7 @@ export default function MatrixFace() {
         return { a: pick(c0), b: c1 ? pick(c1) : -1, w: ww, open: OPEN[c0.v] * (1 - ww) + (c1 ? OPEN[c1.v] * ww : 0), on: true };
       }
       // çizelge yok: doğal görünen genel konuşma ritmi
-      const seq: Viseme[] = ["a", "rest", "e", "o", "rest", "i", "am", "closed", "e", "u"];
+      const seq: Viseme[] = ["a", "rest", "e", "o", "closed", "i", "am", "rest", "e", "u"];
       if (now - fallbackAt > 210) { fallbackAt = now; fallbackI = (fallbackI + 1) % seq.length; }
       const l1 = groups[seq[fallbackI]], l2 = groups[seq[(fallbackI + 1) % seq.length]];
       const w = Math.min(1, (now - fallbackAt) / 210);
@@ -270,7 +289,7 @@ export default function MatrixFace() {
       const amp = amplitude();
       if (amp !== null) quiet = amp < 0.02 ? quiet + 1 : 0;
       const on = cur.on && quiet < 5;
-      layer += ((on ? 1 : 0) - layer) * (on ? 0.45 : 0.25);
+      layer += ((on ? LAYER_MAX : 0) - layer) * (on ? 0.35 : 0.22);
       openSm += (cur.open * (on ? 1 : 0) - openSm) * 0.3;
       if (video!.readyState >= 2) {
         const sideFill = VW * scale < W - 1;
