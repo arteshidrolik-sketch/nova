@@ -30,7 +30,7 @@ type LipMeta = {
   idleOff: [number, number][];
 };
 // Baş kıpırtısı için yaklaşık açıklık (minimal hareket: küçük değerler)
-const OPEN: Record<Viseme, number> = { closed: 0, rest: 0.02, a: 0.06, am: 0.04, e: 0.04, i: 0.03, o: 0.04, u: 0.02 };
+const OPEN: Record<Viseme, number> = { closed: 0, rest: 0.04, a: 0.11, am: 0.07, e: 0.07, i: 0.05, o: 0.07, u: 0.04 };
 // MİNİMAL ağız seti (kullanıcı: "iki dudak arası çok açılıyor, minimal hareket daha
 // gerçekçi"). Atlas parça numaraları (lip.json sırası): 0-1 kapalı, 2 hafif aralık,
 // 3-4 diş ucu, 18-19 hafif aralık (dişsiz), 20 küçük diş, 21-22 büzük.
@@ -45,9 +45,9 @@ const MINIMAL: Record<Viseme, number[]> = {
   o: [18, 19],
   u: [21, 22],
 };
-// Kullanıcı: "5 kat daha azalt, belli belirsiz hareket etsin" → 0.82 / 5 ≈ 0.16.
-// Ağız parçası boşta ağzının üstüne yalnız %16 karışır: hareket sezilir ama belirgin değil.
-const LAYER_MAX = 0.16;
+// Kullanıcı ayarı: 0.82 çok fazla → 0.16 çok az → "1 tık artır" → 0.30.
+// Ağız parçası boşta ağzının üstüne %30 karışır: hafif ama fark edilir hareket.
+const LAYER_MAX = 0.3;
 
 function visemeOf(ch: string, vowelIdx: number): Viseme | null {
   if (ch === "a") return vowelIdx % 3 === 1 ? "am" : "a"; // vurgu çeşitlemesi
