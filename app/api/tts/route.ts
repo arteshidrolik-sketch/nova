@@ -5,9 +5,24 @@
 // 501/502 → istemci tarayıcı sesine düşer.
 export const runtime = "nodejs";
 
+// Devre kesici: sağlayıcı kredi/limit hatası verdiyse 10 dk boyunca tekrar deneme
+// (her cümlede boşuna bekleme olmasın). Son sebep kullanıcıya gösterilir.
+const COOLDOWN_MS = 10 * 60_000;
+const down: Record<"openai" | "fal", { until: number; why: string }> = {
+  openai: { until: 0, why: "" },
+  fal: { until: 0, why: "" },
+};
+function markDown(p: "openai" | "fal", status: number, body: string) {
+  let why = `${status}`;
+  if (status === 429 || /quota|credit|balance/i.test(body)) why = "kredi/kota bitti";
+  else if (status === 403 && /top_up|locked/i.test(body)) why = "bakiye yüklenmeli";
+  else if (status === 401) why = "anahtar geçersiz";
+  down[p] = { until: Date.now() + COOLDOWN_MS, why };
+}
+
 async function openaiTts(text: string, voice: string): Promise<ArrayBuffer | null> {
   const key = process.env.OPENAI_API_KEY;
-  if (!key) return null;
+  if (!key || Date.now() < down.openai.until) return null;
   try {
     const res = await fetch("https://api.openai.com/v1/audio/speech", {
       method: "POST",
@@ -22,7 +37,9 @@ async function openaiTts(text: string, voice: string): Promise<ArrayBuffer | nul
       }),
     });
     if (!res.ok) {
-      console.warn("[tts] openai", res.status, (await res.text().catch(() => "")).slice(0, 160));
+      const body = (await res.text().catch(() => "")).slice(0, 400);
+      console.warn("[tts] openai", res.status, body.slice(0, 160));
+      markDown("openai", res.status, body);
       return null;
     }
     return await res.arrayBuffer();
@@ -36,7 +53,7 @@ async function openaiTts(text: string, voice: string): Promise<ArrayBuffer | nul
 // döner: { audio: { url } } → mp3'ü indirip aynen geçiriyoruz.
 async function falTts(text: string): Promise<ArrayBuffer | null> {
   const key = process.env.FAL_KEY;
-  if (!key) return null;
+  if (!key || Date.now() < down.fal.until) return null;
   const model = process.env.NOVA_FAL_TTS_MODEL || "fal-ai/elevenlabs/tts/turbo-v2.5";
   const voice = process.env.NOVA_FAL_TTS_VOICE || "Rachel";
   try {
@@ -54,7 +71,9 @@ async function falTts(text: string): Promise<ArrayBuffer | null> {
     });
     const data = (await res.json().catch(() => ({}))) as { audio?: { url?: string }; detail?: unknown };
     if (!res.ok || !data?.audio?.url) {
-      console.warn("[tts] fal", res.status, JSON.stringify(data?.detail ?? data).slice(0, 160));
+      const body = JSON.stringify(data?.detail ?? data).slice(0, 400);
+      console.warn("[tts] fal", res.status, body.slice(0, 160));
+      if (!res.ok) markDown("fal", res.status, body);
       return null;
     }
     const a = await fetch(data.audio.url);
@@ -84,7 +103,17 @@ export async function POST(req: Request) {
   if (text.length > 4000) text = text.slice(0, 4000); // API sınırı
 
   const buf = (await openaiTts(text, voice)) ?? (await falTts(text));
-  if (!buf) return new Response("TTS sağlayıcıları yanıt vermedi (kredi/limit?)", { status: 502 });
+  if (!buf) {
+    // 503 + JSON: Cloudflare 502/504'ü kendi HTML sayfasıyla değiştiriyor, 503'ü geçirir
+    const parts: string[] = [];
+    if (process.env.OPENAI_API_KEY) parts.push(`OpenAI: ${down.openai.why || "yanıt yok"}`);
+    if (process.env.FAL_KEY) parts.push(`fal: ${down.fal.why || "yanıt yok"}`);
+    const retryIn = Math.max(0, Math.min(down.openai.until || Infinity, down.fal.until || Infinity) - Date.now());
+    return Response.json(
+      { error: "tts_unavailable", reason: parts.join(" · "), retryInMs: Number.isFinite(retryIn) ? retryIn : COOLDOWN_MS },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
+    );
+  }
   return new Response(buf, {
     status: 200,
     headers: { "Content-Type": "audio/mpeg", "Cache-Control": "no-store" },

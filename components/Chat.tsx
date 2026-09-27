@@ -342,6 +342,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   const audioElRef = useRef<HTMLAudioElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null); // dudak senkronu analizörü
   const utterRef = useRef<SpeechSynthesisUtterance | null>(null); // GC koruması
+  const neuralRetryAtRef = useRef(0); // bulut sesi kapalıyken bir sonraki deneme anı
   const [ttsNote, setTtsNote] = useState<string | null>(null); // ses tanı notu (başlıkta)
   // Tarayıcı-içi Whisper (Edge/Safari/Firefox — native STT çalışmaz)
   const [whisperStatus, setWhisperStatus] = useState<
@@ -692,9 +693,21 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
           });
           if (res.status === 501) return resolve("nokey"); // anahtar yok → tarayıcıya düş
           if (!res.ok) {
-            const why = (await res.text().catch(() => "")).slice(0, 120);
+            const raw = await res.text().catch(() => "");
+            let why = "";
+            let retryMs = 5 * 60_000;
+            try {
+              const j = JSON.parse(raw) as { reason?: string; retryInMs?: number };
+              why = j.reason || "";
+              if (typeof j.retryInMs === "number" && j.retryInMs > 0) retryMs = j.retryInMs;
+            } catch {
+              // JSON değil: ağ geçidi (Cloudflare) HTML sayfası vb. → HTML'i gösterme
+              why = /<html|<!doctype/i.test(raw) ? `ağ geçidi hatası ${res.status}` : raw.slice(0, 80);
+            }
             console.warn("[tts] bulut sesi", res.status, why);
-            setTtsNote(`Bulut sesi kapalı (${res.status}${why ? ": " + why : ""}) — tarayıcı sesi kullanılıyor.`);
+            // Bir süre bulut sesini deneme: her cümlede sunucuyu bekleyip gecikme olmasın
+            neuralRetryAtRef.current = Date.now() + retryMs;
+            setTtsNote(`Bulut sesi kapalı${why ? " (" + why + ")" : ""} — tarayıcı sesi kullanılıyor.`);
             return resolve("fail");
           }
           const blob = await res.blob();
@@ -886,7 +899,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       if (chunk == null) continue;
       rememberSpoken(chunk);
       let played = false;
-      if (neuralTtsRef.current !== false) {
+      if (neuralTtsRef.current !== false && Date.now() >= neuralRetryAtRef.current) {
         const st = await playNeural(chunk);
         if (st === "ok") {
           played = true;
