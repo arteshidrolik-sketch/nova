@@ -41,6 +41,7 @@ type Message = {
 // Model kimliğini kısa okunur ada çevir
 function modelLabel(id?: string): string {
   if (!id) return "";
+  if (id.includes("opus-5")) return "Opus 5";
   if (id.includes("opus")) return "Opus 4.8";
   if (id.includes("fable")) return "Fable 5";
   if (id.includes("sonnet")) return "Sonnet 5";

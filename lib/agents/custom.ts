@@ -36,7 +36,7 @@ export async function getCustomAgent(id: string): Promise<CustomAgent | undefine
   return (await loadCustomAgents()).find((a) => a.id === id);
 }
 
-const MODELS = new Set(["claude-fable-5", "claude-sonnet-5", "claude-opus-4-8"]);
+const MODELS = new Set(["claude-opus-5", "claude-fable-5", "claude-sonnet-5", "claude-opus-4-8"]);
 
 export async function createCustomAgent(input: {
   name: string;
@@ -54,7 +54,7 @@ export async function createCustomAgent(input: {
     description: (input.description ?? "").trim(),
     emoji: (input.emoji || "🤖").slice(0, 4),
     color: /^#[0-9a-fA-F]{6}$/.test(input.color || "") ? (input.color as string) : "#22d3ee",
-    model: input.model && MODELS.has(input.model) ? input.model : "claude-sonnet-5",
+    model: input.model && MODELS.has(input.model) ? input.model : "claude-opus-5",
     systemPrompt: input.systemPrompt,
     skillIds: input.skillIds ?? [],
     createdAt: Date.now(),

@@ -1,17 +1,17 @@
 // Ajana göre model seçimi: hafif işler ucuz/hızlı modelde, kodlama en güçlü modelde.
 import type { AgentKey } from "./meta";
 
-const OPUS = "claude-opus-4-8"; // en güçlü — kodlama/inceleme
-const FABLE = "claude-fable-5"; // hızlı/ucuz — genel sohbet
-const SONNET = "claude-sonnet-5"; // dengeli — araştırma/planlama/store
+// Kullanıcı tercihi (27.09.2026): tüm ajanlar en güncel Opus'ta (Claude Opus 5).
+// Daha ucuz/hızlı bir ajan istenirse NOVA_MODEL_<AJAN>=claude-sonnet-5 ile ezilebilir.
+const OPUS = "claude-opus-5"; // en güçlü güncel Opus
 
 export const AGENT_MODELS: Record<AgentKey, string> = {
-  general: SONNET, // genel sohbet de güçlü model + düşünme (kullanıcı tercihi)
+  general: OPUS,
   developer: OPUS,
   codeReviewer: OPUS,
-  research: SONNET,
-  releaseStore: SONNET,
-  projectOps: SONNET,
+  research: OPUS,
+  releaseStore: OPUS,
+  projectOps: OPUS,
 };
 
 // İstersen ortam değişkeniyle ezebilirsin: NOVA_MODEL_DEVELOPER=... gibi.

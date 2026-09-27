@@ -17,9 +17,10 @@ export type Budget = {
 
 // Yaklaşık fiyatlar ($/1M token) [girdi, çıktı] — SADECE tahmini gösterim için.
 const PRICE: Record<string, [number, number]> = {
-  "claude-opus-4-8": [15, 75],
-  "claude-sonnet-5": [3, 15],
-  "claude-fable-5": [1, 5],
+  "claude-opus-5": [5, 25],
+  "claude-opus-4-8": [5, 25],
+  "claude-sonnet-5": [2, 10],
+  "claude-fable-5": [10, 50],
   "claude-haiku-4-5-20251001": [1, 5],
 };
 
