@@ -238,7 +238,8 @@ async function publishTick(): Promise<void> {
   const now = istanbulNow();
   const s = await loadIg();
   const used = s.usedSlots?.[now.date] || [];
-  const slot = SLOTS.find((x) => now.min >= toMin(x) && now.min - toMin(x) <= 45 && !used.includes(x));
+  const slots = [...SLOTS, ...(s.extraSlots?.[now.date] || [])];
+  const slot = slots.find((x) => now.min >= toMin(x) && now.min - toMin(x) <= 45 && !used.includes(x));
   if (!slot) return;
   await updateIg((st) => {
     const today = st.usedSlots?.[now.date] || [];
@@ -310,6 +311,17 @@ async function onMessage(chatId: number, text: string): Promise<void> {
     if (!(await stock()).approved) return void (await tg.sendMessage(chatId, "📭 Kuyrukta onaylı gönderi yok."));
     await tg.sendMessage(chatId, "📤 Sıradaki gönderi şimdi paylaşılıyor…");
     await publishNext("elle");
+  } else if (cmd === "/saat") {
+    // Tek seferlik ek paylaşım saati: bugün geçmediyse bugün, geçtiyse yarın
+    const hm = (text.split(/\s+/)[1] || "").padStart(5, "0");
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(hm))
+      return void (await tg.sendMessage(chatId, "Kullanım: /saat 00:00 — sıradaki gönderiyi o saatte (bir kereliğine) paylaşır."));
+    const now = istanbulNow();
+    const date = toMin(hm) > now.min ? now.date : istanbulNow(new Date(Date.now() + 86_400_000)).date;
+    await updateIg((st) => {
+      st.extraSlots = { ...(st.extraSlots || {}), [date]: [...(st.extraSlots?.[date] || []), hm] };
+    });
+    await tg.sendMessage(chatId, `🕒 Tamam abim, ${date} ${hm}'da kuyruktaki sıradaki gönderi paylaşılacak.`);
   } else if (cmd === "/uret") {
     const n = Math.max(1, Math.min(10, Number(text.split(/\s+/)[1]) || 1));
     if (busy) return void (await tg.sendMessage(chatId, "⏳ Şu an üretim sürüyor, bitince tekrar dene."));
@@ -318,7 +330,7 @@ async function onMessage(chatId: number, text: string): Promise<void> {
   } else {
     await tg.sendMessage(
       chatId,
-      `🥺 Sanal Dilenci onay botu\n\n/durum — kuyruk ve bekleyenler\n/uret 3 — şimdi 3 konsept üret\n/paylas — kuyruktaki sıradakini hemen paylaş\n\n` +
+      `🥺 Sanal Dilenci onay botu\n\n/durum — kuyruk ve bekleyenler\n/uret 3 — şimdi 3 konsept üret\n/paylas — kuyruktaki sıradakini hemen paylaş\n/saat 00:00 — bir kereliğine ek paylaşım saati\n\n` +
         (MANUAL ? `Her konsept mesajındaki komutu Gemini'de karakter.jpg ile üret, görseli o mesaja YANIT olarak at. ` : "") +
         `Balonlu görselin altındaki ✅/❌ ile onay/ret verirsin; ret edilenin yerine yenisi gelir.`,
     );

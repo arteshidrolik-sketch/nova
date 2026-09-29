@@ -43,6 +43,7 @@ export type IgState = {
   igTokenRefreshedTs?: number;
   lastBatchDate?: string;
   usedSlots?: Record<string, string[]>; // tarih → kullanılan saat dilimleri
+  extraSlots?: Record<string, string[]>; // tarih → o güne özel ek saatler (tek seferlik)
   items: IgItem[];
 };
 

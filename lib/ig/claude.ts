@@ -33,14 +33,15 @@ export async function makeConcepts(
     messages: [
       {
         role: "user",
-        content: `${n} adet YENİ gönderi konsepti üret. Her biri farklı bir klişe olsun.
+        content: `${n} adet YENİ gönderi konsepti üret. Her biri farklı bir klişe ve farklı bir izleyici durumu olsun.
+Karakter HER ZAMAN kameraya bakıp izleyiciden diler (ANA KURAL 3); sahnede dilendiği başka biri OLMAZ.
 
 Daha önce kullanılanlar (TEKRARLAMA, benzerini de yazma):
 ${avoid.slice(-60).map((a) => `- ${a.replace(/\n/g, " ")}`).join("\n") || "(yok)"}
 ${rejected.length ? `\nYücel'in REDDETTİKLERİ (bu tarzdan uzak dur):\n${rejected.slice(-20).map((a) => `- ${a.replace(/\n/g, " ")}`).join("\n")}` : ""}
 
 SADECE JSON dizi döndür:
-[{"klise":"...","balon":"satır1\\nsatır2\\nsatır3","sahne":"English scene: where, who he begs from (that person/vehicle must be clearly visible), what he does with his cracked phone","aciklama":"...","hashtag":"#tek"}]`,
+[{"klise":"...","balon":"satır1\\nsatır2\\nsatır3","sahne":"English scene: where he is, his pose/prop toward the camera (e.g. close-up pressing his palm toward the lens, holding a blank cardboard sign to the camera, kneeling and looking up into the lens as if from a passer-by's phone, peeking into the frame, knocking on the lens like a screen), what he does with his cracked phone. Only background passers-by, nobody he talks to.","aciklama":"...","hashtag":"#tek"}]`,
       },
     ],
   });
@@ -70,7 +71,7 @@ export async function checkImage(jpeg: Buffer): Promise<ImageCheck> {
           },
           {
             type: "text",
-            text: `This 1080x1350 image should show an old street beggar with long grey hair, grey beard and a brown fringed coat, begging someone for Instagram follows.
+            text: `This 1080x1350 image should show an old street beggar with long grey hair, grey beard and a brown fringed coat, looking into the camera and begging the viewer.
 Return ONLY JSON: {"ok":true|false,"reason":"short Turkish reason if not ok","headX":int,"headY":int}
 - ok=false if: the beggar is missing, there are 2+ similar beggars, the image contains readable text/letters/logos/brand names, or it is distorted/ugly.
 - headX, headY: pixel coordinates of the TOP of the beggar's head (hair top, center) in this 1080x1350 image.`,
