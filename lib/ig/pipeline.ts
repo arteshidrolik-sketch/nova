@@ -241,6 +241,8 @@ async function publishTick(): Promise<void> {
   const slots = [...SLOTS, ...(s.extraSlots?.[now.date] || [])];
   const slot = slots.find((x) => now.min >= toMin(x) && now.min - toMin(x) <= 45 && !used.includes(x));
   if (!slot) return;
+  // Kuyruk boşsa dilimi harcama: tolerans (45 dk) içinde onaylanan gönderi yine bu dilimde çıkar
+  if (!s.items.some((i) => i.status === "approved" && i.file)) return;
   await updateIg((st) => {
     const today = st.usedSlots?.[now.date] || [];
     st.usedSlots = { [now.date]: [...today, slot] }; // yalnız bugünü tut
