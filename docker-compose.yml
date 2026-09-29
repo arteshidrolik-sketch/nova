@@ -31,6 +31,12 @@ services:
       - "traefik.http.services.nova.loadbalancer.server.port=3000"
       - "traefik.http.routers.nova.middlewares=nova-auth"
       - "traefik.http.middlewares.nova-auth.basicauth.users=${BASIC_AUTH}"
+      # Instagram görseli buradan çeker → basic-auth yok; uç yalnız imzalı istekleri kabul eder.
+      - "traefik.http.routers.nova-igmedia.entrypoints=websecure"
+      - "traefik.http.routers.nova-igmedia.rule=PathPrefix(`/api/ig/media/`)"
+      - "traefik.http.routers.nova-igmedia.priority=1000"
+      - "traefik.http.routers.nova-igmedia.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.nova-igmedia.service=nova"
 
 volumes:
   nova-data:

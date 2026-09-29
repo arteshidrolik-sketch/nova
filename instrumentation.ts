@@ -3,6 +3,14 @@
 // Kapatmak için .env.local'a NOVA_SCHEDULER=off ekle.
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
+
+  // Sanal Dilenci Instagram otomasyonu (Telegram onaylı). Yalnız tek yerde
+  // (VPS) açık olmalı: iki süreç aynı botu yoklarsa Telegram çakışır.
+  if (process.env.IG_WORKER === "on") {
+    const { startIgWorker } = await import("@/lib/ig/pipeline");
+    startIgWorker();
+  }
+
   if (process.env.NOVA_SCHEDULER === "off") return;
 
   // Dev HMR'da çift interval kurulmasını engelle
