@@ -1774,7 +1774,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       fetch("/api/memory", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userText: text, assistantText: acc }),
+        body: JSON.stringify({ userText: text, assistantText: acc, conversationId: myConvId }),
       }).catch(() => {});
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Bilinmeyen hata";

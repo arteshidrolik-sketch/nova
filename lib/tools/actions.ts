@@ -1,6 +1,8 @@
 // Aksiyonlar (yazma/komut). Model aracı çağırır; sunucu HEMEN execute() çalıştırır
 // (GO onayı kaldırıldı) ve sonucu Görevler'e "tamamlandı" olarak kaydeder.
 import { promises as fs } from "fs";
+import * as fsSync from "fs";
+import { AsyncLocalStorage } from "async_hooks";
 import path from "path";
 import { exec } from "child_process";
 import { promisify } from "util";
@@ -54,6 +56,50 @@ type ActionDef = {
 
 const WORKSPACE = path.join(process.cwd(), "workspace");
 
+// --- Sohbet başına dosya alanı ---------------------------------------------
+// Her sohbetin ürettiği dosyalar workspace/c-<sohbet>/ altına yazılır; böylece
+// iki sohbet aynı adla dosya yazsa da birbirinin üstüne yazmaz (ayrı editör
+// penceresi/klasörü gibi). Kapsam, executeAction çağrısı boyunca
+// AsyncLocalStorage ile taşınır. Kapsam yoksa (onay kuyruğu vb.) eski ortak
+// klasör kullanılır.
+const wsScope = new AsyncLocalStorage<string>();
+export function workspaceScopeFor(conversationId?: string | null): string {
+  const id = String(conversationId || "").replace(/[^a-zA-Z0-9]/g, "").slice(0, 8);
+  return id ? `c-${id}` : "";
+}
+function stripScope(p: string, scope: string): string {
+  const cleaned = p.replace(/\\/g, "/").replace(/^\/+/, "");
+  return scope && cleaned.startsWith(scope + "/") ? cleaned.slice(scope.length + 1) : cleaned;
+}
+function inWorkspace(rel: string): string {
+  const target = path.normalize(path.join(WORKSPACE, rel));
+  if (target !== WORKSPACE && !target.startsWith(WORKSPACE + path.sep)) {
+    throw new Error("Geçersiz yol.");
+  }
+  return target;
+}
+// Verilen kapsamda YAZMA yolu (klasörünü oluşturur). route.ts da kullanır.
+export function workspaceWritePath(scope: string, name: string): string {
+  const rel = stripScope(name, scope);
+  const target = inWorkspace(scope ? `${scope}/${rel}` : rel);
+  fsSync.mkdirSync(path.dirname(target), { recursive: true });
+  return target;
+}
+// OKUMA yolu: önce sohbetin klasörü, yoksa eski ortak klasör (geriye uyum).
+export function workspaceReadPath(scope: string, name: string): string {
+  const rel = stripScope(name, scope);
+  if (scope) {
+    const scoped = inWorkspace(`${scope}/${rel}`);
+    if (fsSync.existsSync(scoped)) return scoped;
+  }
+  return inWorkspace(rel);
+}
+// Bağlantılarda kullanılacak göreli ad (kapsam önekiyle)
+function wsRel(name: string): string {
+  const scope = wsScope.getStore() || "";
+  return scope ? `${scope}/${stripScope(name, scope)}` : name;
+}
+
 // Uzak (fal.media) bir dosyayı indirip workspace'e kaydeder, yerel inline
 // URL döner. fal.media süreli URL'lerini kalıcı hale getirir. Başarısızsa null
 // (çağıran fal URL'ine düşer). Ad çakışmasın diye zaman damgalı benzersiz ad.
@@ -81,19 +127,18 @@ async function saveRemoteToWorkspace(
     const name = `${prefix}-${Date.now()}-${__seq++}.${ext}`;
     await fs.mkdir(WORKSPACE, { recursive: true });
     await fs.writeFile(safeWorkspacePath(name), buf);
-    return `/api/files?name=${encodeURIComponent(name)}&inline=1`;
+    return `/api/files?name=${encodeURIComponent(wsRel(name))}&inline=1`;
   } catch {
     return null;
   }
 }
 
 function safeWorkspacePath(p: string): string {
-  const cleaned = p.replace(/\\/g, "/").replace(/^\/+/, "");
-  const target = path.normalize(path.join(WORKSPACE, cleaned));
-  if (target !== WORKSPACE && !target.startsWith(WORKSPACE + path.sep)) {
-    throw new Error("Geçersiz yol.");
-  }
-  return target;
+  return workspaceWritePath(wsScope.getStore() || "", p);
+}
+// Var olan bir dosyayı okurken: sohbet klasörü → ortak klasör sırasıyla ara
+function readWorkspacePath(p: string): string {
+  return workspaceReadPath(wsScope.getStore() || "", p);
 }
 
 export const ACTIONS: Record<string, ActionDef> = {
@@ -121,7 +166,7 @@ export const ACTIONS: Record<string, ActionDef> = {
       await fs.writeFile(target, content, "utf8");
       const sec = formatFindings(scanContent(String(p.path), content));
       const rel = String(p.path);
-      const link = `[📄 ${rel}](/api/files?name=${encodeURIComponent(rel)})`;
+      const link = `[📄 ${rel}](/api/files?name=${encodeURIComponent(wsRel(rel))})`;
       return `✅ Yazıldı: ${link} (${Buffer.byteLength(content)} bayt) — **Dosyalar** sekmesinden de indirebilirsin.${sec}`;
     },
   },
@@ -375,7 +420,7 @@ export const ACTIONS: Record<string, ActionDef> = {
       if (!saved.length) return "Belge üretildi ama indirilemedi.";
       // Chat'e tıklanabilir indirme linki + "Dosyalar" sekmesi yönlendirmesi
       const links = saved
-        .map((f) => `[📄 ${f}](/api/files?name=${encodeURIComponent(f)})`)
+        .map((f) => `[📄 ${f}](/api/files?name=${encodeURIComponent(wsRel(f))})`)
         .join("  ·  ");
       return `✅ Belge hazır: ${links}\n_(Tüm dosyalar **Dosyalar** sekmesinde — oradan da bilgisayarına indirebilirsin.)_`;
     },
@@ -480,7 +525,7 @@ export const ACTIONS: Record<string, ActionDef> = {
       await fs.mkdir(WORKSPACE, { recursive: true });
       const buf = await wb.xlsx.writeBuffer();
       await fs.writeFile(safeWorkspacePath(outName), Buffer.from(buf));
-      const link = `[📊 ${outName}](/api/files?name=${encodeURIComponent(outName)})`;
+      const link = `[📊 ${outName}](/api/files?name=${encodeURIComponent(wsRel(outName))})`;
       return (
         `✅ Formüller eklendi (orijinal korundu, yeni kopya): ${link}\n` +
         `Uygulanan (${applied.length}): ${applied.slice(0, 20).join(" · ")}${applied.length > 20 ? " …" : ""}` +
@@ -745,11 +790,11 @@ export const ACTIONS: Record<string, ActionDef> = {
       const baseName = p.base_image ? String(p.base_image) : "";
       if (!baseName)
         return "Hata: Düzenlenecek görsel bulunamadı. Afiş/zemin görselini (ve bindirilecek logoyu) yükleyip tekrar iste.";
-      const basePath = safeWorkspacePath(baseName);
+      const basePath = readWorkspacePath(baseName);
       if (!(await fs.stat(basePath).catch(() => null)))
         return `Hata: Kaynak görsel okunamadı (${baseName}).`;
       const overlayName = p.overlay_image ? String(p.overlay_image) : "";
-      const overlayPath = overlayName ? safeWorkspacePath(overlayName) : "";
+      const overlayPath = overlayName ? readWorkspacePath(overlayName) : "";
       const text = String(p.text ?? "").trim();
       // Parlaklık/kontrast/doygunluk (eq) — "daha aydınlık" istekleri için
       const b = p.brightness != null ? Number(p.brightness) : null;
@@ -850,7 +895,7 @@ export const ACTIONS: Record<string, ActionDef> = {
       }
       const buf = await fs.readFile(outPath).catch(() => null);
       if (!buf || buf.length === 0) return "Görsel düzenlendi ama çıktı boş.";
-      return `![düzenlenmiş görsel](/api/files?name=${encodeURIComponent(out)}&inline=1)`;
+      return `![düzenlenmiş görsel](/api/files?name=${encodeURIComponent(wsRel(out))}&inline=1)`;
     },
   },
 
@@ -885,7 +930,7 @@ export const ACTIONS: Record<string, ActionDef> = {
       const baseName = p.base_image ? String(p.base_image) : "";
       if (!baseName)
         return "Hata: Tasarımı değiştirilecek görsel bulunamadı. Bir görsel yükle ya da önce üret, sonra 'tasarımını değiştir' de.";
-      const basePath = safeWorkspacePath(baseName);
+      const basePath = readWorkspacePath(baseName);
       const buf = await fs.readFile(basePath).catch(() => null);
       if (!buf) return `Hata: Kaynak görsel okunamadı (${baseName}).`;
       const prompt = String(p.prompt ?? "").trim();
@@ -995,7 +1040,7 @@ export const ACTIONS: Record<string, ActionDef> = {
       const src = p.source_video ? String(p.source_video) : "";
       if (!src)
         return "Hata: Düzenlenecek video bulunamadı. Önce bir video üret ya da bir video yükle, sonra 'yazı ekle / şu kısmı kes' de.";
-      const inPath = safeWorkspacePath(src);
+      const inPath = readWorkspacePath(src);
       if (!(await fs.stat(inPath).catch(() => null)))
         return `Hata: Kaynak video okunamadı (${src}).`;
 
@@ -1076,7 +1121,7 @@ export const ACTIONS: Record<string, ActionDef> = {
       }
       const buf = await fs.readFile(outPath).catch(() => null);
       if (!buf || buf.length === 0) return "Video düzenlendi ama çıktı boş.";
-      return `!video[düzenlenmiş video](/api/files?name=${encodeURIComponent(outName)}&inline=1)`;
+      return `!video[düzenlenmiş video](/api/files?name=${encodeURIComponent(wsRel(outName))}&inline=1)`;
     },
   },
 
@@ -1186,7 +1231,7 @@ export const ACTIONS: Record<string, ActionDef> = {
       const name = path.basename(String(p.filename || p.path));
       await fs.mkdir(WORKSPACE, { recursive: true });
       await fs.writeFile(safeWorkspacePath(name), buf);
-      const link = `[📄 ${name}](/api/files?name=${encodeURIComponent(name)})`;
+      const link = `[📄 ${name}](/api/files?name=${encodeURIComponent(wsRel(name))})`;
       return `✅ Güncel kopya hazır: ${link} (${buf.length} bayt) — **Dosyalar** sekmesinden de indirebilirsin.`;
     },
   },
@@ -1421,8 +1466,9 @@ export function actionRequiresApproval(name: string): boolean {
 export async function executeAction(
   name: string,
   payload: Payload,
+  scope = "", // sohbetin dosya alanı (workspaceScopeFor); boşsa ortak klasör
 ): Promise<string> {
   const def = ACTIONS[name];
   if (!def) throw new Error(`Bilinmeyen aksiyon: ${name}`);
-  return def.execute(payload);
+  return wsScope.run(scope, () => def.execute(payload));
 }

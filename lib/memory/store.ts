@@ -8,6 +8,9 @@ export type Memory = {
   ts: number; // ms epoch
   summary: string;
   tags: string[];
+  // Notun ait olduğu sohbet. Sohbetler yalıtılmıştır: bir sohbet yalnız kendi
+  // notlarını görür. Alan yoksa (eski, ortak dönem notu) hiçbir sohbete eklenmez.
+  scope?: string;
 };
 
 const DIR = path.join(process.cwd(), "data");
@@ -32,6 +35,7 @@ export async function loadMemories(): Promise<Memory[]> {
 export async function saveMemory(input: {
   summary: string;
   tags?: string[];
+  scope?: string;
 }): Promise<Memory> {
   await fs.mkdir(DIR, { recursive: true });
   const all = await loadMemories();
@@ -40,6 +44,7 @@ export async function saveMemory(input: {
     ts: Date.now(),
     summary: input.summary.trim(),
     tags: input.tags ?? [],
+    ...(input.scope ? { scope: input.scope } : {}),
   };
   all.push(mem);
   await fs.writeFile(FILE, JSON.stringify(all, null, 2), "utf8");
@@ -49,8 +54,10 @@ export async function saveMemory(input: {
 export async function searchMemories(
   query: string,
   limit = 3,
+  scope?: string, // verilirse yalnız bu sohbetin notları (yalıtım)
 ): Promise<Memory[]> {
-  const all = await loadMemories();
+  const everything = await loadMemories();
+  const all = scope ? everything.filter((m) => m.scope === scope) : everything;
   if (all.length === 0) return [];
 
   const q = new Set(tokenize(query));

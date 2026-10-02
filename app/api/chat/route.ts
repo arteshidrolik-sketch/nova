@@ -21,6 +21,9 @@ import {
   executeAction,
   isActionTool,
   isProjectAction,
+  workspaceScopeFor,
+  workspaceReadPath,
+  workspaceWritePath,
 } from "@/lib/tools/actions";
 import {
   READ_TOOLS,
@@ -287,7 +290,10 @@ export async function POST(req: Request) {
   // 2) Hafıza — sona ayrı eklenir; güvenlik reddi (refusal) olursa hafızasız tekrar denenir
   const lastUser =
     [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
-  const relevant = await searchMemories(lastUser, 3);
+  // Sohbet yalıtımı: hafıza yalnız BU sohbetin notlarından gelir; dosyalar da
+  // sohbetin kendi alt klasörüne yazılır (sohbetler birbirine karışmaz).
+  const wsScopeId = workspaceScopeFor(conversationId);
+  const relevant = await searchMemories(lastUser, 3, conversationId || "-");
   const memNote =
     relevant.length > 0
       ? "\n\n## İlgili geçmiş notlar (hafıza)\nBunları gerektiğinde kullan, gereksizse görmezden gel:\n" +
@@ -905,7 +911,7 @@ export async function POST(req: Request) {
                           const nm = ref.match(/name=([^&]+)/)?.[1];
                           if (nm) {
                             const fname = path.basename(decodeURIComponent(nm));
-                            const fp = path.join(process.cwd(), "workspace", fname);
+                            const fp = workspaceReadPath(wsScopeId, fname);
                             const b = await fs.readFile(fp);
                             const e = path.extname(fname).slice(1).toLowerCase();
                             const mt =
@@ -958,7 +964,7 @@ export async function POST(req: Request) {
                   if (att?.data) {
                     try {
                       const nm = `yuklenen-video-${runId.slice(0, 8)}.mp4`;
-                      const fp = path.join(process.cwd(), "workspace", nm);
+                      const fp = workspaceWritePath(wsScopeId, nm);
                       await fs.mkdir(path.dirname(fp), { recursive: true });
                       await fs.writeFile(fp, Buffer.from(att.data, "base64"));
                       resolved = nm;
@@ -1009,7 +1015,7 @@ export async function POST(req: Request) {
                     (a.mediaType?.includes("png") ? "png" : a.mediaType?.includes("webp") ? "webp" : "jpg");
                   const save = async (a: Attach, tag: string) => {
                     const nm = `duzen-${tag}-${runId.slice(0, 8)}.${extOf(a)}`;
-                    const fp = path.join(process.cwd(), "workspace", nm);
+                    const fp = workspaceWritePath(wsScopeId, nm);
                     await fs.mkdir(path.dirname(fp), { recursive: true });
                     await fs.writeFile(fp, Buffer.from(a.data as string, "base64"));
                     return nm;
@@ -1115,7 +1121,7 @@ export async function POST(req: Request) {
               let result: string;
               let ok = true;
               try {
-                result = await executeAction(block.name, payload);
+                result = await executeAction(block.name, payload, wsScopeId);
               } catch (e) {
                 ok = false;
                 result = `Aksiyon hatası: ${e instanceof Error ? e.message : "bilinmeyen"}`;

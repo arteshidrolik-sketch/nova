@@ -24,10 +24,12 @@ export async function POST(req: Request) {
 
   let userText = "";
   let assistantText = "";
+  let scope = ""; // notun ait olduğu sohbet
   try {
     const body = await req.json();
     userText = String(body?.userText ?? "");
     assistantText = String(body?.assistantText ?? "");
+    scope = typeof body?.conversationId === "string" ? body.conversationId : "";
   } catch {
     return Response.json({ saved: false, reason: "bad_request" }, { status: 400 });
   }
@@ -48,6 +50,10 @@ export async function POST(req: Request) {
     return Response.json({ saved: false, reason: "not_worth_remembering" });
   }
 
-  const mem = await saveMemory({ summary: result.summary, tags: result.tags });
+  const mem = await saveMemory({
+    summary: result.summary,
+    tags: result.tags,
+    scope: scope || undefined,
+  });
   return Response.json({ saved: true, memory: mem });
 }
