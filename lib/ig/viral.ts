@@ -61,8 +61,9 @@ function listText(ys: ViralComment[]): string {
 }
 
 // Yorumları okuyan ses (Yücel adıyla değiştirebilir). Varsayılan: VIRAL_VOICE_ID =
-// "Viral Yorum Gülen" (Yücel'in seçtiği, kalın sesli, okurken kendini tutamayıp gülen genç adam).
+// "Viral Yorum Babacan" (2026-10-03, Yücel: "daha kalın, babacan"; çok kalın, sıcak, 50'lerinde adam).
 const VOICES: Record<string, string> = {
+  babacan: "TKEqaGmyBUcAtUiFeBzn",
   gulen: "zqmQVwjUCUbh80aSu9Ir",
   esref: "dREIsEMBQnt8e3KYj6Jz",
   bilgehan: "1CHZaHFxO6Rbh3tFQWXE",
@@ -269,7 +270,7 @@ async function build(id: string, chat: number): Promise<void> {
   const yorumlar = (j.yorumlar || []).map((y) =>
     y.sayfa ? { metin: y.metin, sayfa: true } : { metin: y.metin, begeni: likes(y.begeni) },
   );
-  const voice = (await loadIg()).viralVoice || process.env.VIRAL_VOICE_ID || VOICES.gulen;
+  const voice = (await loadIg()).viralVoice || process.env.VIRAL_VOICE_ID || VOICES.babacan;
   await fs.writeFile(
     path.join(j.dir, "is.json"),
     JSON.stringify({ video: "kaynak.mp4", kaynak: j.kaynak, baslik: "En komik yorumlar 😂", klip_sure: 4,

@@ -247,7 +247,8 @@ TONES = {
     # (2026-10-03, ikinci düzeltme) "çok zorlama, samimiyet yok; gülmeyi maksimum abart" →
     # gülerek başla, metinden sonra gerçek "hahaha" + kahkaha; son yorumda katıla katıla.
     # (2026-10-03, üçüncü düzeltme) "fazla neşeli, biraz azalt" → kıkırdamayla başlamaz, kısa gülüş; sonda tek kahkaha.
-    "eglenceli": ("", "! Haha. [chuckles]", "! Hahaha! [laughs]"),
+    # (2026-10-03, dördüncü düzeltme) "babacan ses, sondaki gülüşü kaldır" → etiket/gülüş yok, ses kendi sıcaklığıyla okur.
+    "eglenceli": ("", "", ""),
     "duz": ("", "", ""),
 }
 
@@ -267,7 +268,7 @@ def speak(text, out, voice_id, tone="eglenceli", last=False):
     expressive = tone != "duz"
     payload = {"text": tone_text(clean, tone, last), "model_id": "eleven_v3", "language_code": "tr"}
     if expressive:
-        payload["voice_settings"] = {"stability": 0.3}  # 0 = abartılı, 0.5 = doğal; arası: canlı ama ölçülü
+        payload["voice_settings"] = {"stability": 0.45}  # 0 = abartılı, 0.5 = doğal; babacan ses için sakine yakın
     req = urllib.request.Request(
         f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id or e['ELEVENLABS_VOICE_ID']}?output_format=mp3_44100_128",
         data=json.dumps(payload).encode(),
@@ -295,7 +296,7 @@ def main():
     duck = float(job.get("ses_seviyesi", 0.15))
     voiced = job.get("seslendir", True)
     speed = float(job.get("ses_hizi", 1.15))  # seslendirme hızı (1 = olduğu gibi)
-    pitch = float(job.get("ses_perdesi", 0.9))  # <1 = daha kalın ses (hızı değiştirmeden perde düşürür)
+    pitch = float(job.get("ses_perdesi", 1.0))  # <1 = daha kalın ses (hızı değiştirmeden perde düşürür)
     ys = job["yorumlar"]
     n = len(ys)
     tmp = tempfile.mkdtemp(prefix="yorumlu-")
