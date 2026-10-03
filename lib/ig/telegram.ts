@@ -64,6 +64,19 @@ export async function sendPhoto(chatId: number, file: string, caption: string, b
   return j.result!;
 }
 
+export async function sendVideo(chatId: number, file: string, caption: string, buttons?: Button[][]) {
+  const form = new FormData();
+  form.append("chat_id", String(chatId));
+  form.append("caption", caption.slice(0, 1024));
+  form.append("supports_streaming", "true");
+  if (buttons) form.append("reply_markup", JSON.stringify({ inline_keyboard: buttons }));
+  form.append("video", new Blob([new Uint8Array(await fs.readFile(file))], { type: "video/mp4" }), "video.mp4");
+  const res = await fetch(api("sendVideo"), { method: "POST", body: form });
+  const j = (await res.json()) as TgResp<{ message_id: number }>;
+  if (!j.ok) throw new Error(`Telegram sendVideo: ${j.description}`);
+  return j.result!;
+}
+
 export function editCaption(chatId: number, messageId: number, caption: string) {
   return call("editMessageCaption", {
     chat_id: chatId,

@@ -10,6 +10,7 @@ import { publishImage, refreshTokenIfDue } from "./instagram";
 import { FIXED_HASHTAGS, imagePrompt } from "./persona";
 import { loadIg, updateIg, patchItem, type IgConcept, type IgItem } from "./store";
 import * as tg from "./telegram";
+import { isViralMode, viralHandle } from "./viral";
 
 const DAILY = Number(process.env.IG_DAILY || 10);
 const STOCK_MAX = Number(process.env.IG_STOCK_MAX || 20); // onay bekleyen + kuyruk üst sınırı
@@ -353,6 +354,7 @@ async function handle(u: tg.TgUpdate): Promise<void> {
     return;
   }
   if (chat !== owner && from !== owner) return; // başkaları yok sayılır
+  if (isViralMode()) return viralHandle(chat, u); // 2026-10-03'ten beri: viral Reels + komik yorumlar
   if (u.callback_query) await onCallback(u.callback_query);
   else if (u.message?.photo || u.message?.document) await onPhoto(chat, u.message);
   else if (u.message?.text) await onMessage(chat, u.message.text);
@@ -384,8 +386,11 @@ export function startIgWorker(): void {
     if (ticking) return;
     ticking = true;
     try {
-      await publishTick().catch(() => undefined);
-      await dailyTick().catch(() => undefined);
+      if (!isViralMode()) {
+        // eski görsel akışı: günlük konsept + saatli paylaşım
+        await publishTick().catch(() => undefined);
+        await dailyTick().catch(() => undefined);
+      }
       await refreshTokenIfDue().catch(() => undefined);
     } finally {
       ticking = false;

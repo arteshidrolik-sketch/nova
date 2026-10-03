@@ -36,6 +36,27 @@ export type IgItem = {
   error?: string;
 };
 
+// Viral Yorum işi: bir Reels linki → seçilen yorumlar + Yücel'in yorumu → yorumlu Reels.
+export type ViralComment = { metin: string; orijinal?: string; begeni?: string; sayfa?: boolean }; // sayfa: Yücel'in yorumu
+export type ViralJob = {
+  id: string;
+  createdTs: number;
+  url: string;
+  dir: string; // workspace/ig/viral/<id>
+  kaynak?: string; // "@hesap"
+  status: "downloading" | "need_screens" | "review" | "await_comment" | "building" | "preview" | "publishing" | "published" | "cancelled" | "failed";
+  adaylar?: ViralComment[]; // linkten + ekran görüntülerinden gelen tüm yorumlar
+  yorumlar?: ViralComment[]; // seçilenler
+  sayfaYorum?: string; // Yücel'in yorumu
+  baslik?: string; // kaynak videonun başlığı/açıklaması (seçimde bağlam)
+  aciklama?: string; // Reels açıklamasının komik cümlesi
+  hashtag?: string; // konuya özel hashtag(ler)
+  file?: string; // workspace/ig/<id>.mp4 (yayın için)
+  previewMsgId?: number;
+  permalink?: string;
+  error?: string;
+};
+
 export type IgState = {
   chatId?: number; // onay veren tek kullanıcı (Yücel)
   tgOffset?: number;
@@ -45,6 +66,9 @@ export type IgState = {
   usedSlots?: Record<string, string[]>; // tarih → kullanılan saat dilimleri
   extraSlots?: Record<string, string[]>; // tarih → o güne özel ek saatler (tek seferlik)
   items: IgItem[];
+  viral?: ViralJob[];
+  viralActive?: string; // Yücel'den cevap bekleyen iş
+  viralVoice?: string; // seslendirme sesi (ElevenLabs voice id); yoksa VIRAL_VOICE_ID
 };
 
 const DIR = path.join(process.cwd(), "data");
@@ -71,12 +95,21 @@ export function updateIg<T>(fn: (s: IgState) => T | Promise<T>): Promise<T> {
     const s = await read();
     const out = await fn(s);
     s.items = s.items.slice(-400); // dosya şişmesin
+    if (s.viral) s.viral = s.viral.slice(-200);
     await fs.mkdir(DIR, { recursive: true });
     await fs.writeFile(FILE, JSON.stringify(s, null, 2), "utf8");
     return out;
   });
   chain = run.catch(() => undefined);
   return run;
+}
+
+export async function patchViral(id: string, patch: Partial<ViralJob>): Promise<ViralJob | undefined> {
+  return updateIg((s) => {
+    const j = (s.viral || []).find((x) => x.id === id);
+    if (j) Object.assign(j, patch);
+    return j;
+  });
 }
 
 export async function patchItem(id: string, patch: Partial<IgItem>): Promise<IgItem | undefined> {

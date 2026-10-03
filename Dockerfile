@@ -6,9 +6,12 @@ WORKDIR /app
 # ffmpeg + fonts-dejavu-core: video düzenleme (edit_video — yazı bindirme/kesme,
 # Türkçe karakter destekli font drawtext için).
 # python3-pil: Sanal Dilenci görsellerine konuşma balonu (assets/ig/balon.py).
+# fonts-noto-color-emoji + yt-dlp (venv): Viral Yorum — yorum kartlarında emoji, Reels indirme.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends git ca-certificates openssh-client ffmpeg fonts-dejavu-core python3 python3-pil \
-  && rm -rf /var/lib/apt/lists/*
+  && apt-get install -y --no-install-recommends git ca-certificates openssh-client ffmpeg fonts-dejavu-core fonts-noto-color-emoji python3 python3-pil python3-venv \
+  && rm -rf /var/lib/apt/lists/* \
+  && python3 -m venv /opt/yt && /opt/yt/bin/pip install --no-cache-dir yt-dlp
+ENV YTDLP_BIN=/opt/yt/bin/yt-dlp
 
 # Vercel CLI: kullanıcı uygulamalarını canlıya yayınlamak için (deploy_vercel aracı).
 # İmaja gömülü → çalışma anında indirme yok, deploy anında hazır.

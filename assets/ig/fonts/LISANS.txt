@@ -1,0 +1,3 @@
+Noto Sans — SIL Open Font License 1.1 (https://openfontlicense.org)
+Kaynak: https://github.com/notofonts/notofonts.github.io
+Sunucuda emoji için Debian paketi fonts-noto-color-emoji kullanılır (Dockerfile).

@@ -66,6 +66,39 @@ export async function publishImage(file: string, caption: string): Promise<{ id:
   return { id: p.id, permalink: info.permalink };
 }
 
+// Videoyu Reels olarak yayınlar → { id, permalink }. Video işleme görselden uzun sürer.
+export async function publishReel(file: string, caption: string): Promise<{ id: string; permalink?: string }> {
+  const token = await igToken();
+  const form = (o: Record<string, string>) => new URLSearchParams({ ...o, access_token: token });
+
+  const c = await graph<{ id: string }>(`${GRAPH}/${userId()}/media`, {
+    method: "POST",
+    body: form({ media_type: "REELS", video_url: publicMediaUrl(file), caption, share_to_feed: "true" }),
+  });
+
+  let ready = false;
+  for (let i = 0; i < 40; i++) {
+    const st = await graph<{ status_code?: string }>(`${GRAPH}/${c.id}?fields=status_code&access_token=${token}`);
+    if (st.status_code === "FINISHED") {
+      ready = true;
+      break;
+    }
+    if (st.status_code === "ERROR" || st.status_code === "EXPIRED")
+      throw new Error(`Instagram videoyu işleyemedi: ${st.status_code}`);
+    await new Promise((r) => setTimeout(r, 6000));
+  }
+  if (!ready) throw new Error("Instagram video işleme zaman aşımı (4 dk)");
+
+  const p = await graph<{ id: string }>(`${GRAPH}/${userId()}/media_publish`, {
+    method: "POST",
+    body: form({ creation_id: c.id }),
+  });
+  const info = await graph<{ permalink?: string }>(
+    `${GRAPH}/${p.id}?fields=permalink&access_token=${token}`,
+  ).catch(() => ({ permalink: undefined }));
+  return { id: p.id, permalink: info.permalink };
+}
+
 // Uzun ömürlü token 60 gün geçerli; haftada bir yenilenir.
 export async function refreshTokenIfDue(): Promise<void> {
   const s = await loadIg();
