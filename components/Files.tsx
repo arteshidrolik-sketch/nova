@@ -32,8 +32,10 @@ function iconFor(name: string): string {
   return "📎";
 }
 
-export default function Files() {
-  const [files, setFiles] = useState<FileItem[]>([]);
+// prefix verilirse yalnız o klasördeki dosyalar (ör. bir projenin "c-xxxxxxxx/" alanı)
+export default function Files({ prefix }: { prefix?: string } = {}) {
+  const [allFiles, setFiles] = useState<FileItem[]>([]);
+  const files = prefix ? allFiles.filter((f) => f.rel.startsWith(prefix)) : allFiles;
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {

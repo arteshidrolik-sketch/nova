@@ -362,3 +362,24 @@ body {
     border-color 0.3s ease,
     background 0.3s ease;
 }
+
+/* ---- Evren (proje gezegenleri) ---- */
+.planet-spin {
+  animation: planet-spin 48s linear infinite;
+}
+@keyframes planet-spin {
+  from { transform: translateX(-18%); }
+  to { transform: translateX(18%); }
+}
+.nova-core {
+  background: radial-gradient(circle at 38% 34%, #d1fae5 0%, #34d399 42%, #047857 100%);
+  box-shadow: 0 0 48px rgba(52, 211, 153, 0.55), 0 0 120px rgba(52, 211, 153, 0.22);
+  animation: nova-core-pulse 4.8s ease-in-out infinite alternate;
+}
+@keyframes nova-core-pulse {
+  from { box-shadow: 0 0 40px rgba(52, 211, 153, 0.5), 0 0 100px rgba(52, 211, 153, 0.18); }
+  to { box-shadow: 0 0 64px rgba(52, 211, 153, 0.7), 0 0 150px rgba(52, 211, 153, 0.28); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .planet-spin, .nova-core { animation: none !important; }
+}
