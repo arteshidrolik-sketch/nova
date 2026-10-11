@@ -15,7 +15,7 @@ import { IconPlus, IconClose } from "./UniverseIcons";
 export function orbitGeometry(w: number, h: number) {
   const portrait = h > w * 1.1;
   const cx = w / 2, cy = h / 2 + h * 0.02;
-  const ks = portrait ? [0.5, 0.76, 1.0] : [0.42, 0.7, 0.98];
+  const ks = portrait ? [0.66, 0.84, 1.0] : [0.46, 0.72, 0.98];
   const base = portrait ? w * 0.37 : Math.min(w * 0.44, h * 0.95);
   const rings = ks.map((k) => ({ rx: base * k, ry: portrait ? h * 0.3 * k : base * k * 0.36 }));
   const psc = Math.max(0.58, Math.min(1, Math.min(w, h) / 760));
@@ -45,6 +45,12 @@ export default function Universe() {
   const hoverRef = useRef<string | null>(null);
   hoverRef.current = hover;
   const tRef = useRef(0); // yörünge zamanı — yeniden çizimlerde sıfırlanmaz
+  const [coreSize, setCoreSize] = useState(132);
+  useEffect(() => {
+    const f = () => setCoreSize(Math.min(window.innerWidth, window.innerHeight) < 640 ? 92 : 136);
+    f(); window.addEventListener("resize", f);
+    return () => window.removeEventListener("resize", f);
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -143,11 +149,10 @@ export default function Universe() {
           <OrbitRings />
         </svg>
 
-        {/* merkez yıldız: Nova */}
-        <div className="pointer-events-none absolute left-1/2 top-[51%] z-20 -translate-x-1/2 -translate-y-1/2">
-          <div className="nova-core relative flex h-20 w-20 items-center justify-center rounded-full sm:h-32 sm:w-32">
-            <span className="text-[12px] font-bold tracking-[.2em] sm:text-[15px]" style={{ color: "#05231a" }}>NOVA</span>
-          </div>
+        {/* merkez: Nova = Dünya (bulutlarıyla dönen) */}
+        <div className="pointer-events-none absolute left-1/2 top-[51%] z-20 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-2">
+          <Planet seed="nova-earth" size={coreSize} earth />
+          <span className="rounded-full px-3 py-1 text-[12px] font-bold" style={{ letterSpacing: ".2em", color: "var(--text)", background: "rgba(8,12,24,.72)", border: "1px solid var(--border-strong)" }}>NOVA</span>
         </div>
 
         {layout.map(({ p, size }) => (
@@ -179,6 +184,10 @@ export default function Universe() {
             )}
           </button>
         ))}
+      </div>
+
+      <div className="pointer-events-none absolute bottom-2 left-3 z-[60] text-[11px]" style={{ color: "var(--text-muted)", opacity: 0.6 }}>
+        Gezegen dokuları: Solar System Scope (CC BY 4.0)
       </div>
 
       {/* yeni proje kutusu */}
