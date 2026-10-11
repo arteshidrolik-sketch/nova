@@ -1,12 +1,13 @@
 "use client";
 
-// Proje ofisi: 4 çalışma masası (Müdür, Araştırma, Kod, Satış & Pazarlama).
-// Her ajan bilgisayarının başında oturur; durumunu sohbet akışından okur
-// ("nova:stream" olayı): çalışıyor → ekranında satırlar akar, elleri klavyede;
-// müdür denetliyor/konuşuyor → farklı gösterge. Masaya tıklayınca ajanın
-// becerileri açılır; beceri eklenip çıkarılabilir.
+// Proje ofisi: 4 çalışma masası (Araştırma, Müdür, Kod, Satış & Pazarlama).
+// Her ajan isimli bir insan (proje başına sabit, 2 kadın + 2 erkek, Türkçe isim);
+// dizüstünün başında oturur. Durumunu sohbet akışından okur ("nova:stream"):
+// çalışıyor → elleri klavyede, başı hafifçe sallanır, yan ekranda satırlar akar;
+// konuşuyor → ağız hareket eder; herkes ara ara göz kırpar. Masa altında isim,
+// durum ve o an kullanılan model seviyesi görünür. Masaya tıklayınca becerileri açılır.
 import { useEffect, useState } from "react";
-import { TEAM_META, TEAM_ROLES, type TeamRole } from "@/lib/team/roles";
+import { TEAM_META, TEAM_ROLES, teamCast, type Member, type TeamRole } from "@/lib/team/roles";
 import { IconClose, IconPlus } from "./UniverseIcons";
 
 type Status = "idle" | "thinking" | "working" | "reviewing" | "done" | "speaking";
@@ -14,19 +15,21 @@ const STATUS_TR: Record<Status, string> = {
   idle: "Boşta", thinking: "Planlıyor", working: "Çalışıyor", reviewing: "Denetliyor", done: "Teslim etti", speaking: "Konuşuyor",
 };
 
-// Akış metninden rol durumlarını çıkar
-function parseStatuses(text: string, running: boolean): Record<TeamRole, Status> {
+// Akış metninden rol durumlarını ve kullanılan model seviyesini çıkar
+function parseStatuses(text: string, running: boolean) {
   const st: Record<TeamRole, Status> = { manager: running ? "thinking" : "idle", research: "idle", coder: "idle", marketing: "idle" };
+  const tier: Partial<Record<TeamRole, string>> = {};
   const nameToRole = new Map<string, TeamRole>(TEAM_ROLES.map((r) => [TEAM_META[r].name, r]));
   let lastEvent: "work" | "done" | null = null;
   for (const line of text.split("\n")) {
-    const w = line.match(/^👥 (.+?) çalışıyor/);
+    const w = line.match(/^👥 (.+?) çalışıyor(?: \[([A-Za-z]+)\])?/);
     const d = line.match(/^👥 (.+?) teslim etti/);
     const m = w || d;
     if (!m) continue;
     const role = nameToRole.get(m[1]);
     if (!role) continue;
     st[role] = w ? "working" : "done";
+    if (w && w[2]) tier[role] = w[2];
     lastEvent = w ? "work" : "done";
   }
   if (!running) {
@@ -34,7 +37,7 @@ function parseStatuses(text: string, running: boolean): Record<TeamRole, Status>
   } else {
     st.manager = lastEvent === "work" ? "thinking" : lastEvent === "done" ? "reviewing" : "thinking";
   }
-  return st;
+  return { st, tier };
 }
 
 export default function TeamOffice({ convId, compact = false }: { convId: string; compact?: boolean }) {
@@ -42,6 +45,7 @@ export default function TeamOffice({ convId, compact = false }: { convId: string
   const [text, setText] = useState("");
   const [speaking, setSpeaking] = useState(false);
   const [open, setOpen] = useState<TeamRole | null>(null);
+  const cast = teamCast(convId);
 
   useEffect(() => {
     const onStream = (e: Event) => {
@@ -55,7 +59,7 @@ export default function TeamOffice({ convId, compact = false }: { convId: string
     return () => { window.removeEventListener("nova:stream", onStream); window.removeEventListener("nova:voice", onVoice); };
   }, [convId]);
 
-  const st = parseStatuses(text, running);
+  const { st, tier } = parseStatuses(text, running);
   if (speaking && !running) st.manager = "speaking";
 
   return (
@@ -68,11 +72,14 @@ export default function TeamOffice({ convId, compact = false }: { convId: string
           <button
             key={r} role="listitem" onClick={() => setOpen(r)}
             className="group flex shrink-0 flex-col items-center gap-1 rounded-2xl p-1 outline-none transition-transform duration-200 hover:-translate-y-1 focus-visible:-translate-y-1"
-            aria-label={`${TEAM_META[r].name} — ${STATUS_TR[st[r]]}. Becerileri aç`}
+            aria-label={`${cast[r].name}, ${TEAM_META[r].name} — ${STATUS_TR[st[r]]}. Becerileri aç`}
           >
-            <Desk role={r} status={st[r]} size={compact ? 118 : r === "manager" ? 176 : 150} />
-            <div className="flex items-center gap-2">
-              <span className="text-[13px] font-bold" style={{ color: "var(--text)" }}>{TEAM_META[r].name}</span>
+            <Desk role={r} member={cast[r]} status={st[r]} size={compact ? 122 : r === "manager" ? 180 : 156} />
+            <div className="flex flex-col items-center leading-tight">
+              <span className="text-[14px] font-bold" style={{ color: "var(--text)" }}>{cast[r].name}</span>
+              <span className="text-[11px]" style={{ color: TEAM_META[r].color }}>{TEAM_META[r].name}</span>
+            </div>
+            <div className="flex items-center gap-1">
               <span
                 className="rounded-full px-2 py-[2px] text-[11px] font-medium"
                 style={{
@@ -82,57 +89,138 @@ export default function TeamOffice({ convId, compact = false }: { convId: string
               >
                 {STATUS_TR[st[r]]}
               </span>
+              {st[r] === "working" && tier[r] && (
+                <span className="rounded-full px-2 py-[2px] text-[11px]" style={{ color: "var(--text)", border: "1px solid var(--border-strong)" }} title="Müdürün bu iş için seçtiği model">
+                  {tier[r]}
+                </span>
+              )}
             </div>
           </button>
         ))}
       </div>
-      {open && <AgentPanel role={open} onClose={() => setOpen(null)} />}
+      {open && <AgentPanel role={open} person={cast[open].name} onClose={() => setOpen(null)} />}
     </div>
   );
 }
 
-// ---- Masa + ajan (SVG) ----
-function Desk({ role, status, size }: { role: TeamRole; status: Status; size: number }) {
+// ---- İnsan karakter + masa (SVG) ----
+const SKIN = ["#f3d2b5", "#f1c8a0", "#e8b98f", "#d9a378", "#c98e62", "#a8714a"];
+// koyu lacivert zeminden ayrışan tonlar (çok koyu siyah/gri saç zeminde kaybolup kel gibi görünüyordu)
+const HAIR = ["#4a2c1a", "#5e3420", "#6b3f22", "#3f2a1e", "#7a4a24", "#553222"];
+const LIPS = ["#c46a6a", "#b85a6a", "#d07a7a", "#a85a5a"];
+
+function Desk({ role, member, status, size }: { role: TeamRole; member: Member; status: Status; size: number }) {
   const c = TEAM_META[role].color;
+  const L = member.look;
+  const female = member.gender === "k";
+  const skin = SKIN[L % SKIN.length];
+  const hair = HAIR[(L >>> 3) % HAIR.length];
+  const lips = LIPS[(L >>> 5) % LIPS.length];
+  const hairStyle = female ? (L >>> 7) % 3 : (L >>> 7) % 3; // k: 0 uzun, 1 topuz, 2 kısa küt | e: 0 kısa, 1 yana taralı, 2 kıvırcık
+  const beard = !female && (L >>> 9) % 3 === 0;
+  const glasses = (L >>> 11) % 3 === 0;
   const busy = status === "working" || status === "thinking" || status === "reviewing" || status === "speaking";
   const typing = status === "working";
-  const hair = { manager: "#2b2118", research: "#5a3a22", coder: "#14161c", marketing: "#7a3b1d" }[role];
-  const skin = { manager: "#e8b98f", research: "#f1c8a0", coder: "#c98e62", marketing: "#f3cfae" }[role];
+  const talking = status === "speaking";
   const id = `d-${role}`;
+  const blinkDelay = `${(L % 40) / 10}s`;
+
+  // Kıyafet: role göre
+  const outfit = {
+    manager: { main: "#1e293b", inner: female ? "#f8fafc" : "#e2e8f0", accent: c, tie: !female },
+    research: { main: "#3f6b5a", inner: "#e7f5ee", accent: c, tie: false },
+    coder: { main: "#1f2937", inner: "#111827", accent: c, tie: false },
+    marketing: { main: female ? "#be4b84" : "#7c3a5e", inner: "#fdf2f8", accent: c, tie: false },
+  }[role];
+
   return (
-    <svg viewBox="0 0 200 170" width={size} height={size * 0.85} aria-hidden className={busy ? "desk-busy" : undefined}>
+    <svg viewBox="0 0 200 170" width={size} height={size * 0.85} aria-hidden>
       <defs>
         <linearGradient id={`${id}-desk`} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor="#3b4a66" /><stop offset="1" stopColor="#222c40" />
         </linearGradient>
         <radialGradient id={`${id}-glow`} cx="0.5" cy="0.5" r="0.6">
-          <stop offset="0" stopColor={c} stopOpacity={busy ? 0.45 : 0.12} /><stop offset="1" stopColor={c} stopOpacity="0" />
+          <stop offset="0" stopColor={c} stopOpacity={busy ? 0.42 : 0.1} /><stop offset="1" stopColor={c} stopOpacity="0" />
         </radialGradient>
+        <radialGradient id={`${id}-face`} cx="0.42" cy="0.38" r="0.7">
+          <stop offset="0" stopColor="#ffffff" stopOpacity="0.18" /><stop offset="1" stopColor="#000000" stopOpacity="0.12" />
+        </radialGradient>
+        <clipPath id={`${id}-clip`}><rect x="3" y="3" width="38" height="26" rx="2" /></clipPath>
       </defs>
-      {/* zemin gölgesi + ekran ışığı */}
+
       <ellipse cx="100" cy="160" rx="84" ry="8" fill="rgba(0,0,0,.35)" />
-      <ellipse cx="100" cy="62" rx="70" ry="48" fill={`url(#${id}-glow)`} />
-      {/* sandalye sırtlığı */}
-      <rect x="70" y="92" width="60" height="44" rx="12" fill="#1b2335" stroke="rgba(148,180,255,.15)" />
-      {/* gövde (gömlek) */}
-      <path d="M72 128 Q72 100 100 98 Q128 100 128 128 Z" fill={c} opacity=".92" />
-      <path d="M92 99 L100 110 L108 99" fill="none" stroke="rgba(0,0,0,.25)" strokeWidth="2" />
-      {/* baş */}
-      <circle cx="100" cy="80" r="15" fill={skin} />
-      <path d={role === "marketing" ? "M84 82 Q82 60 100 62 Q120 60 117 84 Q118 70 108 68 Q96 74 86 70 Z" : "M85 78 Q86 62 100 63 Q115 62 115 78 Q110 69 100 70 Q90 69 85 78 Z"} fill={hair} />
-      {role === "manager" && <rect x="96" y="104" width="8" height="14" rx="2" fill="#1e293b" />}
-      {/* kollar → klavye */}
-      <g className={typing ? "arm-l" : undefined}><path d="M76 116 Q70 126 86 132" stroke={c} strokeWidth="9" fill="none" strokeLinecap="round" /></g>
-      <g className={typing ? "arm-r" : undefined}><path d="M124 116 Q130 126 114 132" stroke={c} strokeWidth="9" fill="none" strokeLinecap="round" /></g>
+      <ellipse cx="100" cy="64" rx="72" ry="50" fill={`url(#${id}-glow)`} />
+
+      {/* sandalye */}
+      <rect x="64" y="84" width="72" height="54" rx="14" fill="#1b2335" stroke="rgba(148,180,255,.15)" />
+
+      {/* arka saç (uzun saçta omuzlara iner) */}
+      {female && hairStyle === 0 && <path d="M80 70 Q78 104 86 112 L114 112 Q122 104 120 70 Q118 52 100 52 Q82 52 80 70 Z" fill={hair} stroke="rgba(255,255,255,.22)" strokeWidth={0.8} />}
+
+      {/* gövde + kıyafet */}
+      <path d="M68 136 Q68 104 86 100 L114 100 Q132 104 132 136 Z" fill={outfit.main} />
+      <path d="M92 100 L100 116 L108 100 Z" fill={outfit.inner} />
+      {outfit.tie && <path d="M98 104 L102 104 L103.5 120 L100 124 L96.5 120 Z" fill={outfit.accent} />}
+      {role === "coder" && <path d="M84 101 Q100 112 116 101" stroke="#374151" strokeWidth="3" fill="none" />}
+      {/* yaka kartı (rol rengi) */}
+      <rect x="111" y="112" width="8" height="10" rx="1.5" fill={outfit.accent} opacity=".9" />
+
+      {/* boyun */}
+      <rect x="94" y="86" width="12" height="16" rx="4" fill={skin} />
+      <path d="M94 96 Q100 100 106 96" stroke="rgba(0,0,0,.12)" strokeWidth="2" fill="none" />
+
+      <g className={typing ? "head-nod" : undefined} style={{ transformOrigin: "100px 92px" }}>
+        {/* kulaklar */}
+        {!(female && hairStyle !== 2) && <><ellipse cx="85" cy="74" rx="3" ry="4.5" fill={skin} /><ellipse cx="115" cy="74" rx="3" ry="4.5" fill={skin} /></>}
+        {/* yüz */}
+        <ellipse cx="100" cy="72" rx="15" ry="18" fill={skin} />
+        <ellipse cx="100" cy="72" rx="15" ry="18" fill={`url(#${id}-face)`} />
+        {/* sakal */}
+        {beard && <path d="M86 74 Q87 90 100 92 Q113 90 114 74 Q110 84 100 85 Q90 84 86 74 Z" fill={hair} stroke="rgba(255,255,255,.22)" strokeWidth={0.8} opacity=".85" />}
+        {/* kaşlar */}
+        <path d="M90 66 Q94 64 97 66" stroke={hair} strokeWidth="1.6" fill="none" strokeLinecap="round" />
+        <path d="M103 66 Q106 64 110 66" stroke={hair} strokeWidth="1.6" fill="none" strokeLinecap="round" />
+        {/* gözler (ara ara kırpar) */}
+        <g className="blink" style={{ animationDelay: blinkDelay, transformOrigin: "100px 71px" }}>
+          <ellipse cx="94" cy="71" rx="2" ry="2.3" fill="#1b1410" />
+          <ellipse cx="106" cy="71" rx="2" ry="2.3" fill="#1b1410" />
+          <circle cx="94.7" cy="70.2" r=".6" fill="#fff" /><circle cx="106.7" cy="70.2" r=".6" fill="#fff" />
+          {female && <><path d="M91.5 69.4 L90.3 68.6" stroke="#1b1410" strokeWidth=".8" /><path d="M108.5 69.4 L109.7 68.6" stroke="#1b1410" strokeWidth=".8" /></>}
+        </g>
+        {/* gözlük */}
+        {glasses && <g stroke="#2b2b2b" strokeWidth="1.2" fill="rgba(200,230,255,.12)"><circle cx="94" cy="71" r="4.6" /><circle cx="106" cy="71" r="4.6" /><path d="M98.6 71 L101.4 71" /></g>}
+        {/* burun */}
+        <path d="M100 73 Q98.6 78 100.8 79" stroke="rgba(0,0,0,.28)" strokeWidth="1.1" fill="none" strokeLinecap="round" />
+        {/* yanak */}
+        {female && <><ellipse cx="90" cy="78" rx="3" ry="1.8" fill="#e88" opacity=".22" /><ellipse cx="110" cy="78" rx="3" ry="1.8" fill="#e88" opacity=".22" /></>}
+        {/* ağız (konuşurken açılıp kapanır) */}
+        {talking
+          ? <ellipse className="talk" cx="100" cy="83.5" rx="3.2" ry="1.8" fill="#5a2a2a" style={{ transformOrigin: "100px 83.5px" }} />
+          : <path d="M96 83 Q100 86 104 83" stroke={female ? lips : "rgba(80,40,30,.7)"} strokeWidth={female ? 1.8 : 1.3} fill="none" strokeLinecap="round" />}
+        {/* ön saç */}
+        {female && hairStyle === 0 && <path d="M84 74 Q82 51 100 50 Q118 51 116 74 Q112 60 103 59 Q93 59 88 66 Q85 70 84 74 Z" fill={hair} stroke="rgba(255,255,255,.22)" strokeWidth={0.8} />}
+        {female && hairStyle === 1 && <><circle cx="100" cy="50" r="7" fill={hair} stroke="rgba(255,255,255,.22)" strokeWidth={0.8} /><path d="M85 70 Q84 54 100 54 Q116 54 115 70 Q111 59 100 59 Q89 59 85 70 Z" fill={hair} stroke="rgba(255,255,255,.22)" strokeWidth={0.8} /></>}
+        {female && hairStyle === 2 && <path d="M81 88 Q78 50 100 49 Q122 50 119 88 L113 88 Q115 68 107 63 Q100 61 93 63 Q85 68 87 88 Z" fill={hair} stroke="rgba(255,255,255,.22)" strokeWidth={0.8} />}
+        {!female && hairStyle === 0 && <path d="M84 74 Q82 50 100 49 Q118 50 116 74 L114 74 Q113 62 100 61 Q87 62 86 74 Z" fill={hair} stroke="rgba(255,255,255,.22)" strokeWidth={0.8} />}
+        {!female && hairStyle === 1 && <path d="M84 74 Q81 49 103 48 Q120 50 116 72 L114 72 Q112 61 104 59 Q95 58 89 64 Q86 68 86 74 Z" fill={hair} stroke="rgba(255,255,255,.22)" strokeWidth={0.8} />}
+        {!female && hairStyle === 2 && <g fill={hair} stroke="rgba(255,255,255,.22)" strokeWidth={0.8}>{[86, 91, 96, 101, 106, 111, 114].map((x, i) => <circle key={x} cx={x} cy={i % 2 ? 56 : 59} r="5" />)}</g>}
+      </g>
+
+      {/* kollar (klavyeye uzanır) */}
+      <g className={typing ? "arm-l" : undefined}><path d="M74 118 Q70 130 86 133" stroke={outfit.main} strokeWidth="10" fill="none" strokeLinecap="round" /><circle cx="88" cy="133" r="4" fill={skin} /></g>
+      <g className={typing ? "arm-r" : undefined}><path d="M126 118 Q130 130 114 133" stroke={outfit.main} strokeWidth="10" fill="none" strokeLinecap="round" /><circle cx="112" cy="133" r="4" fill={skin} /></g>
+
       {/* masa */}
       <rect x="20" y="132" width="160" height="12" rx="3" fill={`url(#${id}-desk)`} />
       <rect x="30" y="144" width="8" height="16" fill="#1a2234" /><rect x="162" y="144" width="8" height="16" fill="#1a2234" />
-      {/* ajanın önündeki dizüstü (kapağın arkası bize dönük; ekran ışığı yüze vurur) */}
-      {busy && <ellipse cx="100" cy="86" rx="20" ry="12" fill={c} opacity=".18" />}
-      <path d="M74 132 L80 106 L120 106 L126 132 Z" fill="#c9d2e3" stroke="rgba(0,0,0,.25)" />
-      <path d="M80 106 L120 106 L119 110 L81 110 Z" fill="rgba(255,255,255,.35)" />
-      <circle cx="100" cy="119" r="4" fill={busy ? c : "#9aa6bd"} opacity={busy ? 0.95 : 0.6} />
-      {/* yan monitör: çalışırken satırlar akar */}
+
+      {/* önündeki dizüstü (kapağın arkası bize dönük; ekran ışığı yüze vurur) */}
+      {busy && <ellipse cx="100" cy="80" rx="18" ry="12" fill={c} opacity=".14" />}
+      <path d="M76 132 L81 108 L119 108 L124 132 Z" fill="#c9d2e3" stroke="rgba(0,0,0,.25)" />
+      <path d="M81 108 L119 108 L118.4 111 L81.6 111 Z" fill="rgba(255,255,255,.35)" />
+      <circle cx="100" cy="120" r="3.6" fill={busy ? c : "#9aa6bd"} opacity={busy ? 0.95 : 0.6} />
+
+      {/* yan monitör */}
       <g transform="translate(140 96)">
         <rect x="0" y="0" width="44" height="32" rx="3" fill="#0b1220" stroke="rgba(148,180,255,.4)" />
         <rect x="3" y="3" width="38" height="26" rx="2" fill={busy ? "#0d2233" : "#0a1220"} />
@@ -141,20 +229,21 @@ function Desk({ role, status, size }: { role: TeamRole; status: Status; size: nu
             <rect key={y} x={6 + (i % 3) * 2} y={y} width={[22, 16, 28, 12, 24, 18, 20][i]} height="2.2" rx="1" fill={busy ? c : "rgba(148,180,255,.25)"} opacity={busy ? 0.85 : 0.6} />
           ))}
         </g>
-        <clipPath id={`${id}-clip`}><rect x="3" y="3" width="38" height="26" rx="2" /></clipPath>
         <rect x="18" y="32" width="8" height="4" fill="#2a3550" />
       </g>
-      {/* masa üstü küçük eşya: kahve kupası */}
-      <g transform="translate(36 120)"><rect x="0" y="0" width="10" height="12" rx="2" fill="#e5e7eb" /><path d="M10 3 Q15 6 10 9" stroke="#e5e7eb" strokeWidth="2" fill="none" />{busy && <path className="steam" d="M3 -2 Q1 -7 4 -11 M7 -2 Q5 -8 8 -12" stroke="rgba(255,255,255,.5)" strokeWidth="1.5" fill="none" />}</g>
+
+      {/* kupa */}
+      <g transform="translate(34 120)"><rect x="0" y="0" width="10" height="12" rx="2" fill="#e5e7eb" /><path d="M10 3 Q15 6 10 9" stroke="#e5e7eb" strokeWidth="2" fill="none" />{busy && <path className="steam" d="M3 -2 Q1 -7 4 -11 M7 -2 Q5 -8 8 -12" stroke="rgba(255,255,255,.5)" strokeWidth="1.5" fill="none" />}</g>
+
       {/* durum ışığı */}
-      <circle cx="100" cy="14" r="4" fill={status === "idle" ? "rgba(148,180,255,.3)" : status === "done" ? "#7ee2b8" : c} className={busy ? "status-pulse" : undefined} />
+      <circle cx="100" cy="12" r="4" fill={status === "idle" ? "rgba(148,180,255,.3)" : status === "done" ? "#7ee2b8" : c} className={busy ? "status-pulse" : undefined} />
     </svg>
   );
 }
 
 // ---- Ajan becerileri paneli ----
 type Skill = { id: string; name: string; description: string; content: string; teamRoles?: string[] };
-function AgentPanel({ role, onClose }: { role: TeamRole; onClose: () => void }) {
+function AgentPanel({ role, person, onClose }: { role: TeamRole; person: string; onClose: () => void }) {
   const meta = TEAM_META[role];
   const [skills, setSkills] = useState<Skill[] | null>(null);
   const [adding, setAdding] = useState(false);
@@ -189,12 +278,12 @@ function AgentPanel({ role, onClose }: { role: TeamRole; onClose: () => void }) 
         onClick={(e) => e.stopPropagation()}
         className="flex max-h-[88dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-2xl sm:rounded-2xl"
         style={{ background: "var(--bg-panel)", border: "1px solid var(--border-strong)" }}
-        role="dialog" aria-label={`${meta.name} becerileri`}
+        role="dialog" aria-label={`${person} (${meta.name}) becerileri`}
       >
         <div className="flex items-start gap-3 border-b p-4" style={{ borderColor: "var(--border)" }}>
           <span className="mt-1 h-3 w-3 shrink-0 rounded-full" style={{ background: meta.color }} />
           <div className="min-w-0 flex-1">
-            <div className="text-[16px] font-bold">{meta.name} <span className="font-normal" style={{ color: "var(--text-muted)" }}>· {meta.title}</span></div>
+            <div className="text-[16px] font-bold">{person} <span className="font-normal" style={{ color: "var(--text-muted)" }}>· {meta.title}</span></div>
             <p className="mt-1 text-[13px] leading-relaxed" style={{ color: "var(--text-muted)" }}>{meta.desc}</p>
           </div>
           <button onClick={onClose} aria-label="Kapat" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full" style={{ color: "var(--text-muted)" }}>

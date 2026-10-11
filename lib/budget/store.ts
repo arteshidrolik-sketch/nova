@@ -23,6 +23,7 @@ const PRICE: Record<string, [number, number]> = {
   "claude-sonnet-5": [2, 10],
   "claude-fable-5": [10, 50],
   "claude-haiku-4-5-20251001": [1, 5],
+  "claude-haiku-4-5": [1, 5],
 };
 
 const FILE = path.join(process.cwd(), "data", "budget.json");

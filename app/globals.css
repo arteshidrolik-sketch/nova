@@ -398,3 +398,14 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .arm-l, .arm-r, .screen-scroll, .status-pulse, .steam { animation: none !important; }
 }
+
+/* ---- Ofis karakterleri: göz kırpma, baş sallama, konuşma ---- */
+.blink { animation: blink 5.2s infinite; }
+@keyframes blink { 0%, 94%, 100% { transform: scaleY(1); } 96% { transform: scaleY(0.1); } }
+.head-nod { animation: head-nod 1.4s ease-in-out infinite alternate; }
+@keyframes head-nod { from { transform: rotate(-1.5deg) translateY(0); } to { transform: rotate(1.5deg) translateY(1px); } }
+.talk { animation: talk 0.22s ease-in-out infinite alternate; }
+@keyframes talk { from { transform: scaleY(0.35); } to { transform: scaleY(1.2); } }
+@media (prefers-reduced-motion: reduce) {
+  .blink, .head-nod, .talk { animation: none !important; }
+}

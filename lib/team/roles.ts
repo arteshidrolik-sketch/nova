@@ -23,6 +23,48 @@ export const TEAM_META: Record<TeamRole, { name: string; title: string; color: s
   },
 };
 
+// ---- Model seviyeleri (maliyet): müdür her görev için seçer ----
+export type Tier = "hafif" | "standart" | "agir";
+export const TIERS: Record<Tier, { model: string; label: string; effort: "low" | "medium" | "high"; note: string }> = {
+  hafif: { model: process.env.NOVA_TIER_LIGHT || "claude-haiku-4-5", label: "Haiku", effort: "low", note: "basit, kısa, tek adımlı işler (özet, kısa metin, basit arama)" },
+  standart: { model: process.env.NOVA_TIER_STD || "claude-sonnet-5", label: "Sonnet", effort: "medium", note: "çoğu iş (araştırma raporu, kod düzeltme, kampanya metni)" },
+  agir: { model: process.env.NOVA_TIER_HEAVY || "claude-opus-5-5", label: "Opus", effort: "high", note: "zor/uzun/kritik işler (mimari, karmaşık hata, derin analiz, revizyonda tekrar takılan iş)" },
+};
+export function isTier(v: unknown): v is Tier {
+  return v === "hafif" || v === "standart" || v === "agir";
+}
+
+// ---- Ekip kadrosu: proje başına sabit, kadın-erkek karışık Türkçe isimler ----
+export type Gender = "k" | "e";
+export type Member = { name: string; gender: Gender; look: number };
+const FEMALE = ["Elif", "Zeynep", "Defne", "Ayşe", "Selin", "Ece", "Melis", "Derya", "Nazlı", "Ceren", "Duygu", "İpek", "Aslı", "Gizem", "Buse", "Esra"];
+const MALE = ["Emre", "Can", "Mert", "Burak", "Kerem", "Onur", "Tolga", "Barış", "Serkan", "Arda", "Kaan", "Umut", "Eren", "Efe", "Murat", "Ozan"];
+function h32(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+// Her projede 2 kadın + 2 erkek; kimin hangi rolde olduğu ve isimler projeye göre değişir ama sabit kalır
+export function teamCast(projectId: string): Record<TeamRole, Member> {
+  const h = h32(projectId || "nova");
+  const patterns: Gender[][] = [
+    ["k", "e", "k", "e"], ["e", "k", "e", "k"], ["k", "k", "e", "e"], ["e", "e", "k", "k"], ["k", "e", "e", "k"], ["e", "k", "k", "e"],
+  ];
+  const g = patterns[h % patterns.length];
+  const used = new Set<string>();
+  const pick = (pool: string[], seed: number) => {
+    for (let i = 0; i < pool.length; i++) { const n = pool[(seed + i * 7) % pool.length]; if (!used.has(n)) { used.add(n); return n; } }
+    return pool[0];
+  };
+  const out = {} as Record<TeamRole, Member>;
+  TEAM_ROLES.forEach((r, i) => {
+    const gender = g[i];
+    const seed = h32(projectId + r);
+    out[r] = { name: pick(gender === "k" ? FEMALE : MALE, seed), gender, look: seed };
+  });
+  return out;
+}
+
 export function isTeamRole(v: unknown): v is TeamRole {
   return typeof v === "string" && (TEAM_ROLES as string[]).includes(v);
 }

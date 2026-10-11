@@ -5,7 +5,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { getSkillsForTeamRole } from "@/lib/skills/store";
 import { ensureTeamSkills } from "./skills";
 import { runSpecialist } from "./runner";
-import { SPECIALISTS, TEAM_META, type TeamRole } from "./roles";
+import { SPECIALISTS, TEAM_META, TIERS, isTier, teamCast, type TeamRole, type Tier } from "./roles";
 
 export const ASSIGN_TOOL_NAME = "ajana_gorev_ver";
 export const ASSIGN_TOOL = {
@@ -21,17 +21,26 @@ export const ASSIGN_TOOL = {
       gorev: { type: "string", description: "Uzmanın sohbet geçmişini görmediğini bilerek eksiksiz, bağlamlı görev tanımı" },
       kabul_kriterleri: { type: "string", description: "2-5 maddelik ölçülebilir kabul kriteri" },
       revizyon_notu: { type: "string", description: "Yalnız revizyonda: önceki teslimin neyi eksik/yanlış, tam olarak ne isteniyor" },
+      seviye: {
+        type: "string", enum: ["hafif", "standart", "agir"],
+        description: "Maliyet/kalite seviyesi. hafif = ucuz hızlı model (basit, kısa, tek adımlı iş); standart = çoğu iş; agir = en güçlü ve en pahalı model (zor, uzun, kritik iş). En ucuz YETERLİ seviyeyi seç.",
+      },
     },
-    required: ["ajan", "gorev", "kabul_kriterleri"],
+    required: ["ajan", "gorev", "kabul_kriterleri", "seviye"],
   },
 } as const;
 
-export async function buildManagerSystem(project: { name: string; path: string } | null, title: string): Promise<string> {
+export async function buildManagerSystem(project: { name: string; path: string } | null, title: string, projectId = ""): Promise<string> {
   await ensureTeamSkills();
   const skills = await getSkillsForTeamRole("manager");
+  const cast = teamCast(projectId);
   return (
-    `Sen "${title}" projesinin PROJE MÜDÜRÜSÜN. Kullanıcının tek muhatabısın. Ekibin: ` +
-    SPECIALISTS.map((r) => `${TEAM_META[r].name} (${r}) — ${TEAM_META[r].desc}`).join("; ") + ".\n\n" +
+    `Sen ${cast.manager.name}, "${title}" projesinin PROJE MÜDÜRÜSÜN. Kullanıcının tek muhatabısın. Ekibin: ` +
+    SPECIALISTS.map((r) => `${cast[r].name} — ${TEAM_META[r].name} uzmanı (ajan=${r}): ${TEAM_META[r].desc}`).join("; ") + ". " +
+    "Kullanıcıya ekibinden isimleriyle bahset (ör. 'Elif araştırdı').\n\n" +
+    "## Maliyet: seviye seçimi (her görevde zorunlu)\n" +
+    (["hafif", "standart", "agir"] as Tier[]).map((t) => `- ${t} (${TIERS[t].label}): ${TIERS[t].note}`).join("\n") +
+    "\nVarsayılan standart. Basit işi agir'a VERME (pahalı); kritik/zor işi hafif'e verme. Revizyonda iş tekrar takılırsa seviye kendiliğinden bir kademe yükselir.\n\n" +
     "## Çalışma şeklin (kesin kurallar)\n" +
     "- İşi KENDİN YAPMA: araştırma, kod, metin, görsel, belge üretimi gerekiyorsa ajana_gorev_ver ile uygun uzmana ver. Sen planlar, dağıtır, denetler, sunarsın.\n" +
     "- Yalnız basit selamlaşma, netleştirme sorusu ya da ekip çıktısını özetleme gibi işlerde doğrudan cevap ver.\n" +
@@ -40,6 +49,7 @@ export async function buildManagerSystem(project: { name: string; path: string }
     "- Teslim yetersizse aynı uzmana revizyon_notu ile geri ver (görev başına en fazla 3 revizyon). Bağımsız alt işleri farklı uzmanlara verebilirsin.\n" +
     "- Kullanıcıya son cevapta: ne yapıldı, hangi uzman, kaç denetim turu, çıktılar (linkler aynen), kalan riskler. Kısa ve net ol.\n" +
     "- Uzmanın yaptığını kendin yapmış gibi anlatma; araç sonuçlarını taklit etme. Dosya/görsel linklerini teslimden AYNEN aktar, link uydurma.\n" +
+    "- Metninde ✅ ⏳ ⚙️ ⚠️ 🌐 👥 👔 işaretlerini KULLANMA (sunucuya ayrılmış, görünmez olur); onay için ✓ kullan.\n" +
     (project ? `\nBu sohbet "${project.name}" proje klasörüne bağlı (${project.path}); kodu denetlemek için okuma araçlarını (list_files/read_file/search_files) kullanabilirsin.\n` : "") +
     (skills.length ? "\n## Becerilerin\n" + skills.map((s) => `### ${s.name}\n${s.content}`).join("\n\n") : "")
   );
@@ -58,6 +68,7 @@ export async function handleAssign(
     project: { path: string; name: string } | null; scope: string;
     emit: (s: string) => void; canceled: () => boolean;
     history?: string; // projenin son konuşmaları (devamlılık için uzmana verilir)
+    projectId?: string;
   },
 ): Promise<{ content: string; isError?: boolean }> {
   const role = String(input.ajan || "") as TeamRole;
@@ -76,16 +87,22 @@ export async function handleAssign(
   }
   st.total++; st.perRole[r] = n;
   const meta = TEAM_META[r];
+  const person = teamCast(ctx.projectId || "")[r].name;
+  // Seviye: müdürün seçimi; revizyonda iş takılıyorsa (2. revizyondan itibaren) bir kademe yükselt
+  const order: Tier[] = ["hafif", "standart", "agir"];
+  let tier: Tier = isTier(input.seviye) ? input.seviye : "standart";
+  if (isRevision && n - 1 >= 2 && tier !== "agir") tier = order[order.indexOf(tier) + 1];
+  const T = TIERS[tier];
   const task = String(input.gorev || "").trim();
   const head = task.split("\n")[0].slice(0, 110);
   ctx.emit(
     isRevision
-      ? `\n\n👔 Müdür revizyon istedi → ${meta.name}: ${String(input.revizyon_notu).split("\n")[0].slice(0, 120)}\n👥 ${meta.name} çalışıyor (revizyon ${n - 1}): ${head}\n`
-      : `\n\n👥 ${meta.name} çalışıyor: ${head}\n`,
+      ? `\n\n👔 Müdür revizyon istedi → ${person} (${meta.name}): ${String(input.revizyon_notu).split("\n")[0].slice(0, 120)}\n👥 ${meta.name} çalışıyor [${T.label}] (revizyon ${n - 1}): ${head}\n`
+      : `\n\n👥 ${meta.name} çalışıyor [${T.label}]: ${person} — ${head}\n`,
   );
   const t0 = Date.now();
   const res = await runSpecialist({
-    client: ctx.client, model: ctx.model, role: r, task,
+    client: ctx.client, model: T.model, effort: T.effort, role: r, task,
     criteria: String(input.kabul_kriterleri || ""),
     revisionNote: isRevision ? String(input.revizyon_notu) : undefined,
     history: ctx.history,
@@ -93,10 +110,10 @@ export async function handleAssign(
     project: ctx.project, scope: ctx.scope, emit: ctx.emit, canceled: ctx.canceled,
   });
   st.last[r] = res.text;
-  ctx.emit(`\n👥 ${meta.name} teslim etti (${Math.round((Date.now() - t0) / 1000)} sn) — 👔 Müdür denetliyor…\n`);
+  ctx.emit(`\n👥 ${meta.name} teslim etti (${person}, ${T.label}, ${Math.round((Date.now() - t0) / 1000)} sn) — 👔 Müdür denetliyor…\n`);
   return {
     content:
-      `[${meta.name} teslimi${isRevision ? ` — revizyon ${n - 1}` : ""}]\n${res.text.slice(0, 14000)}` +
+      `[${person} — ${meta.name} teslimi, seviye ${tier}${isRevision ? ` — revizyon ${n - 1}` : ""}]\n${res.text.slice(0, 14000)}` +
       (res.artifacts.length ? `\n\n[Üretilen çıktılar — kullanıcıya bu linkleri AYNEN aktar]\n${res.artifacts.join("\n")}` : "") +
       `\n\n[Müdüre not] Bu teslimi kabul kriterlerine tek tek karşı denetle. Eksik/yanlış varsa aynı ajana revizyon_notu ile tekrar ver; ` +
       `uygunsa kullanıcıya sun. Revizyon hakkı kalan: ${Math.max(0, 3 - (n - 1))}.`,

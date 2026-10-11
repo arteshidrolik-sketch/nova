@@ -46,7 +46,7 @@ export async function runDailyReports(day = istanbulNow().day, markDay = true): 
   const st = await loadState();
   const skills = await getSkillsForTeamRole("manager");
   const client = new Anthropic();
-  const model = process.env.NOVA_REPORT_MODEL || "claude-opus-5-5";
+  const model = process.env.NOVA_REPORT_MODEL || "claude-sonnet-5"; // özet işi: Sonnet yeterli, ucuz
   const all = await loadConversations();
   let written = 0, skipped = 0;
   for (const c of all) {

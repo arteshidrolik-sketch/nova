@@ -43,6 +43,7 @@ const MEDIA_TOOLS = new Set([
 export async function runSpecialist(opts: {
   client: Anthropic;
   model: string;
+  effort?: "low" | "medium" | "high";
   role: Exclude<TeamRole, "manager">;
   task: string;
   criteria: string;
@@ -62,10 +63,12 @@ export async function runSpecialist(opts: {
   const actionTools = [...GENERAL_ACTION_TOOLS, ...PROJECT_ACTION_TOOLS].filter(
     (t) => allowed.has((t as { name: string }).name) && (project || !isProjectAction((t as { name: string }).name)),
   );
+  // Haiku 4.5: yeni (dinamik filtreli) web araçlarını ve uyarlanabilir düşünmeyi desteklemez → eski sürümler
+  const legacy = /haiku/.test(model);
   const tools = [
-    { type: "web_search_20260209", name: "web_search", max_uses: role === "coder" ? 3 : 6 },
+    { type: legacy ? "web_search_20250305" : "web_search_20260209", name: "web_search", max_uses: role === "coder" ? 3 : 6 },
     // kaynağı gerçekten açıp okuyabilsin (yalnız aramada çıkan linkler açılabilir)
-    ...(role !== "coder" ? [{ type: "web_fetch_20260209", name: "web_fetch", max_uses: 4 }] : []),
+    ...(role !== "coder" ? [{ type: legacy ? "web_fetch_20250910" : "web_fetch_20260209", name: "web_fetch", max_uses: 4 }] : []),
     ...(project ? READ_TOOLS : []),
     ...actionTools,
   ] as unknown as Anthropic.Tool[];
@@ -97,8 +100,9 @@ ${opts.history}
   for (let iter = 0; iter < 10; iter++) {
     if (canceled()) break;
     const params = {
-      model, max_tokens: 16000, system, tools, messages: convo,
-      thinking: { type: "adaptive" }, output_config: { effort: "high" },
+      model, max_tokens: legacy ? 8000 : 16000, system, tools, messages: convo,
+      cache_control: { type: "ephemeral" }, // tekrar eden sistem istemi/beceriler önbellekten (ucuz) okunur
+      ...(legacy ? {} : { thinking: { type: "adaptive" }, output_config: { effort: opts.effort || "high" } }),
     } as unknown as Anthropic.MessageStreamParams;
     // arama/sayfa açma tavanı: dolunca araçsız son tur → eldekiyle teslim
     if (searches >= 10) (params as unknown as Record<string, unknown>).tool_choice = { type: "none" };

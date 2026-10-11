@@ -289,7 +289,9 @@ export async function POST(req: Request) {
     ? customAgent.model
     : project?.self
       ? "claude-opus-5-5"
-      : modelForAgent(agent);
+      : teamMode
+        ? process.env.NOVA_MANAGER_MODEL || "claude-sonnet-5" // müdür: orkestrasyon/denetim — Opus'tan ucuz
+        : modelForAgent(agent);
   // Büyük dosya yazımı kesilmesin diye güçlü modellerde daha yüksek çıktı limiti
   let maxTokens = /opus|sonnet/.test(answerModel) ? 16000 : 8000;
   let escalated = false; // refusal olursa bir kez daha güçlü modele yükselt
@@ -421,7 +423,7 @@ export async function POST(req: Request) {
     "Fatura okuma için tarayıcı-içi OCR'lı (tesseract vb.) bağımsız HTML aracı ÜRETME — güvenilmez sonuç verir; Fatura sekmesine yönlendir.";
 
   if (teamMode) {
-    system = await buildManagerSystem(project ? { name: project.name, path: project.path } : null, conv?.title || "Proje");
+    system = await buildManagerSystem(project ? { name: project.name, path: project.path } : null, conv?.title || "Proje", conversationId);
   }
 
   // Prompt-injection karantina kuralı (tüm ajanlar)
@@ -632,6 +634,7 @@ export async function POST(req: Request) {
             p.thinking = { type: "adaptive" };
             p.output_config = { effort: "high" };
           }
+          (streamParams as unknown as Record<string, unknown>).cache_control = { type: "ephemeral" };
           if (wrapUp) {
             // Son tur: hiçbir araç (web_search dahil) çağrılamaz → metin cevap.
             // Araç listesi aynı kalır (geçmişteki arama blokları için gerekli).
@@ -849,6 +852,7 @@ export async function POST(req: Request) {
                 project: project ? { path: project.path, name: project.name } : null,
                 scope: wsScopeId, emit, canceled: () => isCanceled(runId) || isStopped(),
                 history: teamHistory,
+                projectId: conversationId,
               });
               toolResults.push({ type: "tool_result", tool_use_id: block.id, content: r.content, ...(r.isError ? { is_error: true } : {}) });
               continue;
