@@ -645,7 +645,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
 
   // Sunucunun durum satırları (araştırma/arama/araç/uyarı) — seslendirilmez.
   // Model metninde bu işaretler nötrleştirildiği için yalnız sunucu satırlarıdır.
-  const STATUS_LINE = /^[ \t]*(?:🔎|🌐|⏳|⚙️?|📂|🔧|🛡️?|⛔|✅|⚠️?|💸)/u;
+  const STATUS_LINE = /^[ \t]*(?:🔎|🌐|⏳|⚙️?|📂|🔧|🛡️?|⛔|✅|⚠️?|💸|👥|👔)/u;
   function stripStatus(text: string): string {
     return text
       .split("\n")
@@ -1743,6 +1743,8 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         if (typeof p.chunk === "string" && p.chunk.length > 0) {
           acc += p.chunk;
           offset = p.len ?? offset;
+          // Ofis sahnesi (ekip ajanlarının durumu) akışı izler
+          window.dispatchEvent(new CustomEvent("nova:stream", { detail: { convId: myConvId, text: acc, running: true } }));
           if (p.model) model = p.model;
           if (active()) {
             // yalnızca bu sohbet aktifken ekrana yaz (diğer sekmelere sızmasın)
@@ -1758,6 +1760,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         }
       }
 
+      window.dispatchEvent(new CustomEvent("nova:stream", { detail: { convId: myConvId, text: acc, running: false } }));
       if (stopped) return; // Durdur: sonuçlandırma yapma (finally temizler)
 
       // Boş yanıtı ASLA kaydetme: boş içerikli mesaj API'yi 400'e düşürüp sohbeti kilitler

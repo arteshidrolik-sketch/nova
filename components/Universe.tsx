@@ -9,6 +9,7 @@ import SpaceBackground from "./SpaceBackground";
 import ProjectView from "./ProjectView";
 import { Planet } from "./planet";
 import { IconPlus, IconClose } from "./UniverseIcons";
+import SpaceControls from "./SpaceControls";
 
 // Yörünge geometrisi: yatay ekranda geniş-basık elips (perspektif), dikey ekranda
 // (telefon) daha yuvarlak ve geniş yörünge + küçük gezegenler → merkezle çakışmaz.
@@ -133,13 +134,16 @@ export default function Universe() {
             {projects.length} PROJE · BİR GEZEGEN SEÇ
           </div>
         </div>
+        <div className="flex items-center gap-2">
+        <SpaceControls />
         <button
           onClick={() => setCreating(true)}
           className="flex h-11 items-center gap-2 rounded-full px-4 text-[14px] font-medium transition-transform duration-200 hover:scale-[1.03]"
           style={{ background: "var(--accent-dim)", border: "1px solid var(--border-strong)", color: "var(--text)" }}
         >
-          <IconPlus width={18} height={18} /> Yeni proje
+          <IconPlus width={18} height={18} /> <span className="hidden sm:inline">Yeni proje</span>
         </button>
+        </div>
       </header>
 
       {/* sahne */}

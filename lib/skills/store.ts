@@ -9,9 +9,15 @@ export type Skill = {
   description: string;
   content: string;
   agentKeys: AgentKey[];
+  // Proje ekibi rolleri (manager/research/coder/marketing) — ekip ajanlarına yüklenir
+  teamRoles?: string[];
   source?: string;
   createdAt: number;
 };
+
+export async function getSkillsForTeamRole(role: string): Promise<Skill[]> {
+  return (await loadSkills()).filter((s) => (s.teamRoles ?? []).includes(role));
+}
 
 const DIR = path.join(process.cwd(), "data");
 const FILE = path.join(DIR, "skills.json");
@@ -46,6 +52,7 @@ export async function createSkill(input: {
   description?: string;
   content: string;
   agentKeys: AgentKey[];
+  teamRoles?: string[];
   source?: string;
 }): Promise<Skill> {
   const all = await loadSkills();
@@ -55,6 +62,7 @@ export async function createSkill(input: {
     description: (input.description ?? "").trim(),
     content: input.content,
     agentKeys: input.agentKeys,
+    ...(input.teamRoles?.length ? { teamRoles: input.teamRoles } : {}),
     source: input.source,
     createdAt: Date.now(),
   };

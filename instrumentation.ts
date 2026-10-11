@@ -23,7 +23,11 @@ export async function register() {
   const { runLoop } = await import("@/lib/loops/run");
   const { cronMatches } = await import("@/lib/loops/cron");
 
+  const { maybeRunDailyReports } = await import("@/lib/team/report");
+
   setInterval(async () => {
+    // Gün sonu (18:00 İstanbul) proje ilerleme raporları
+    maybeRunDailyReports().catch((e) => console.warn("[rapor] zamanlayıcı:", e));
     const now = new Date();
     for (const loop of LOOPS) {
       try {

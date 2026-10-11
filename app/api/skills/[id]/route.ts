@@ -1,5 +1,6 @@
 import { deleteSkill, updateSkill } from "@/lib/skills/store";
 import { isAgentKey, type AgentKey } from "@/lib/agents/meta";
+import { isTeamRole } from "@/lib/team/roles";
 
 export const runtime = "nodejs";
 
@@ -17,6 +18,7 @@ export async function POST(
   if (Array.isArray(body?.agentKeys)) {
     patch.agentKeys = body.agentKeys.filter(isAgentKey) as AgentKey[];
   }
+  if (Array.isArray(body?.teamRoles)) patch.teamRoles = body.teamRoles.filter(isTeamRole);
   const skill = await updateSkill(id, patch);
   if (!skill) return Response.json({ error: "not_found" }, { status: 404 });
   return Response.json({ skill });

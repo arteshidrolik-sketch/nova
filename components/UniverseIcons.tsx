@@ -51,6 +51,21 @@ export const IconBack = (p: P) => (
 export const IconPlus = (p: P) => (
   <Base {...p}><path d="M12 5v14M5 12h14" /></Base>
 );
+export const IconExpand = (p: P) => (
+  <Base {...p}><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></Base>
+);
+export const IconShrink = (p: P) => (
+  <Base {...p}><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" /></Base>
+);
+export const IconMusic = (p: P) => (
+  <Base {...p}><path d="M9 18V5l11-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="17" cy="16" r="3" /></Base>
+);
+export const IconMusicOff = (p: P) => (
+  <Base {...p}><path d="M9 18V9M9 5l11-2v9" /><circle cx="6" cy="18" r="3" /><path d="M3 3l18 18" /></Base>
+);
+export const IconReport = (p: P) => (
+  <Base {...p}><path d="M7 3h7l5 5v13H7z" /><path d="M14 3v5h5M10 13h6M10 17h6" /></Base>
+);
 export const IconClose = (p: P) => (
   <Base {...p}><path d="M6 6l12 12M18 6 6 18" /></Base>
 );

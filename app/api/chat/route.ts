@@ -58,6 +58,8 @@ import {
   UNTRUSTED_RULE,
 } from "@/lib/security/untrusted";
 import { appendAudit } from "@/lib/audit/store";
+import { ASSIGN_TOOL, ASSIGN_TOOL_NAME, buildManagerSystem, handleAssign, newAssignState } from "@/lib/team/manager";
+import { TEAM_META } from "@/lib/team/roles";
 
 export const runtime = "nodejs";
 
@@ -85,7 +87,7 @@ const MAX_TOOL_ITERATIONS = 12;
 // gerçek araç sonuçlarında sunucu tarafından basılır. Model bu işaretleri
 // taklit edip "sahte araç sonucu" (ör. çağrılmamış bir yazma için "✅ Yazıldı")
 // gösteremesin diye model metninde nötr işarete çevrilir.
-const RESERVED_MARKS = /[⚙✅⏳⚠⛔\u{1F4C2}\u{1F527}\u{1F310}\u{1F6E1}]️?/gu;
+const RESERVED_MARKS = /[⚙✅⏳⚠⛔\u{1F4C2}\u{1F527}\u{1F310}\u{1F6E1}\u{1F465}\u{1F454}]️?/gu;
 function sanitizeModelText(t: string): string {
   return t.replace(RESERVED_MARKS, "▪");
 }
@@ -267,6 +269,11 @@ export async function POST(req: Request) {
   const effectiveForced =
     forcedAgent === "research" && fileJob ? "general" : forcedAgent;
 
+  // Ekip modu: kilitli olmayan her proje sohbetinde kullanıcı MÜDÜRLE konuşur;
+  // müdür işi uzman ajanlara (araştırma/kod/pazarlama) verip denetler.
+  // (Sabit "Araştırma" sohbeti de bir proje: müdür araştırma uzmanını çalıştırır)
+  const teamMode = (!locked || forcedAgent === "research") && !customAgent && !project?.self && !useOllama && process.env.NOVA_TEAM !== "off";
+
   // 1) Ajan seçimi: özel ajan → o; kilitli yerleşik → o; beyin → developer;
   //    çevrimdışı → general (orkestratör Claude ister); değilse orkestratör
   const agent = effectiveForced
@@ -275,7 +282,7 @@ export async function POST(req: Request) {
       ? "general" // yerleşik-anahtar gerektiren yerler için güvenli varsayılan
       : project?.self
         ? "developer"
-        : useOllama
+        : useOllama || teamMode
           ? "general"
           : await selectAgent(client, ROUTER_MODEL, routingMsgs, prevAgent);
   let answerModel = customAgent
@@ -413,6 +420,10 @@ export async function POST(req: Request) {
     "orada fotoğraf/PDF atınca otomatik okunur, kontrol edilir, deftere kaydedilir ve tek tıkla Excel alınır. " +
     "Fatura okuma için tarayıcı-içi OCR'lı (tesseract vb.) bağımsız HTML aracı ÜRETME — güvenilmez sonuç verir; Fatura sekmesine yönlendir.";
 
+  if (teamMode) {
+    system = await buildManagerSystem(project ? { name: project.name, path: project.path } : null, conv?.title || "Proje");
+  }
+
   // Prompt-injection karantina kuralı (tüm ajanlar)
   system += UNTRUSTED_RULE;
 
@@ -421,19 +432,28 @@ export async function POST(req: Request) {
   let useMemory = memNote.length > 0;
 
   // Beyin otonom build-düzelt döngüsü için daha fazla tur
-  const maxIter = project?.self ? 30 : MAX_TOOL_ITERATIONS;
+  const maxIter = project?.self ? 30 : teamMode ? 18 : MAX_TOOL_ITERATIONS;
 
   // Araçlar. Web arama sayısını sınırla → hesap hız limitine daha zor takılır
   // (env ile ayarlanabilir; varsayılan 3, eskiden 5'ti).
   // İstek başına tavan = iş başına tavan (8): model tek istekte 3'ü aşınca
   // "max_uses_exceeded" alıp özür dileyip pes ediyordu; asıl sınır döngüde.
   const webSearchMaxUses = Number(process.env.NOVA_WEB_SEARCH_MAX_USES) || 8;
-  const tools = [
+  const tools = (teamMode
+    ? [ASSIGN_TOOL, ...(project ? READ_TOOLS : [])]
+    : [
     GITHUB_TOOL,
     { type: "web_search_20260209", name: "web_search", max_uses: webSearchMaxUses },
     ...GENERAL_ACTION_TOOLS,
     ...(project ? [...READ_TOOLS, ...PROJECT_ACTION_TOOLS] : []),
-  ] as unknown as Anthropic.Tool[];
+  ]) as unknown as Anthropic.Tool[];
+  const assignState = newAssignState();
+  // Uzmanlara verilecek proje geçmişi: son 12 mesaj (her biri en fazla 1500 kr, toplam ~9000)
+  const teamHistory = teamMode
+    ? messages.slice(0, -1).slice(-12)
+        .map((m) => `${m.role === "user" ? "KULLANICI" : "NOVA"}: ${String(m.content).replace(/\n{3,}/g, "\n\n").slice(0, 1500)}`)
+        .join("\n\n").slice(-9000)
+    : "";
 
   const injectionFlags: string[] = []; // güvenilmeyen içerikte tespit edilen saldırı kalıpları
   const convo: Anthropic.MessageParam[] = trimHistory(messages).map((m) => {
@@ -500,7 +520,9 @@ export async function POST(req: Request) {
               agentEmoji: customAgent.emoji,
               agentColor: customAgent.color,
             }
-          : {}),
+          : teamMode
+            ? { agentName: TEAM_META.manager.name, agentEmoji: "👔", agentColor: TEAM_META.manager.color }
+            : {}),
       },
     ];
     updateConversation(conversationId, { messages: finalConv }).catch(() => {});
@@ -819,6 +841,18 @@ export async function POST(req: Request) {
           for (const block of final.content) {
             if (block.type !== "tool_use") continue;
             const input = (block.input ?? {}) as Record<string, unknown>;
+
+            // Ekip: müdür bir uzmana görev verdi → uzmanı çalıştır, teslimi müdüre dön
+            if (teamMode && block.name === ASSIGN_TOOL_NAME) {
+              const r = await handleAssign(input, {
+                client, model: answerModel, state: assignState,
+                project: project ? { path: project.path, name: project.name } : null,
+                scope: wsScopeId, emit, canceled: () => isCanceled(runId) || isStopped(),
+                history: teamHistory,
+              });
+              toolResults.push({ type: "tool_result", tool_use_id: block.id, content: r.content, ...(r.isError ? { is_error: true } : {}) });
+              continue;
+            }
 
             // Proje salt-okuma araçları: hemen çalışır
             if (project && READ_TOOL_NAMES.has(block.name)) {
@@ -1241,9 +1275,9 @@ export async function POST(req: Request) {
     runId,
     agent: responseAgent,
     model: answerModel,
-    agentName: customAgent?.name,
-    agentEmoji: customAgent?.emoji,
-    agentColor: customAgent?.color,
+    agentName: customAgent?.name ?? (teamMode ? TEAM_META.manager.name : undefined),
+    agentEmoji: customAgent?.emoji ?? (teamMode ? "👔" : undefined),
+    agentColor: customAgent?.color ?? (teamMode ? TEAM_META.manager.color : undefined),
   });
 }
 

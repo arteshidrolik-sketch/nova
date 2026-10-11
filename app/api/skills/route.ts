@@ -1,9 +1,12 @@
 import { createSkill, loadSkills } from "@/lib/skills/store";
 import { isAgentKey, type AgentKey } from "@/lib/agents/meta";
+import { isTeamRole } from "@/lib/team/roles";
+import { ensureTeamSkills } from "@/lib/team/skills";
 
 export const runtime = "nodejs";
 
 export async function GET() {
+  await ensureTeamSkills(); // ekip ajanlarının hazır becerileri (ilk seferde yüklenir)
   const skills = await loadSkills();
   return Response.json({ skills });
 }
@@ -16,7 +19,8 @@ export async function POST(req: Request) {
     isAgentKey,
   ) as AgentKey[];
 
-  if (!name || !content || agentKeys.length === 0) {
+  const teamRoles = (Array.isArray(body?.teamRoles) ? body.teamRoles : []).filter(isTeamRole) as string[];
+  if (!name || !content || (agentKeys.length === 0 && teamRoles.length === 0)) {
     return Response.json(
       { error: "name_content_agents_required" },
       { status: 400 },
@@ -27,6 +31,7 @@ export async function POST(req: Request) {
     description: String(body?.description ?? ""),
     content,
     agentKeys,
+    teamRoles,
     source: body?.source ? String(body.source) : undefined,
   });
   return Response.json({ skill });

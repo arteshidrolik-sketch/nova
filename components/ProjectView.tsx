@@ -8,24 +8,31 @@ import { useEffect, useState, type ComponentType, type SVGProps } from "react";
 import Chat from "./Chat";
 import Files from "./Files";
 import Skills from "./Skills";
-import Agents from "./Agents";
 import Tasks from "./Tasks";
+import TeamOffice from "./TeamOffice";
+import SpaceControls from "./SpaceControls";
 import { Planet } from "./planet";
-import { IconBack, IconChat, IconFolder, IconMemory, IconSkill, IconAgent, IconTasks } from "./UniverseIcons";
+import { IconBack, IconFolder, IconMemory, IconSkill, IconAgent, IconTasks, IconReport } from "./UniverseIcons";
 import type { ProjectMeta } from "./Universe";
 
-type TabKey = "sohbet" | "dosyalar" | "hafiza" | "beceriler" | "ajanlar" | "gorevler";
+type TabKey = "sohbet" | "dosyalar" | "hafiza" | "raporlar" | "beceriler" | "gorevler";
 const TABS: { key: TabKey; label: string; Icon: ComponentType<SVGProps<SVGSVGElement>> }[] = [
-  { key: "sohbet", label: "Sohbet", Icon: IconChat },
+  { key: "sohbet", label: "Ekip", Icon: IconAgent },
   { key: "dosyalar", label: "Dosyalar", Icon: IconFolder },
   { key: "hafiza", label: "Hafıza", Icon: IconMemory },
+  { key: "raporlar", label: "Raporlar", Icon: IconReport },
   { key: "beceriler", label: "Beceriler", Icon: IconSkill },
-  { key: "ajanlar", label: "Ajanlar", Icon: IconAgent },
-  { key: "gorevler", label: "Görevler", Icon: IconTasks },
+  { key: "gorevler", label: "Onaylar", Icon: IconTasks },
 ];
 
 export default function ProjectView({ project, onClose }: { project: ProjectMeta; onClose: () => void }) {
   const [tab, setTab] = useState<TabKey>("sohbet");
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    const f = () => setCompact(window.innerWidth < 760 || window.innerHeight < 760);
+    f(); window.addEventListener("resize", f);
+    return () => window.removeEventListener("resize", f);
+  }, []);
   const [shown, setShown] = useState(false);
   useEffect(() => { const t = requestAnimationFrame(() => setShown(true)); return () => cancelAnimationFrame(t); }, []);
   useEffect(() => {
@@ -54,10 +61,11 @@ export default function ProjectView({ project, onClose }: { project: ProjectMeta
           <IconBack width={18} height={18} /> Evren
         </button>
         <Planet seed={project.id + project.title} size={32} spin={false} />
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="truncate text-[16px] font-bold">{project.title}</div>
-          <div className="text-[12px]" style={{ color: "var(--text-muted)", letterSpacing: ".05em" }}>PROJE</div>
+          <div className="text-[12px]" style={{ color: "var(--text-muted)", letterSpacing: ".05em" }}>PROJE · MÜDÜR + 3 UZMAN</div>
         </div>
+        <SpaceControls />
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
@@ -91,14 +99,20 @@ export default function ProjectView({ project, onClose }: { project: ProjectMeta
 
         {/* içerik */}
         <main className="relative min-h-0 flex-1 overflow-hidden">
-          {/* Sohbet her zaman bağlı kalır (gizlenir) → sekme değişince yarıda kesilmez */}
+          {/* Ekip: üstte ofis (masa başındaki ajanlar), altta müdürle sohbet.
+              Her zaman bağlı kalır (gizlenir) → sekme değişince iş yarıda kesilmez */}
           <div className="absolute inset-0 flex flex-col" hidden={tab !== "sohbet"}>
-            <Chat conversationId={project.id} />
+            <div className="shrink-0 border-b" style={{ borderColor: "var(--border)", background: "radial-gradient(90% 120% at 50% 100%, rgba(79,216,255,.06), transparent)" }}>
+              <TeamOffice convId={project.id} compact={compact} />
+            </div>
+            <div className="relative min-h-0 flex-1">
+              <div className="absolute inset-0 flex flex-col"><Chat conversationId={project.id} /></div>
+            </div>
           </div>
           {tab === "dosyalar" && <div className="absolute inset-0 overflow-y-auto"><Files prefix={scope} /></div>}
           {tab === "hafiza" && <div className="absolute inset-0 overflow-y-auto"><ProjectMemory id={project.id} /></div>}
           {tab === "beceriler" && <div className="absolute inset-0 overflow-y-auto"><Skills /></div>}
-          {tab === "ajanlar" && <div className="absolute inset-0 overflow-y-auto"><Agents onStartChat={() => setTab("sohbet")} /></div>}
+          {tab === "raporlar" && <div className="absolute inset-0 overflow-y-auto"><ProjectReports id={project.id} /></div>}
           {tab === "gorevler" && <div className="absolute inset-0 overflow-y-auto"><Tasks /></div>}
         </main>
       </div>
@@ -136,6 +150,40 @@ function ProjectMemory({ id }: { id: string }) {
                 {new Date(m.ts).toLocaleString("tr-TR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
                 {m.tags?.length ? ` · ${m.tags.join(", ")}` : ""}
               </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// Gün sonu raporları (müdürün her akşam 18:00'de bu projeye yazdıkları)
+function ProjectReports({ id }: { id: string }) {
+  const [items, setItems] = useState<string[] | null>(null);
+  useEffect(() => {
+    fetch(`/api/conversations/${id}`).then((r) => r.json()).then((d) => {
+      const msgs = (d.conversation?.messages ?? []) as { role: string; content: string }[];
+      setItems(msgs.filter((m) => m.role === "assistant" && String(m.content).startsWith("📋 **Gün sonu")).map((m) => m.content).reverse());
+    }).catch(() => setItems([]));
+  }, [id]);
+  return (
+    <div className="mx-auto max-w-3xl p-4 sm:p-8">
+      <div className="mb-1 text-[20px] font-bold">Gün sonu raporları</div>
+      <p className="mb-6 text-[14px]" style={{ color: "var(--text-muted)" }}>
+        Müdür her gün 18:00'de, o gün üzerinde çalışılan projeler için ilerleme raporu yazar. Raporlar sohbette de görünür.
+      </p>
+      {items === null ? (
+        <div className="text-[14px]" style={{ color: "var(--text-muted)" }}>Yükleniyor…</div>
+      ) : items.length === 0 ? (
+        <div className="rounded-xl p-6 text-[14px]" style={{ border: "1px dashed var(--border-strong)", color: "var(--text-muted)" }}>
+          Henüz rapor yok. Bu projede bugün çalışılırsa ilk rapor 18:00'de gelir.
+        </div>
+      ) : (
+        <ul className="flex flex-col gap-4">
+          {items.map((t, i) => (
+            <li key={i} className="whitespace-pre-wrap rounded-xl p-4 text-[14px] leading-relaxed" style={{ background: "var(--bg-panel)", border: "1px solid var(--border)" }}>
+              {t.replace(/\*\*/g, "")}
             </li>
           ))}
         </ul>

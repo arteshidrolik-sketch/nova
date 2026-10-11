@@ -383,3 +383,18 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .planet-spin, .nova-core { animation: none !important; }
 }
+
+/* ---- Proje ofisi (ekip ajanları) ---- */
+.arm-l { animation: type-l 0.32s ease-in-out infinite alternate; transform-origin: 80px 118px; }
+.arm-r { animation: type-r 0.28s ease-in-out infinite alternate; transform-origin: 120px 118px; }
+@keyframes type-l { from { transform: translateY(0); } to { transform: translateY(-2.5px); } }
+@keyframes type-r { from { transform: translateY(-2px); } to { transform: translateY(0.5px); } }
+.screen-scroll { animation: screen-scroll 1.6s linear infinite; }
+@keyframes screen-scroll { from { transform: translateY(0); } to { transform: translateY(-10px); } }
+.status-pulse { animation: status-pulse 1.2s ease-in-out infinite alternate; }
+@keyframes status-pulse { from { opacity: 0.45; } to { opacity: 1; } }
+.steam { animation: steam 2.4s ease-in-out infinite; }
+@keyframes steam { 0% { opacity: 0; transform: translateY(2px); } 40% { opacity: 0.8; } 100% { opacity: 0; transform: translateY(-4px); } }
+@media (prefers-reduced-motion: reduce) {
+  .arm-l, .arm-r, .screen-scroll, .status-pulse, .steam { animation: none !important; }
+}
