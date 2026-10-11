@@ -450,6 +450,7 @@ export async function POST(req: Request) {
     ...(project ? [...READ_TOOLS, ...PROJECT_ACTION_TOOLS] : []),
   ]) as unknown as Anthropic.Tool[];
   const assignState = newAssignState();
+  let fakeToolWarned = false; // sahte araç satırı uyarısı (bir kez)
   // Uzmanlara verilecek proje geçmişi: son 12 mesaj (her biri en fazla 1500 kr, toplam ~9000)
   const teamHistory = teamMode
     ? messages.slice(0, -1).slice(-12)
@@ -767,6 +768,16 @@ export async function POST(req: Request) {
           const hasText = final.content.some(
             (b) => b.type === "text" && b.text.trim().length > 0,
           );
+
+          // Sahte araç satırı koruması (ekip): müdürün komut aracı yok; metninde
+          // "⚙️ … çalıştır" / "✅ Yapıldı" gibi araç satırı taklidi varsa kullanıcıyı uyar.
+          if (teamMode && !fakeToolWarned) {
+            const raw = final.content.filter((b) => b.type === "text").map((b) => (b as Anthropic.TextBlock).text).join("\n");
+            if (/(^|\n)\s*(⚙️?|✅)\s*(\[[^\]\n]+\]\s*)?(çalıştır|Yapıldı|Yazıldı)/u.test(raw)) {
+              fakeToolWarned = true;
+              emit("\n\n⚠️ Not: Müdür bir kontrol yapmış gibi yazdı ama bu turda gerçek bir komut çalışmadı; o kısım güvenilir değil. \"Kod ajanına doğrulat\" diyerek gerçek kontrol isteyebilirsin.\n");
+            }
+          }
 
           // Son cevap turuydu (araçlar kapalı): ne olursa olsun burada bitir.
           if (wrapUp) {

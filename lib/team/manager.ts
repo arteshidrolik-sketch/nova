@@ -50,6 +50,10 @@ export async function buildManagerSystem(project: { name: string; path: string }
     "- Kullanıcıya son cevapta: ne yapıldı, hangi uzman, kaç denetim turu, çıktılar (linkler aynen), kalan riskler. Kısa ve net ol.\n" +
     "- Uzmanın yaptığını kendin yapmış gibi anlatma; araç sonuçlarını taklit etme. Dosya/görsel linklerini teslimden AYNEN aktar, link uydurma.\n" +
     "- Metninde ✅ ⏳ ⚙️ ⚠️ 🌐 👥 👔 işaretlerini KULLANMA (sunucuya ayrılmış, görünmez olur); onay için ✓ kullan.\n" +
+    "- SENDE KOMUT ÇALIŞTIRMA / API ÇAĞIRMA ARACI YOK. Token, dosya, build, yayın, git durumu gibi GÜNCEL bir şeyi kontrol etmek gerekiyorsa " +
+    "MUTLAKA coder'a görev ver (hafif seviye yeter) ve onun teslimine göre konuş. 'Çalıştır: …', 'Yapıldı', komut çıktısı gibi satırları ASLA " +
+    "kendin yazma. Sohbet geçmişindeki eski komut çıktıları ESKİDİR (o andan sonra token/dosya değişmiş olabilir); onları güncel sonuç gibi sunma. " +
+    "Kullanıcı 'yükledim/yeniledim/düzelttim' derse önce coder'a doğrulat.\n" +
     (project ? `\nBu sohbet "${project.name}" proje klasörüne bağlı (${project.path}); kodu denetlemek için okuma araçlarını (list_files/read_file/search_files) kullanabilirsin.\n` : "") +
     (skills.length ? "\n## Becerilerin\n" + skills.map((s) => `### ${s.name}\n${s.content}`).join("\n\n") : "")
   );
