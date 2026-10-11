@@ -22,7 +22,7 @@ const ROLE_ACTIONS: Record<Exclude<TeamRole, "manager">, string[]> = {
     "write_file", "generate_document", "edit_excel", "write_project_file", "edit_project_file",
     "publish_project_file", "run_command", "git_commit_push", "deploy_vercel", "github_create_issue",
   ],
-  marketing: ["write_file", "generate_document", "generate_image", "edit_image", "restyle_image"],
+  marketing: ["write_file", "generate_document", "generate_image", "edit_image", "restyle_image", "generate_video", "edit_video"],
 };
 
 const ROLE_PROMPT: Record<Exclude<TeamRole, "manager">, string> = {

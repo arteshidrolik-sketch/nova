@@ -133,6 +133,88 @@ async function saveRemoteToWorkspace(
   }
 }
 
+// ---- Higgsfield (video) -----------------------------------------------------
+// Görsel varsa: Higgsfield CDN'ine yükle → DoP (image-to-video). Görsel yoksa:
+// önce Soul ile metinden kare üret → DoP. Kimlik: HF_CREDENTIALS="kimlik:gizli".
+// Model: NOVA_HF_DOP_MODEL (dop-lite | dop-turbo | dop-standard; varsayılan turbo).
+const HF_BASE = process.env.NOVA_HF_BASE || "https://platform.higgsfield.ai"; // v1: gövde {params}, takip /v1/job-sets/{id}
+async function hfFetch(pathOrUrl: string, init?: RequestInit) {
+  const url = pathOrUrl.startsWith("http") ? pathOrUrl : `${HF_BASE}${pathOrUrl}`;
+  const res = await fetch(url, {
+    ...init,
+    headers: { Authorization: `Key ${process.env.HF_CREDENTIALS}`, "Content-Type": "application/json", Accept: "application/json", ...(init?.headers ?? {}) },
+  });
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok) throw new Error(`Higgsfield ${res.status}: ${JSON.stringify(data).slice(0, 220)}`);
+  return data;
+}
+// Görseli (data: URI, /api/files yerel bağlantı ya da http) Higgsfield CDN'ine yükle
+async function hfUploadImage(ref: string): Promise<string> {
+  let buf: Buffer, ct = "image/jpeg";
+  const m = ref.match(/^data:([^;]+);base64,(.*)$/);
+  if (m) { ct = m[1]; buf = Buffer.from(m[2], "base64"); }
+  else if (ref.startsWith("/api/files")) {
+    const nm = decodeURIComponent(ref.match(/name=([^&]+)/)?.[1] || "");
+    buf = await fs.readFile(workspaceReadPath(wsScope.getStore() || "", nm));
+    ct = /\.png$/i.test(nm) ? "image/png" : /\.webp$/i.test(nm) ? "image/webp" : "image/jpeg";
+  } else {
+    const r = await fetch(ref);
+    if (!r.ok) throw new Error(`Görsel indirilemedi (${r.status})`);
+    ct = r.headers.get("content-type") || ct; buf = Buffer.from(await r.arrayBuffer());
+  }
+  const up = (await hfFetch("/files/generate-upload-url", { method: "POST", body: JSON.stringify({ content_type: ct }) })) as {
+    upload_url?: string; public_url?: string; content_type?: string; upload_headers?: Record<string, string>;
+  };
+  if (!up.upload_url || !up.public_url) throw new Error("Higgsfield yükleme bağlantısı alınamadı");
+  // İmza content-type + x-amz-tagging içeriyor → sunucunun verdiği başlıkları aynen gönder
+  const put = await fetch(up.upload_url, {
+    method: "PUT",
+    headers: { "Content-Type": up.content_type || ct, ...(up.upload_headers ?? {}) },
+    body: new Uint8Array(buf),
+  });
+  if (!put.ok) throw new Error(`Higgsfield yükleme hatası (${put.status})`);
+  return up.public_url;
+}
+// İsteği gönder ({params}), iş setini bitene kadar sorgula (en fazla ~6 dk); medya URL'ini döner
+type HfJobSet = { id?: string; jobs?: { status?: string; results?: { raw?: { url?: string }; min?: { url?: string } } }[] };
+async function hfRun(endpoint: string, params: Record<string, unknown>): Promise<string> {
+  let js = (await hfFetch(endpoint, { method: "POST", body: JSON.stringify({ params }) })) as HfJobSet;
+  const id = String(js.id || "");
+  if (!id) throw new Error("Higgsfield iş kimliği dönmedi");
+  const st = () => String(js.jobs?.[0]?.status || "queued");
+  const deadline = Date.now() + 6 * 60 * 1000;
+  while (!["completed", "failed", "nsfw", "canceled"].includes(st()) && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 5000));
+    try { js = (await hfFetch(`/v1/job-sets/${id}`)) as HfJobSet; } catch { /* geçici hata → sürdür */ }
+  }
+  if (st() === "nsfw") throw new Error("İçerik denetimine takıldı (kredi iade edildi). Tarifi değiştir.");
+  if (st() === "failed") throw new Error("Higgsfield üretimi başarısız oldu (kredi iade edildi).");
+  if (st() !== "completed") throw new Error("Higgsfield zaman aşımı (6 dk).");
+  const url = js.jobs?.[0]?.results?.raw?.url || js.jobs?.[0]?.results?.min?.url;
+  if (!url) throw new Error("Higgsfield sonucunda medya bağlantısı yok.");
+  return url;
+}
+async function higgsfieldVideo(prompt: string, ref: string, portrait: boolean): Promise<{ ok: boolean; text: string }> {
+  try {
+    let imageUrl = ref ? await hfUploadImage(ref) : "";
+    if (!imageUrl) {
+      // Metinden video: önce Soul ile başlangıç karesi
+      imageUrl = await hfRun("/v1/text2image/soul", {
+        prompt, width_and_height: portrait ? "1152x2048" : "2048x1152", quality: "1080p", batch_size: 1,
+      });
+    }
+    const videoUrl = await hfRun("/v1/image2video/dop", {
+      model: process.env.NOVA_HF_DOP_MODEL || "dop-turbo",
+      prompt,
+      input_images: [{ type: "image_url", image_url: imageUrl }],
+    });
+    const local = await saveRemoteToWorkspace(videoUrl, "video", ["mp4", "webm"]);
+    return { ok: true, text: `!video[üretilen video (Higgsfield)](${local || videoUrl})` };
+  } catch (e) {
+    return { ok: false, text: `Video üretilemedi (Higgsfield): ${e instanceof Error ? e.message : "bilinmeyen"}`.slice(0, 400) };
+  }
+}
+
 function safeWorkspacePath(p: string): string {
   return workspaceWritePath(wsScope.getStore() || "", p);
 }
@@ -643,14 +725,20 @@ export const ACTIONS: Record<string, ActionDef> = {
     makeSummary: (p) =>
       `"${shorten(String(p.prompt), 140)}" için bir video üretilecek${p.reference_image_url ? " (başlangıç karesi olarak bir görsel kullanılacak)" : ""}. Üretim 1-3 dakika sürebilir.`,
     execute: async (p) => {
-      const key = process.env.FAL_KEY;
-      if (!key) return "Hata: FAL_KEY tanımlı değil (fal.ai anahtarı).";
       const prompt = String(p.prompt ?? "").trim();
       if (!prompt) return "Hata: video tarifi (prompt) boş.";
       const ref =
         typeof p.reference_image_url === "string" && p.reference_image_url
           ? p.reference_image_url
           : "";
+      // Higgsfield anahtarı varsa önce Higgsfield (NOVA_VIDEO_PROVIDER=fal ile kapatılır)
+      if (process.env.HF_CREDENTIALS && process.env.NOVA_VIDEO_PROVIDER !== "fal") {
+        const r = await higgsfieldVideo(prompt, ref, String(p.aspect || "landscape") === "portrait");
+        if (r.ok || !process.env.FAL_KEY) return r.text;
+        // Higgsfield başarısız + fal anahtarı var → fal ile dene (aşağıda)
+      }
+      const key = process.env.FAL_KEY;
+      if (!key) return "Hata: Video sağlayıcısı yok (HF_CREDENTIALS / FAL_KEY tanımlı değil).";
       const aspect_ratio = String(p.aspect || "landscape") === "portrait" ? "9:16" : "16:9";
       // Model env ile ayarlanabilir; varsayılan Veo3 "fast" (daha ucuz tier).
       // Görselden video için modelin image-to-video varyantı kullanılır.
