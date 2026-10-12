@@ -132,7 +132,8 @@ async function showReview(id: string, chat: number, head: string): Promise<void>
 async function fail(id: string, chat: number, e: unknown) {
   const msg = (e as Error).message?.slice(0, 400) || String(e);
   await patchViral(id, { status: "failed", error: msg });
-  await tg.sendMessage(chat, `⚠️ Olmadı: ${msg}\n\nAynı linki tekrar gönderebilirsin.`).catch(() => undefined);
+  const hint = /gönder|seç/i.test(msg) ? "" : "\n\nAynı linki tekrar gönderebilirsin."; // indirme mesajları kendi yönlendirmesini taşır
+  await tg.sendMessage(chat, `⚠️ Olmadı: ${msg}${hint}`).catch(() => undefined);
 }
 
 // ---------- Claude: seçim ve ekran görüntüsü okuma ----------
@@ -211,11 +212,39 @@ SADECE JSON: [{"metin":"…","begeni":"…"}]  (yorum yoksa [])`,
 
 // ---------- adımlar ----------
 
-async function download(j: ViralJob): Promise<void> {
+// yt-dlp hatasını Yücel'in anlayacağı bir cümleye çevirir.
+function downloadReason(e: unknown): { msg: string; retry: boolean } {
+  const err = e as Error & { stderr?: string };
+  const t = `${err.stderr || ""} ${err.message || ""}`;
+  if (/429|Too Many Requests|rate.?limit/i.test(t))
+    return { msg: "Instagram sunucuyu geçici olarak yavaşlattı (çok fazla istek). 15–30 dakika sonra aynı linki tekrar gönder.", retry: true };
+  if (/no video in this post/i.test(t))
+    return { msg: "Bu gönderide video yok (fotoğraf ya da fotoğraf albümü). Bana Reels/video linki gönder.", retry: false };
+  if (/isn't available to everyone|certain audiences|age.restrict|login required|log in|private|cookies/i.test(t))
+    return { msg: "Bu video yaş sınırlı, gizli ya da giriş istiyor; hesapla giriş yapmadan indiremiyorum (hesabı riske atmamak için giriş kullanmıyoruz). Başka bir video seç.", retry: false };
+  return { msg: `İndirilemedi: ${(t.match(/ERROR:[^\n]*/)?.[0] || err.message || "").slice(0, 200)}`, retry: false };
+}
+
+async function download(j: ViralJob, chat: number): Promise<void> {
+  // Instagram linkindeki takip parametreleri (?igsh=…, ?img_index=…) gereksiz; yalın adresi kullan.
+  const url = /instagram\.com/i.test(j.url) ? j.url.split("?")[0] : j.url;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await downloadOnce(j, url);
+    } catch (e) {
+      const r = downloadReason(e);
+      if (!r.retry || attempt >= 2) throw new Error(r.msg);
+      await tg.sendMessage(chat, "⏳ Instagram biraz yavaşlattı, 2 dakika bekleyip tekrar deniyorum…").catch(() => undefined);
+      await new Promise((ok) => setTimeout(ok, 120_000));
+    }
+  }
+}
+
+async function downloadOnce(j: ViralJob, url: string): Promise<void> {
   await fs.mkdir(j.dir, { recursive: true });
   await run(
     YTDLP,
-    [j.url, "--no-warnings", "--no-playlist", "-f", "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b",
+    [url, "--no-warnings", "--no-playlist", "-f", "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b",
       "--merge-output-format", "mp4", "-o", path.join(j.dir, "kaynak.%(ext)s"), "--write-info-json", "--write-comments",
       ...(FFMPEG_DIR ? ["--ffmpeg-location", FFMPEG_DIR] : [])],
     { timeout: 240_000, maxBuffer: 20 * 1024 * 1024 },
@@ -302,12 +331,12 @@ async function startJob(chat: number, url: string): Promise<void> {
   });
   await tg.sendMessage(chat, "⏳ Linki aldım, video ve yorumlar indiriliyor…");
   try {
-    await download(j);
+    await download(j, chat);
     const { kaynak, baslik, adaylar } = await readInfo(j);
     await patchViral(id, { kaynak, adaylar, baslik });
     await choose(id, chat);
   } catch (e) {
-    await fail(id, chat, new Error(`İndirilemedi ya da işlenemedi (özel hesap/giriş gerekiyor olabilir; videoyu dosya olarak da gönderebilirsin). ${(e as Error).message.slice(0, 200)}`));
+    await fail(id, chat, e);
   }
 }
 
