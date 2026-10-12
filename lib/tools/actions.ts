@@ -734,8 +734,13 @@ export const ACTIONS: Record<string, ActionDef> = {
       // Higgsfield anahtarı varsa önce Higgsfield (NOVA_VIDEO_PROVIDER=fal ile kapatılır)
       if (process.env.HF_CREDENTIALS && process.env.NOVA_VIDEO_PROVIDER !== "fal") {
         const r = await higgsfieldVideo(prompt, ref, String(p.aspect || "landscape") === "portrait");
-        if (r.ok || !process.env.FAL_KEY) return r.text;
-        // Higgsfield başarısız + fal anahtarı var → fal ile dene (aşağıda)
+        // Higgsfield'ın gerçek hatası görünsün (sessizce fal'a düşüp yanıltıcı fal hatası
+        // göstermesin). fal yedeği yalnız NOVA_VIDEO_FALLBACK_FAL=1 ise denenir.
+        if (r.ok || !process.env.FAL_KEY || process.env.NOVA_VIDEO_FALLBACK_FAL !== "1") {
+          if (!r.ok && /Not enough credits/i.test(r.text))
+            return "Video üretilemedi: Higgsfield API bakiyesi yetersiz (\"Not enough credits\"). Not: higgsfield.ai sitesindeki krediler API'de geçmez; API bakiyesi cloud.higgsfield.ai'de ayrıca (dolar) yüklenir. Kredisiz alternatif: birden çok resimden images_to_video.";
+          return r.text;
+        }
       }
       const key = process.env.FAL_KEY;
       if (!key) return "Hata: Video sağlayıcısı yok (HF_CREDENTIALS / FAL_KEY tanımlı değil).";
