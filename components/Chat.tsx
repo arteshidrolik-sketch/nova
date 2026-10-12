@@ -1822,11 +1822,11 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     <div className="flex h-full flex-col">
       <header
         className="flex items-center justify-between border-b px-4 py-3 sm:px-6 sm:py-4"
-        style={{ borderColor: "var(--border)", ...glass }}
+        style={{ borderColor: "var(--border-strong)", background: "rgba(42,49,128,.55)", backdropFilter: "blur(12px)" }}
       >
         <div>
           <h1 className="text-lg font-semibold">Sohbet</h1>
-          <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+          <p className="hidden text-xs sm:block" style={{ color: "var(--text-muted)" }}>
             {whisperStatus === "loading" ? (
               <span style={{ color: "var(--accent)" }}>
                 🎧 Ses modeli indiriliyor… %{whisperPct} (ilk sefer)
@@ -1846,7 +1846,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
                 Nova konuşuyor…
               </span>
             ) : (
-              "Orkestratör mesajını doğru uzmana yönlendirir"
+              "Müdürle konuş — işi ekibe dağıtır, sonucu denetler"
             )}
           </p>
         </div>
@@ -1949,7 +1949,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
                   style={{ color: "var(--text-muted)" }}
                 >
                   Yaz ya da 🎤 ile konuş — görev ver, kod iste, araştır.
-                  Orkestratör doğru uzmana yönlendirir.
+                  Müdür işi ekibe dağıtır, sonucu denetleyip sunar.
                 </p>
               </div>
               <div className="flex flex-wrap justify-center gap-2">
@@ -2053,8 +2053,9 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
                   <div
                     className="whitespace-pre-wrap rounded-2xl rounded-tl-sm px-4 py-3 text-sm leading-relaxed"
                     style={{
-                      background: "var(--bg-elevated)",
-                      border: "1px solid var(--border)",
+                      background: "var(--surface-card)",
+                      border: "1px solid var(--border-strong)",
+                      boxShadow: "0 6px 18px rgba(8,10,40,.25)",
                     }}
                   >
                     {m.content ? (
@@ -2072,7 +2073,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         </div>
       </div>
 
-      <div className="border-t px-4 py-3 sm:px-6 sm:py-4" style={{ borderColor: "var(--border)" }}>
+      <div className="border-t px-4 py-3 sm:px-6 sm:py-4" style={{ borderColor: "var(--border-strong)", background: "rgba(35,42,110,.45)" }}>
         <div className="mx-auto max-w-3xl">
           {/* ek önizlemeleri */}
           {attachments.length > 0 && (
@@ -2112,7 +2113,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
 
           <div
             className="glow-focus flex items-end gap-2 rounded-xl border p-2"
-            style={{ borderColor: "var(--border)", ...glass }}
+            style={{ borderColor: "rgba(62,232,255,.35)", background: "var(--surface-input)", boxShadow: "0 8px 24px rgba(8,10,40,.3)" }}
           >
             <input
               ref={fileInputRef}

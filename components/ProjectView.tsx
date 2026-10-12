@@ -16,13 +16,13 @@ import { IconBack, IconFolder, IconMemory, IconSkill, IconAgent, IconTasks, Icon
 import type { ProjectMeta } from "./Universe";
 
 type TabKey = "sohbet" | "dosyalar" | "hafiza" | "raporlar" | "beceriler" | "gorevler";
-const TABS: { key: TabKey; label: string; Icon: ComponentType<SVGProps<SVGSVGElement>> }[] = [
-  { key: "sohbet", label: "Ekip", Icon: IconAgent },
-  { key: "dosyalar", label: "Dosyalar", Icon: IconFolder },
-  { key: "hafiza", label: "Hafıza", Icon: IconMemory },
-  { key: "raporlar", label: "Raporlar", Icon: IconReport },
-  { key: "beceriler", label: "Beceriler", Icon: IconSkill },
-  { key: "gorevler", label: "Onaylar", Icon: IconTasks },
+const TABS: { key: TabKey; label: string; color: string; Icon: ComponentType<SVGProps<SVGSVGElement>> }[] = [
+  { key: "sohbet", label: "Ekip", color: "#3ee8ff", Icon: IconAgent },
+  { key: "dosyalar", label: "Dosyalar", color: "#ffd166", Icon: IconFolder },
+  { key: "hafiza", label: "Hafıza", color: "#ff7ad9", Icon: IconMemory },
+  { key: "raporlar", label: "Raporlar", color: "#2ff5b5", Icon: IconReport },
+  { key: "beceriler", label: "Beceriler", color: "#b39bff", Icon: IconSkill },
+  { key: "gorevler", label: "Onaylar", color: "#ff9f6b", Icon: IconTasks },
 ];
 
 export default function ProjectView({ project, onClose }: { project: ProjectMeta; onClose: () => void }) {
@@ -51,7 +51,7 @@ export default function ProjectView({ project, onClose }: { project: ProjectMeta
       }}
     >
       {/* başlık */}
-      <header className="flex items-center gap-3 border-b px-4 py-3 sm:px-6" style={{ borderColor: "var(--border)" }}>
+      <header className="flex items-center gap-3 border-b px-4 py-3 sm:px-6" style={{ borderColor: "var(--border-strong)", background: "var(--surface-header)" }}>
         <button
           onClick={onClose}
           className="flex h-11 items-center gap-1 rounded-full pl-2 pr-4 text-[14px] transition-colors duration-150"
@@ -63,7 +63,7 @@ export default function ProjectView({ project, onClose }: { project: ProjectMeta
         <Planet seed={project.id + project.title} size={32} spin={false} />
         <div className="min-w-0 flex-1">
           <div className="truncate text-[16px] font-bold">{project.title}</div>
-          <div className="text-[12px]" style={{ color: "var(--text-muted)", letterSpacing: ".05em" }}>PROJE · MÜDÜR + 3 UZMAN</div>
+          <div className="text-[12px] font-medium" style={{ color: "var(--text-label)", letterSpacing: ".05em" }}>PROJE · MÜDÜR + 3 UZMAN</div>
         </div>
         <SpaceControls />
       </header>
@@ -72,10 +72,10 @@ export default function ProjectView({ project, onClose }: { project: ProjectMeta
         {/* sekme rayı */}
         <nav
           className="flex shrink-0 gap-1 overflow-x-auto border-b px-2 py-2 sm:flex-col sm:overflow-visible sm:border-b-0 sm:border-r sm:px-2 sm:py-4"
-          style={{ borderColor: "var(--border)" }}
+          style={{ borderColor: "var(--border-strong)", background: "var(--surface-rail)" }}
           aria-label="Proje sekmeleri"
         >
-          {TABS.map(({ key, label, Icon }) => {
+          {TABS.map(({ key, label, color, Icon }) => {
             const active = tab === key;
             return (
               <button
@@ -85,12 +85,14 @@ export default function ProjectView({ project, onClose }: { project: ProjectMeta
                 title={label}
                 className="flex min-h-11 min-w-11 shrink-0 items-center gap-2 rounded-xl px-3 text-[14px] transition-colors duration-150 sm:w-[132px]"
                 style={{
-                  background: active ? "var(--accent-dim)" : "transparent",
-                  color: active ? "var(--accent)" : "var(--text-muted)",
-                  border: `1px solid ${active ? "var(--border-strong)" : "transparent"}`,
+                  background: active ? "var(--grad)" : "transparent",
+                  color: active ? "#0b1030" : "#d5dbff",
+                  fontWeight: active ? 700 : 500,
+                  border: `1px solid ${active ? "transparent" : "transparent"}`,
+                  boxShadow: active ? "0 6px 20px rgba(139,92,255,.35)" : "none",
                 }}
               >
-                <Icon width={20} height={20} />
+                <Icon width={20} height={20} style={{ color: active ? "#0b1030" : color }} />
                 <span className="hidden sm:inline">{label}</span>
               </button>
             );
@@ -102,10 +104,10 @@ export default function ProjectView({ project, onClose }: { project: ProjectMeta
           {/* Ekip: üstte ofis (masa başındaki ajanlar), altta müdürle sohbet.
               Her zaman bağlı kalır (gizlenir) → sekme değişince iş yarıda kesilmez */}
           <div className="absolute inset-0 flex flex-col" hidden={tab !== "sohbet"}>
-            <div className="shrink-0 border-b" style={{ borderColor: "var(--border)", background: "radial-gradient(90% 120% at 50% 100%, rgba(79,216,255,.06), transparent)" }}>
+            <div className="shrink-0 border-b" style={{ borderColor: "var(--border-strong)", background: "var(--surface-office)" }}>
               <TeamOffice convId={project.id} compact={compact} />
             </div>
-            <div className="relative min-h-0 flex-1">
+            <div className="relative min-h-0 flex-1" style={{ background: "var(--surface-chat)" }}>
               <div className="absolute inset-0 flex flex-col"><Chat conversationId={project.id} /></div>
             </div>
           </div>

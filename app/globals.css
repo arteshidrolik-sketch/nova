@@ -20,6 +20,14 @@
   --danger: #ff5c8a;
   --grad: linear-gradient(135deg, #3ee8ff 0%, #8b5cff 55%, #ff4fc8 100%);
   --grad-3: linear-gradient(135deg, var(--accent-2), var(--accent-3));
+  /* Katmanlı yüzeyler — aynı aileden ama birbirinden ayrışan tonlar */
+  --surface-rail: linear-gradient(180deg, #2a3280 0%, #232a6e 100%);
+  --surface-header: linear-gradient(90deg, rgba(62, 232, 255, 0.16), rgba(139, 92, 255, 0.2) 50%, rgba(255, 79, 200, 0.16)), #1f2563;
+  --surface-office: radial-gradient(70% 140% at 50% 110%, rgba(255, 79, 200, 0.22), transparent 60%), radial-gradient(60% 120% at 10% 0%, rgba(139, 92, 255, 0.28), transparent 60%), #241f66;
+  --surface-chat: linear-gradient(180deg, #191f55 0%, #161b4b 100%);
+  --surface-card: #2c3486;
+  --surface-input: #2a3180;
+  --text-label: #9fe9ff;
   /* zemin: canlı mesh gradyan */
   --bg-mesh:
     radial-gradient(1100px 760px at 12% 8%, rgba(139, 92, 255, 0.42), transparent 60%),
