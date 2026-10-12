@@ -19,7 +19,7 @@ export const TEAM_META: Record<TeamRole, { name: string; title: string; color: s
   },
   marketing: {
     name: "Satış & Pazarlama", title: "Satış ve Pazarlama Uzmanı", color: "#f472b6",
-    desc: "Hedef kitle, konumlandırma, reklam/sosyal medya metni, görsel, teklif ve fiyatlandırma.",
+    desc: "Hedef kitle, konumlandırma, reklam/sosyal medya metni, teklif ve fiyatlandırma; görsel ve VİDEO üretimi/kurgusu (resimlerden tanıtım videosu dahil).",
   },
 };
 

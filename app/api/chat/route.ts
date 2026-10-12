@@ -451,6 +451,34 @@ export async function POST(req: Request) {
   ]) as unknown as Anthropic.Tool[];
   const assignState = newAssignState();
   let fakeToolWarned = false; // sahte araç satırı uyarısı (bir kez)
+
+  // Kullanıcının yüklediği görsel/videolar (son 3 kullanıcı mesajı): projenin
+  // klasörüne kaydedilir; ekip uzmanlarına ve resim→video aracına verilir.
+  let uploadsCache: { images: string[]; videos: string[] } | null = null;
+  const saveUploads = async () => {
+    if (uploadsCache) return uploadsCache;
+    const out = { images: [] as string[], videos: [] as string[] };
+    const users = messages.filter((m) => m.role === "user").slice(-3);
+    let k = 0;
+    for (const m of users) {
+      for (const a of m.attachments ?? []) {
+        if (!a.data) continue;
+        const isVid = a.kind === "video" || /\.(mp4|mov|webm|m4v)$/i.test(a.name || "");
+        const isImg = a.kind === "image";
+        if (!isVid && !isImg) continue;
+        const ext = isVid
+          ? ((a.name || "").match(/\.(mp4|mov|webm|m4v)$/i)?.[1] || "mp4").toLowerCase()
+          : a.mediaType?.includes("png") ? "png" : a.mediaType?.includes("webp") ? "webp" : "jpg";
+        const nm = `yuklenen-${runId.slice(0, 6)}-${++k}.${ext}`;
+        try {
+          await fs.writeFile(workspaceWritePath(wsScopeId, nm), Buffer.from(a.data, "base64"));
+          (isVid ? out.videos : out.images).push(nm);
+        } catch { /* kaydedilemeyen dosya atlanır */ }
+      }
+    }
+    uploadsCache = out;
+    return out;
+  };
   // Uzmanlara verilecek proje geçmişi: son 12 mesaj (her biri en fazla 1500 kr, toplam ~9000)
   const teamHistory = teamMode
     ? messages.slice(0, -1).slice(-12)
@@ -864,6 +892,7 @@ export async function POST(req: Request) {
                 scope: wsScopeId, emit, canceled: () => isCanceled(runId) || isStopped(),
                 history: teamHistory,
                 projectId: conversationId,
+                uploads: await saveUploads(),
               });
               toolResults.push({ type: "tool_result", tool_use_id: block.id, content: r.content, ...(r.isError ? { is_error: true } : {}) });
               continue;
@@ -909,6 +938,9 @@ export async function POST(req: Request) {
             // Aksiyonlar GO beklemeden OTOMATİK çalışır (kullanıcı tercihi: GO kaldırıldı)
             if (isActionTool(block.name)) {
               const payload: Record<string, unknown> = { ...input };
+              if (block.name === "images_to_video" && !(Array.isArray(payload.images) && payload.images.length)) {
+                payload._uploaded_images = (await saveUploads()).images;
+              }
               if (isProjectAction(block.name)) {
                 if (!project) {
                   toolResults.push({

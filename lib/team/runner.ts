@@ -22,7 +22,7 @@ const ROLE_ACTIONS: Record<Exclude<TeamRole, "manager">, string[]> = {
     "write_file", "generate_document", "edit_excel", "write_project_file", "edit_project_file",
     "publish_project_file", "run_command", "git_commit_push", "deploy_vercel", "github_create_issue",
   ],
-  marketing: ["write_file", "generate_document", "generate_image", "edit_image", "restyle_image", "generate_video", "edit_video"],
+  marketing: ["write_file", "generate_document", "generate_image", "edit_image", "restyle_image", "generate_video", "edit_video", "images_to_video"],
 };
 
 const ROLE_PROMPT: Record<Exclude<TeamRole, "manager">, string> = {
@@ -38,6 +38,7 @@ export type SpecialistRun = { text: string; artifacts: string[]; actions: number
 
 const MEDIA_TOOLS = new Set([
   "generate_image", "edit_image", "restyle_image", "generate_document", "write_file", "edit_excel", "publish_project_file",
+  "generate_video", "edit_video", "images_to_video",
 ]);
 
 export async function runSpecialist(opts: {
@@ -50,6 +51,7 @@ export async function runSpecialist(opts: {
   revisionNote?: string;
   previous?: string; // önceki teslim (revizyonda)
   history?: string; // projenin son konuşmaları — mevcut projeler kaldığı yerden devam etsin
+  uploads?: { images: string[]; videos: string[] }; // kullanıcının yüklediği dosyalar (proje klasöründe)
   project: { path: string; name: string } | null;
   scope: string; // sohbetin dosya alanı
   emit: (s: string) => void;
@@ -89,6 +91,10 @@ ${opts.history}
 ---
 
 ` : "") +
+    (opts.uploads && (opts.uploads.images.length || opts.uploads.videos.length)
+      ? `KULLANICININ YÜKLEDİĞİ DOSYALAR (projenin klasöründe, araçlara bu adlarla ver; araçlar boş bırakılırsa bunları otomatik kullanır):\n` +
+        [...opts.uploads.images.map((n) => `- ${n} (görsel)`), ...opts.uploads.videos.map((n) => `- ${n} (video)`)].join("\n") + "\n\n"
+      : "") +
     `GÖREV:\n${opts.task}\n\nKABUL KRİTERLERİ:\n${opts.criteria || "(belirtilmedi — makul kalite)"}` +
     (opts.revisionNote ? `\n\nMÜDÜRÜN REVİZYON NOTU (önceki teslimin eksikleri — bunları düzelt):\n${opts.revisionNote}` : "") +
     (opts.previous ? `\n\nÖNCEKİ TESLİMİN:\n${opts.previous.slice(0, 6000)}` : "");
@@ -148,6 +154,14 @@ ${opts.history}
       if (isProjectAction(b.name)) {
         if (!project) { results.push({ type: "tool_result", tool_use_id: b.id, content: "Bu sohbete bağlı proje klasörü yok.", is_error: true }); continue; }
         payload.projectPath = project.path; payload.projectName = project.name;
+      }
+      // Yüklenen dosyaları ilgili araçlara otomatik ver (uzman adı yazmasa da)
+      const up = opts.uploads;
+      if (up) {
+        if (b.name === "images_to_video" && !(Array.isArray(payload.images) && payload.images.length)) payload._uploaded_images = up.images;
+        if ((b.name === "edit_image" || b.name === "restyle_image") && !payload.base_image && up.images[0]) payload.base_image = up.images[0];
+        if (b.name === "edit_video" && !payload.source_video && up.videos[0]) payload.source_video = up.videos[0];
+        if (b.name === "generate_video" && !payload.reference_image_url && up.images[0]) payload.reference_image_url = `/api/files?name=${encodeURIComponent(up.images[0])}`;
       }
       const title = actionTitle(b.name, payload);
       if (actionRequiresApproval(b.name)) {

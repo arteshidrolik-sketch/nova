@@ -1058,6 +1058,89 @@ export const ACTIONS: Record<string, ActionDef> = {
     },
   },
 
+  images_to_video: {
+    dangerous: true,
+    project: false,
+    description:
+      "Birden çok GÖRSELDEN (yüklenen fotoğraflar ya da üretilen görseller) tanıtım/slayt VİDEOSU yapar — ffmpeg ile, yapay zekâ kredisi HARCAMADAN. Her görsele yumuşak yakınlaşma (Ken Burns) hareketi, görseller arasına geçiş efekti, istenirse altta başlık/slogan yazısı. Kullanıcı 'bu resimlerden video yap', 'resimleri videoya dönüştür', 'slayt/tanıtım videosu' derse BU ARACI çağır (generate_video tek görselden yapay zekâ ile hareket üretir ve kredi harcar). images verilmezse kullanıcının son yüklediği görseller otomatik alınır. Görsel oranı korunur (dikey videoda yatay foto kırpılmaz, arkası bulanık doldurulur).",
+    input_schema: {
+      type: "object",
+      properties: {
+        images: { type: "array", items: { type: "string" }, description: "Kullanılacak görsellerin dosya adları (boş bırakılırsa son yüklenenler)" },
+        seconds: { type: "number", description: "Görsel başına saniye (2-8, varsayılan 3.5)" },
+        aspect: { type: "string", description: "portrait (9:16 Reels/TikTok, varsayılan) | landscape (16:9 YouTube) | square (1:1)" },
+        title: { type: "string", description: "İsteğe bağlı: videonun altında baştan sona görünen başlık/slogan" },
+        transition: { type: "string", description: "fade (varsayılan) | dissolve | slideleft | wipeleft | circleopen | smoothleft" },
+      },
+      required: [],
+    },
+    makeTitle: (p) => `Slayt video: ${Array.isArray(p.images) && p.images.length ? p.images.length : "yüklenen"} görsel`,
+    makeSummary: (p) =>
+      `Görsellerden ${String(p.aspect || "portrait") === "landscape" ? "yatay (16:9)" : String(p.aspect) === "square" ? "kare" : "dikey (9:16)"} bir tanıtım videosu yapılacak (ffmpeg, kredi harcamaz)${p.title ? `; altta "${shorten(String(p.title), 60)}" yazısı` : ""}.`,
+    execute: async (p) => {
+      const names = (Array.isArray(p.images) && p.images.length ? p.images : Array.isArray(p._uploaded_images) ? p._uploaded_images : [])
+        .map((x) => String(x)).slice(0, 20);
+      if (!names.length) return "Hata: Videoya dönüştürülecek görsel yok. Görselleri sohbete yükleyip tekrar iste.";
+      const paths: string[] = [];
+      for (const n of names) {
+        const fp = readWorkspacePath(n.replace(/^.*name=/, "").split("&")[0]);
+        if (!(await fs.stat(fp).catch(() => null))) return `Hata: Görsel bulunamadı (${n}).`;
+        paths.push(fp);
+      }
+      const aspect = String(p.aspect || "portrait");
+      const [W, H] = aspect === "landscape" ? [1920, 1080] : aspect === "square" ? [1080, 1080] : [1080, 1920];
+      const d = Math.min(8, Math.max(2, Number(p.seconds) || 3.5));
+      const T = paths.length > 1 ? Math.min(0.8, d / 3) : 0; // geçiş süresi
+      const fps = 30, frames = Math.round(d * fps);
+      const okTr = ["fade", "dissolve", "slideleft", "wipeleft", "circleopen", "smoothleft"];
+      const tr = okTr.includes(String(p.transition)) ? String(p.transition) : "fade";
+      const zinc = (0.12 / frames).toFixed(5);
+      const parts: string[] = [];
+      paths.forEach((_, i) => {
+        // arka: bulanık kapla; ön: oranı koruyarak sığdır; sonra yakınlaş/uzaklaş (sırayla)
+        const zoom = i % 2 === 0 ? `min(zoom+${zinc},1.12)` : `if(eq(on,0),1.12,max(zoom-${zinc},1.0))`;
+        parts.push(
+          `[${i}:v]split=2[a${i}][b${i}];` +
+          `[a${i}]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},boxblur=24:2,eq=brightness=-0.08[bg${i}];` +
+          `[b${i}]scale=${W}:${H}:force_original_aspect_ratio=decrease[fg${i}];` +
+          `[bg${i}][fg${i}]overlay=(W-w)/2:(H-h)/2,scale=${W * 2}:${H * 2},` +
+          `zoompan=z='${zoom}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${W}x${H}:fps=${fps},setsar=1,format=yuv420p[v${i}]`,
+        );
+      });
+      let last = "v0";
+      for (let i = 1; i < paths.length; i++) {
+        const out = `x${i}`;
+        parts.push(`[${last}][v${i}]xfade=transition=${tr}:duration=${T}:offset=${(i * (d - T)).toFixed(2)}[${out}]`);
+        last = out;
+      }
+      const title = String(p.title ?? "").trim();
+      let txtFile = "";
+      if (title) {
+        txtFile = safeWorkspacePath(`.slayt_${Date.now()}.txt`);
+        await fs.writeFile(txtFile, title, "utf8");
+        const font = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
+        parts.push(
+          `[${last}]drawtext=fontfile=${font}:textfile='${txtFile}':fontcolor=white:fontsize=${Math.round(Math.min(W, H) * 0.06)}:` +
+          `box=1:boxcolor=black@0.45:boxborderw=${Math.round(Math.min(W, H) * 0.025)}:x=(w-text_w)/2:y=h-text_h-${Math.round(H * 0.09)}[vt]`,
+        );
+        last = "vt";
+      }
+      const outName = `slayt-video-${Date.now()}.mp4`;
+      const outPath = safeWorkspacePath(outName);
+      const inputs = paths.map((fp) => `-i "${fp}"`).join(" ");
+      const cmd = `ffmpeg -y -loglevel error ${inputs} -filter_complex "${parts.join(";")}" -map "[${last}]" -c:v libx264 -preset veryfast -crf 21 -pix_fmt yuv420p -movflags +faststart -r ${fps} "${outPath}"`;
+      try {
+        await execAsync(cmd, { timeout: 300000, maxBuffer: 16 * 1024 * 1024 });
+      } catch (e) {
+        return `Video oluşturulamadı (ffmpeg): ${(e instanceof Error ? e.message : String(e)).slice(-300)}`;
+      } finally {
+        if (txtFile) fs.unlink(txtFile).catch(() => {});
+      }
+      const total = (paths.length * d - (paths.length - 1) * T).toFixed(1);
+      return `!video[tanıtım videosu — ${paths.length} görsel, ${total} sn](/api/files?name=${encodeURIComponent(wsRel(outName))}&inline=1)`;
+    },
+  },
+
   edit_video: {
     dangerous: true,
     project: false,

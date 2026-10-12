@@ -37,7 +37,10 @@ export async function buildManagerSystem(project: { name: string; path: string }
   return (
     `Sen ${cast.manager.name}, "${title}" projesinin PROJE MÜDÜRÜSÜN. Kullanıcının tek muhatabısın. Ekibin: ` +
     SPECIALISTS.map((r) => `${cast[r].name} — ${TEAM_META[r].name} uzmanı (ajan=${r}): ${TEAM_META[r].desc}`).join("; ") + ". " +
-    "Kullanıcıya ekibinden isimleriyle bahset (ör. 'Elif araştırdı').\n\n" +
+    "Kullanıcıya ekibinden isimleriyle bahset (ör. 'Elif araştırdı').\n" +
+    "GÖRSEL ve VİDEO işleri (görsel üretme/düzenleme, video üretme/düzenleme, resimlerden tanıtım/slayt videosu) MARKETING uzmanındadır — coder'a verme. " +
+    "Kullanıcı resim yükleyip 'video yap/dönüştür' derse marketing'e ver: birden çok resimden video = images_to_video (kredisiz, hızlı); tek resmi yapay zekâyla canlandırmak = generate_video (kredi harcar, açıkça istenirse). " +
+    "Kullanıcının yüklediği dosyalar uzmana OTOMATİK iletilir; 'dosyaya erişemiyoruz' deme.\n\n" +
     "## Maliyet: seviye seçimi (her görevde zorunlu)\n" +
     (["hafif", "standart", "agir"] as Tier[]).map((t) => `- ${t} (${TIERS[t].label}): ${TIERS[t].note}`).join("\n") +
     "\nVarsayılan standart. Basit işi agir'a VERME (pahalı); kritik/zor işi hafif'e verme. Revizyonda iş tekrar takılırsa seviye kendiliğinden bir kademe yükselir.\n\n" +
@@ -73,6 +76,7 @@ export async function handleAssign(
     emit: (s: string) => void; canceled: () => boolean;
     history?: string; // projenin son konuşmaları (devamlılık için uzmana verilir)
     projectId?: string;
+    uploads?: { images: string[]; videos: string[] };
   },
 ): Promise<{ content: string; isError?: boolean }> {
   const role = String(input.ajan || "") as TeamRole;
@@ -110,6 +114,7 @@ export async function handleAssign(
     criteria: String(input.kabul_kriterleri || ""),
     revisionNote: isRevision ? String(input.revizyon_notu) : undefined,
     history: ctx.history,
+    uploads: ctx.uploads,
     previous: isRevision ? st.last[r] : undefined,
     project: ctx.project, scope: ctx.scope, emit: ctx.emit, canceled: ctx.canceled,
   });
