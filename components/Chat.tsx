@@ -254,7 +254,7 @@ function AgentBadge({ m }: { m: Message }) {
   }
   return (
     <span
-      className="mb-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+      className="agent-badge mb-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold"
       style={{ color, background: `${color}1a`, border: `1px solid ${color}40` }}
     >
       <span>{emoji}</span>
@@ -1822,7 +1822,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     <div className="flex h-full flex-col">
       <header
         className="flex items-center justify-between border-b px-4 py-3 sm:px-6 sm:py-4"
-        style={{ borderColor: "var(--border-strong)", background: "rgba(42,49,128,.55)", backdropFilter: "blur(12px)" }}
+        style={{ borderColor: "var(--border-strong)", background: "var(--surface-chat-header, rgba(42,49,128,.55))", backdropFilter: "blur(12px)" }}
       >
         <div>
           <h1 className="text-lg font-semibold">Sohbet</h1>
@@ -2034,7 +2034,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
                       className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
                       style={{
                         color: "var(--text-muted)",
-                        background: "rgba(255,255,255,0.06)",
+                        background: "var(--chip-bg, rgba(255,255,255,0.06))",
                         border: "1px solid var(--border)",
                       }}
                       title={`Bu yanıt ${modelLabel(m.model)} ile üretildi`}
@@ -2055,7 +2055,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
                     style={{
                       background: "var(--surface-card)",
                       border: "1px solid var(--border-strong)",
-                      boxShadow: "0 6px 18px rgba(8,10,40,.25)",
+                      boxShadow: "0 6px 18px rgba(40,30,120,.12)",
                     }}
                   >
                     {m.content ? (
@@ -2073,7 +2073,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         </div>
       </div>
 
-      <div className="border-t px-4 py-3 sm:px-6 sm:py-4" style={{ borderColor: "var(--border-strong)", background: "rgba(35,42,110,.45)" }}>
+      <div className="border-t px-4 py-3 sm:px-6 sm:py-4" style={{ borderColor: "var(--border-strong)", background: "var(--surface-chat-footer, rgba(35,42,110,.45))" }}>
         <div className="mx-auto max-w-3xl">
           {/* ek önizlemeleri */}
           {attachments.length > 0 && (
@@ -2113,7 +2113,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
 
           <div
             className="glow-focus flex items-end gap-2 rounded-xl border p-2"
-            style={{ borderColor: "rgba(62,232,255,.35)", background: "var(--surface-input)", boxShadow: "0 8px 24px rgba(8,10,40,.3)" }}
+            style={{ borderColor: "rgba(12,159,196,.45)", background: "var(--surface-input)", boxShadow: "0 8px 24px rgba(40,30,120,.15)" }}
           >
             <input
               ref={fileInputRef}

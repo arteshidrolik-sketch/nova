@@ -63,7 +63,7 @@ export default function ProjectView({ project, onClose }: { project: ProjectMeta
         <Planet seed={project.id + project.title} size={32} spin={false} />
         <div className="min-w-0 flex-1">
           <div className="truncate text-[16px] font-bold">{project.title}</div>
-          <div className="text-[12px] font-medium" style={{ color: "var(--text-label)", letterSpacing: ".05em" }}>PROJE · MÜDÜR + 3 UZMAN</div>
+          <div className="text-[12px] font-medium" style={{ color: "#ffb4e6", letterSpacing: ".05em" }}>PROJE · MÜDÜR + 3 UZMAN</div>
         </div>
         <SpaceControls />
       </header>
@@ -107,7 +107,7 @@ export default function ProjectView({ project, onClose }: { project: ProjectMeta
             <div className="shrink-0 border-b" style={{ borderColor: "var(--border-strong)", background: "var(--surface-office)" }}>
               <TeamOffice convId={project.id} compact={compact} />
             </div>
-            <div className="relative min-h-0 flex-1" style={{ background: "var(--surface-chat)" }}>
+            <div className="surface-light relative min-h-0 flex-1">
               <div className="absolute inset-0 flex flex-col"><Chat conversationId={project.id} /></div>
             </div>
           </div>

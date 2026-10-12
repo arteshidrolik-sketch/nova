@@ -21,9 +21,10 @@
   --grad: linear-gradient(135deg, #3ee8ff 0%, #8b5cff 55%, #ff4fc8 100%);
   --grad-3: linear-gradient(135deg, var(--accent-2), var(--accent-3));
   /* Katmanlı yüzeyler — aynı aileden ama birbirinden ayrışan tonlar */
-  --surface-rail: linear-gradient(180deg, #2a3280 0%, #232a6e 100%);
-  --surface-header: linear-gradient(90deg, rgba(62, 232, 255, 0.16), rgba(139, 92, 255, 0.2) 50%, rgba(255, 79, 200, 0.16)), #1f2563;
-  --surface-office: radial-gradient(70% 140% at 50% 110%, rgba(255, 79, 200, 0.22), transparent 60%), radial-gradient(60% 120% at 10% 0%, rgba(139, 92, 255, 0.28), transparent 60%), #241f66;
+  /* Karşıt katmanlar: turkuaz ray ↔ mürdüm başlık ↔ gün batımı ofis ↔ açık sohbet */
+  --surface-rail: linear-gradient(180deg, #0f5866 0%, #0b3f4b 100%);
+  --surface-header: linear-gradient(90deg, #4a1660 0%, #3a1452 55%, #5a1a55 100%);
+  --surface-office: radial-gradient(70% 150% at 50% 115%, rgba(255, 168, 76, 0.38), transparent 60%), radial-gradient(60% 120% at 0% 0%, rgba(255, 79, 140, 0.32), transparent 60%), linear-gradient(180deg, #3d1745 0%, #2e1440 100%);
   --surface-chat: linear-gradient(180deg, #191f55 0%, #161b4b 100%);
   --surface-card: #2c3486;
   --surface-input: #2a3180;
@@ -426,3 +427,27 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .blink, .head-nod, .talk { animation: none !important; }
 }
+
+/* ---- Açık sohbet yüzeyi: koyu sayfa içinde karşıt, açık lavanta zemin ----
+   Sohbet bileşeni renkleri CSS değişkenlerinden okuduğu için kapsamda yeniden
+   tanımlamak yeterli (metin koyu, kartlar beyaz, kenarlar mor tonlu). */
+.surface-light {
+  --bg: #ffffff;
+  --bg-panel: #eef0ff;
+  --bg-elevated: #ffffff;
+  --border: rgba(76, 64, 170, 0.18);
+  --border-strong: rgba(76, 64, 170, 0.32);
+  --text: #1b1d45;
+  --text-muted: #555b8f;
+  --accent: #0c9fc4;
+  --accent-dim: rgba(12, 159, 196, 0.12);
+  --surface-card: #ffffff;
+  --surface-input: #ffffff;
+  --surface-chat-header: rgba(255, 255, 255, 0.85);
+  --surface-chat-footer: rgba(232, 235, 255, 0.9);
+  --chip-bg: rgba(76, 64, 170, 0.08);
+  color: var(--text);
+  background: linear-gradient(180deg, #f6f7ff 0%, #eceeff 100%);
+}
+/* açık sohbet zemininde rozet metinleri okunur olsun (sarı/açık renkler koyulaşır) */
+.surface-light .agent-badge { filter: brightness(0.62) saturate(1.5); }
