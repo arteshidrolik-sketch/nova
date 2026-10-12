@@ -344,7 +344,7 @@ export default function AppShell() {
       {voiceWelcome && (
         <div
           className="fixed inset-0 z-[70] flex flex-col items-center justify-center gap-6 text-center"
-          style={{ background: "radial-gradient(70% 70% at 50% 40%, #0e1a30, #060a14 75%)" }}
+          style={{ background: "var(--bg-mesh)", backgroundColor: "var(--bg)" }}
         >
           <span className="relative flex h-28 w-28 items-center justify-center rounded-full">
             <span
@@ -381,7 +381,7 @@ export default function AppShell() {
             <button
               onClick={startVoice}
               className="rounded-2xl px-8 py-4 text-base font-bold"
-              style={{ background: "linear-gradient(135deg,#8be9ff,#4fd8ff)", color: "#04141f", boxShadow: "0 0 30px rgba(79,216,255,.45)" }}
+              style={{ background: "var(--grad)", color: "#0b1030", boxShadow: "0 8px 30px rgba(139,92,255,.5)" }}
             >
               🎙️ Nova ile başla
             </button>

@@ -1,24 +1,31 @@
 @import "tailwindcss";
 
-/* Haven tasarım dili: derin lacivert zemin, camgöbeği vurgu,
-   Space Grotesk + IBM Plex Mono. Kaynak: Projeler/nova-ev-os */
+/* Nova "Nebula" paleti (Ekim 2026): siyaha yakın lacivert yerine daha açık, canlı
+   indigo zemin; parlak camgöbeği + elektrik moru + neon pembe vurgular.
+   Space Grotesk + IBM Plex Mono. Metin kontrastı: --text/--bg ≈ 15:1, --text-muted/--bg ≈ 9:1 */
 :root {
-  --bg: #060a14;
-  --bg-panel: #0c1322;
-  --bg-elevated: #111b30;
-  --border: rgba(148, 180, 255, 0.1);
-  --border-strong: rgba(148, 180, 255, 0.22);
-  --text: #e8eefb;
-  --text-muted: #8a97b5;
-  --accent: #4fd8ff;
-  --accent-dim: rgba(79, 216, 255, 0.14);
-  --accent-2: #3b82f6;
-  --accent-3: #a855f7;
-  --success: #43d9a3;
-  --warning: #ffb454;
-  --danger: #ff5c7a;
-  --grad: linear-gradient(135deg, var(--accent), var(--accent-2));
-  --grad-3: linear-gradient(135deg, var(--accent), var(--accent-3));
+  --bg: #161b45;
+  --bg-panel: #1f2660;
+  --bg-elevated: #2a3275;
+  --border: rgba(178, 190, 255, 0.2);
+  --border-strong: rgba(200, 210, 255, 0.36);
+  --text: #f7f8ff;
+  --text-muted: #bcc4f0;
+  --accent: #3ee8ff;
+  --accent-dim: rgba(62, 232, 255, 0.16);
+  --accent-2: #8b5cff;
+  --accent-3: #ff4fc8;
+  --success: #2ff5b5;
+  --warning: #ffd166;
+  --danger: #ff5c8a;
+  --grad: linear-gradient(135deg, #3ee8ff 0%, #8b5cff 55%, #ff4fc8 100%);
+  --grad-3: linear-gradient(135deg, var(--accent-2), var(--accent-3));
+  /* zemin: canlı mesh gradyan */
+  --bg-mesh:
+    radial-gradient(1100px 760px at 12% 8%, rgba(139, 92, 255, 0.42), transparent 60%),
+    radial-gradient(900px 680px at 88% 12%, rgba(255, 79, 200, 0.26), transparent 62%),
+    radial-gradient(1100px 800px at 62% 105%, rgba(62, 232, 255, 0.24), transparent 60%),
+    linear-gradient(160deg, #1b2156 0%, #161b45 55%, #1a1647 100%);
 }
 
 /* Tailwind font utility'leri de Haven fontlarına bağlanır (font-mono vb.) */
@@ -41,7 +48,9 @@ body {
 
 body {
   margin: 0;
-  background: var(--bg);
+  background: var(--bg-mesh);
+  background-color: var(--bg);
+  background-attachment: fixed;
   color: var(--text);
   font-family: var(--font-space), "Space Grotesk", ui-sans-serif, system-ui,
     -apple-system, "Segoe UI", Roboto, sans-serif, var(--font-emoji),
@@ -60,9 +69,9 @@ body {
   pointer-events: none;
   overflow: hidden;
   background:
-    radial-gradient(1200px 700px at 50% 42%, rgba(79, 216, 255, 0.07), transparent 60%),
-    radial-gradient(900px 500px at 85% 100%, rgba(67, 217, 163, 0.045), transparent 60%),
-    radial-gradient(700px 500px at 8% 0%, rgba(120, 90, 255, 0.05), transparent 60%);
+    radial-gradient(1200px 700px at 50% 42%, rgba(62, 232, 255, 0.12), transparent 60%),
+    radial-gradient(900px 500px at 85% 100%, rgba(255, 79, 200, 0.1), transparent 60%),
+    radial-gradient(700px 500px at 8% 0%, rgba(139, 92, 255, 0.16), transparent 60%);
 }
 /* ince ızgara çizgileri — merkezde görünür, kenarlara doğru silinir */
 .aurora::before {

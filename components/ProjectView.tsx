@@ -46,7 +46,7 @@ export default function ProjectView({ project, onClose }: { project: ProjectMeta
     <div
       className="absolute inset-0 z-[80] flex flex-col transition-[opacity,transform] duration-300 ease-out"
       style={{
-        background: "radial-gradient(120% 90% at 50% 0%, rgba(17,27,48,.97), rgba(6,10,20,.99))",
+        background: "radial-gradient(900px 500px at 0% 0%, rgba(139,92,255,.30), transparent 60%), radial-gradient(800px 500px at 100% 0%, rgba(255,79,200,.18), transparent 60%), radial-gradient(900px 600px at 50% 110%, rgba(62,232,255,.16), transparent 60%), linear-gradient(160deg, #1d2358, #171c48 60%, #1b1749)",
         opacity: shown ? 1 : 0, transform: shown ? "scale(1)" : "scale(.96)",
       }}
     >

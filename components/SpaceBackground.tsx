@@ -172,11 +172,11 @@ export default function SpaceBackground() {
       mx += (tmx - mx) * 0.04;
       my += (tmy - my) * 0.04;
 
-      // --- Derin uzay taban gradyanı (opak, nötr koyu — mavi baskın değil) ---
+      // --- Uzay taban gradyanı ("Nebula" paleti: canlı indigo → mor; eskisi siyaha yakındı) ---
       const base = ctx!.createLinearGradient(0, 0, w, h);
-      base.addColorStop(0, "#0a0710");
-      base.addColorStop(0.5, "#080611");
-      base.addColorStop(1, "#0b0509");
+      base.addColorStop(0, "#1d2160");
+      base.addColorStop(0.5, "#171a4c");
+      base.addColorStop(1, "#24164f");
       ctx!.globalCompositeOperation = "source-over";
       ctx!.fillStyle = base;
       ctx!.fillRect(0, 0, w, h);

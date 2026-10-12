@@ -123,7 +123,7 @@ export default function Universe() {
   }
 
   return (
-    <div className="relative h-full w-full overflow-hidden" style={{ background: "var(--bg)" }}>
+    <div className="relative h-full w-full overflow-hidden" style={{ background: "var(--bg-mesh)", backgroundColor: "var(--bg)" }}>
       <SpaceBackground />
 
       {/* üst bar */}
@@ -139,7 +139,7 @@ export default function Universe() {
         <button
           onClick={() => setCreating(true)}
           className="flex h-11 items-center gap-2 rounded-full px-4 text-[14px] font-medium transition-transform duration-200 hover:scale-[1.03]"
-          style={{ background: "var(--accent-dim)", border: "1px solid var(--border-strong)", color: "var(--text)" }}
+          style={{ background: "var(--grad)", color: "#0b1030", fontWeight: 700, boxShadow: "0 6px 24px rgba(139,92,255,.45)" }}
         >
           <IconPlus width={18} height={18} /> <span className="hidden sm:inline">Yeni proje</span>
         </button>
@@ -156,7 +156,7 @@ export default function Universe() {
         {/* merkez: Nova = Dünya (bulutlarıyla dönen) */}
         <div className="pointer-events-none absolute left-1/2 top-[51%] z-20 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-2">
           <Planet seed="nova-earth" size={coreSize} earth />
-          <span className="rounded-full px-3 py-1 text-[12px] font-bold" style={{ letterSpacing: ".2em", color: "var(--text)", background: "rgba(8,12,24,.72)", border: "1px solid var(--border-strong)" }}>NOVA</span>
+          <span className="rounded-full px-3 py-1 text-[12px] font-bold" style={{ letterSpacing: ".2em", color: "#0b1030", background: "var(--grad)", boxShadow: "0 0 24px rgba(139,92,255,.55)" }}>NOVA</span>
         </div>
 
         {layout.map(({ p, size }) => (
@@ -176,7 +176,7 @@ export default function Universe() {
             <span
               className="max-w-[160px] truncate rounded-full px-3 py-1 text-[12px] font-medium transition-opacity duration-200"
               style={{
-                background: "rgba(8,12,24,.72)", border: `1px solid ${hover === p.id ? "var(--accent)" : "var(--border)"}`,
+                background: "rgba(31,38,96,.78)", border: `1px solid ${hover === p.id ? "var(--accent)" : "var(--border-strong)"}`,
                 color: "var(--text)", backdropFilter: "blur(6px)",
                 transform: "scale(var(--ls, 1))", transformOrigin: "50% 0",
               }}
@@ -196,7 +196,7 @@ export default function Universe() {
 
       {/* yeni proje kutusu */}
       {creating && (
-        <div className="absolute inset-0 z-[70] flex items-center justify-center p-4" style={{ background: "rgba(3,6,14,.6)" }} onClick={() => setCreating(false)}>
+        <div className="absolute inset-0 z-[70] flex items-center justify-center p-4" style={{ background: "rgba(14,16,48,.55)", backdropFilter: "blur(6px)" }} onClick={() => setCreating(false)}>
           <form
             onClick={(e) => e.stopPropagation()}
             onSubmit={(e) => { e.preventDefault(); create(); }}

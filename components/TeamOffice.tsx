@@ -137,7 +137,7 @@ function Desk({ role, member, status, size }: { role: TeamRole; member: Member; 
     <svg viewBox="0 0 200 170" width={size} height={size * 0.85} aria-hidden>
       <defs>
         <linearGradient id={`${id}-desk`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#3b4a66" /><stop offset="1" stopColor="#222c40" />
+          <stop offset="0" stopColor="#5a63b0" /><stop offset="1" stopColor="#363d82" />
         </linearGradient>
         <radialGradient id={`${id}-glow`} cx="0.5" cy="0.5" r="0.6">
           <stop offset="0" stopColor={c} stopOpacity={busy ? 0.42 : 0.1} /><stop offset="1" stopColor={c} stopOpacity="0" />
@@ -148,11 +148,11 @@ function Desk({ role, member, status, size }: { role: TeamRole; member: Member; 
         <clipPath id={`${id}-clip`}><rect x="3" y="3" width="38" height="26" rx="2" /></clipPath>
       </defs>
 
-      <ellipse cx="100" cy="160" rx="84" ry="8" fill="rgba(0,0,0,.35)" />
+      <ellipse cx="100" cy="160" rx="84" ry="8" fill="rgba(8,10,40,.35)" />
       <ellipse cx="100" cy="64" rx="72" ry="50" fill={`url(#${id}-glow)`} />
 
       {/* sandalye */}
-      <rect x="64" y="84" width="72" height="54" rx="14" fill="#1b2335" stroke="rgba(148,180,255,.15)" />
+      <rect x="64" y="84" width="72" height="54" rx="14" fill="#2c3478" stroke="rgba(200,210,255,.25)" />
 
       {/* arka saç (uzun saçta omuzlara iner) */}
       {female && hairStyle === 0 && <path d="M80 70 Q78 104 86 112 L114 112 Q122 104 120 70 Q118 52 100 52 Q82 52 80 70 Z" fill={hair} stroke="rgba(255,255,255,.22)" strokeWidth={0.8} />}
@@ -212,7 +212,7 @@ function Desk({ role, member, status, size }: { role: TeamRole; member: Member; 
 
       {/* masa */}
       <rect x="20" y="132" width="160" height="12" rx="3" fill={`url(#${id}-desk)`} />
-      <rect x="30" y="144" width="8" height="16" fill="#1a2234" /><rect x="162" y="144" width="8" height="16" fill="#1a2234" />
+      <rect x="30" y="144" width="8" height="16" fill="#2a3170" /><rect x="162" y="144" width="8" height="16" fill="#2a3170" />
 
       {/* önündeki dizüstü (kapağın arkası bize dönük; ekran ışığı yüze vurur) */}
       {busy && <ellipse cx="100" cy="80" rx="18" ry="12" fill={c} opacity=".14" />}

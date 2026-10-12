@@ -33,7 +33,7 @@ export default function SpaceControls() {
   }
 
   const btn = "flex h-11 w-11 items-center justify-center rounded-full transition-transform duration-200 hover:scale-105";
-  const style = { background: "rgba(8,12,24,.6)", border: "1px solid var(--border-strong)", color: "var(--text)" };
+  const style = { background: "rgba(255,255,255,.08)", border: "1px solid var(--border-strong)", color: "var(--text)", backdropFilter: "blur(8px)" };
   return (
     <div className="flex items-center gap-2">
       <button onClick={toggleMusic} className={btn} style={{ ...style, color: music ? "var(--accent)" : "var(--text-muted)" }}

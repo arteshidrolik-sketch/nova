@@ -1814,7 +1814,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   }
 
   const glass = {
-    background: "rgba(14,20,34,0.6)",
+    background: "rgba(31,38,96,0.55)",
     backdropFilter: "blur(12px)",
   };
 
@@ -2174,8 +2174,9 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
                 disabled={!input.trim() && attachments.length === 0}
                 className="btn-grad rounded-lg px-4 py-2 text-sm font-medium text-black disabled:opacity-40"
                 style={{
-                  background:
-                    "linear-gradient(135deg, var(--accent), var(--accent-2))",
+                  background: "var(--grad)",
+                  color: "#0b1030",
+                  fontWeight: 700,
                 }}
               >
                 Gönder
