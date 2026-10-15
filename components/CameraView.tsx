@@ -32,7 +32,7 @@ export default function CameraView({
     if (!el) return;
     const ro = new ResizeObserver(() => {
       const W = el.clientWidth, H = el.clientHeight, ar = scene.width / scene.height;
-      const s = Math.max(W / scene.width, H / scene.height) * 1.06; // kamera kayması için biraz pay
+      const s = Math.max(W / scene.width, H / scene.height) * 1.02; // kamera kayması için az pay
       const w = scene.width * s, h = w / ar;
       setGeo({ w, h, left: (W - w) / 2, top: Math.min(0, (H - h) * 0.45) });
     });

@@ -35,16 +35,17 @@ function prompt(id: string): string {
   const cast = teamCast(id);
   const who = (r: TeamRole) => (cast[r].gender === "k" ? "woman" : "man");
   return (
-    "Photorealistic candid photo from a security camera mounted high in the corner of a small modern startup office in Istanbul, " +
-    "looking down at a slight angle, wide-angle lens, realistic natural lighting, warm late-afternoon sun through large windows with a city view, " +
-    "plants, a bookshelf and a whiteboard in the background. " +
-    "Exactly FOUR people, each sitting at their own separate desk, the four desks in ONE row from left to right, evenly spaced across the full width, " +
-    "people clearly separated and fully visible, each working at a computer:\n" +
-    `1 (far left): a Turkish ${who("research")} in their late 20s, research analyst, laptop and papers;\n` +
-    `2 (center-left): a Turkish ${who("manager")} in their 30s, team manager, smart jacket, slightly larger desk;\n` +
-    `3 (center-right): a Turkish ${who("coder")} in their late 20s, software developer, hoodie, two monitors with code;\n` +
-    `4 (far right): a Turkish ${who("marketing")} in their late 20s, marketing specialist, casual shirt, monitor with a design.\n` +
-    "Real photograph, 35mm, high detail, true-to-life skin and materials. No text, no logos, no watermark, no overlay."
+    "Photorealistic wide establishing shot from a security camera mounted high on the BACK wall of a spacious, calm, minimalist office in Istanbul, " +
+    "seen from far away: the camera is distant, people look SMALL in the frame (each person about one fifth of the image height), lots of open floor and empty space around them. " +
+    "Clean Scandinavian design: white walls, light oak floor, a few simple white desks, one plant, large windows with soft daylight and a distant city view. " +
+    "Uncluttered and airy — no shelves full of items, no papers, no clutter, nothing in the foreground, no objects close to the camera. " +
+    "Exactly FOUR people, each sitting alone at their own small desk with a single monitor, the four desks spread in ONE row from left to right with wide gaps between them, " +
+    "all four fully visible:\n" +
+    `1 (far left): a Turkish ${who("research")} in their late 20s, research analyst;\n` +
+    `2 (center-left): a Turkish ${who("manager")} in their 30s, team manager in a smart jacket;\n` +
+    `3 (center-right): a Turkish ${who("coder")} in their late 20s, software developer;\n` +
+    `4 (far right): a Turkish ${who("marketing")} in their late 20s, marketing specialist.\n` +
+    "Real photograph, natural colors, soft light, high detail. No text, no logos, no watermark, no overlay, no fisheye."
   );
 }
 

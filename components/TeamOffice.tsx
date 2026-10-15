@@ -80,7 +80,7 @@ export default function TeamOffice({ convId, title = "", compact = false }: { co
 
   if (cam?.status === "ready" && cam.scene) {
     return (
-      <div className="relative w-full" style={{ height: compact ? 210 : 300 }}>
+      <div className="relative w-full" style={{ aspectRatio: "21 / 9", maxHeight: compact ? 230 : 380, minHeight: compact ? 170 : 240 }}>
         <CameraView convId={convId} title={title} scene={cam.scene} cast={cast} status={st} statusTr={STATUS_TR} tier={tier} onOpen={setOpen} />
         {open && <AgentPanel role={open} person={cast[open].name} onClose={() => setOpen(null)} />}
       </div>
