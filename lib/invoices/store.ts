@@ -33,16 +33,18 @@ export type InvoiceRecord = InvoiceFields & {
   createdAt: number;
   kaynak: string; // yüklenen dosyanın adı
   uyarilar: string[]; // aritmetik doğrulama uyarıları (kayıt anındaki)
+  scope?: string; // hangi projeye (sohbet kimliği) ait — her projenin defteri ayrı
 };
 
 const DIR = path.join(process.cwd(), "data");
 const FILE = path.join(DIR, "invoices.json");
 
-export async function listInvoices(): Promise<InvoiceRecord[]> {
+export async function listInvoices(scope?: string): Promise<InvoiceRecord[]> {
   try {
     const raw = await fs.readFile(FILE, "utf8");
     const data = JSON.parse(raw);
-    return Array.isArray(data) ? data : [];
+    const all: InvoiceRecord[] = Array.isArray(data) ? data : [];
+    return scope === undefined ? all : all.filter((r) => r.scope === scope);
   } catch {
     return [];
   }
@@ -57,6 +59,7 @@ export async function addInvoice(
   fields: InvoiceFields,
   kaynak: string,
   uyarilar: string[],
+  scope?: string,
 ): Promise<InvoiceRecord> {
   const all = await listInvoices();
   const rec: InvoiceRecord = {
@@ -65,15 +68,16 @@ export async function addInvoice(
     createdAt: Date.now(),
     kaynak,
     uyarilar,
+    ...(scope ? { scope } : {}),
   };
   all.unshift(rec);
   await persist(all);
   return rec;
 }
 
-export async function deleteInvoice(id: string): Promise<boolean> {
+export async function deleteInvoice(id: string, scope?: string): Promise<boolean> {
   const all = await listInvoices();
-  const next = all.filter((r) => r.id !== id);
+  const next = all.filter((r) => !(r.id === id && (scope === undefined || r.scope === scope)));
   if (next.length === all.length) return false;
   await persist(next);
   return true;

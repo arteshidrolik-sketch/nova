@@ -4,6 +4,7 @@
 // PUT   : kullanıcının kontrol ettiği alanları fatura defterine kaydeder.
 // GET   : kayıt listesi; ?excel=1 → defteri xlsx olarak indirir.
 // DELETE: ?id=... kaydı siler.
+// Tüm uçlar ?scope=<proje kimliği> alır: her projenin fatura defteri ayrıdır.
 //
 // Neden böyle: tarayıcı-içi OCR (tesseract) Türkçe faturalarda güvenilmez.
 // Claude görüntü/PDF'ten şema-zorunlu çıkarım + toplama/çarpma sağlaması +
@@ -254,6 +255,7 @@ export async function PUT(req: Request) {
   const body = (await req.json().catch(() => ({}))) as {
     fields?: Record<string, unknown>;
     kaynak?: string;
+    scope?: string;
   };
   if (!body.fields) {
     return Response.json({ error: "Alanlar eksik." }, { status: 400 });
@@ -263,6 +265,7 @@ export async function PUT(req: Request) {
     fields,
     String(body.kaynak ?? "bilinmiyor"),
     validate(fields),
+    body.scope ? String(body.scope) : undefined,
   );
   return Response.json({ record: rec });
 }
@@ -270,7 +273,7 @@ export async function PUT(req: Request) {
 // GET — liste ya da Excel dışa aktarım
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const all = await listInvoices();
+  const all = await listInvoices(url.searchParams.get("scope") ?? undefined);
 
   if (!url.searchParams.get("excel")) {
     return Response.json({ invoices: all });
@@ -350,9 +353,10 @@ export async function GET(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const id = new URL(req.url).searchParams.get("id");
+  const sp = new URL(req.url).searchParams;
+  const id = sp.get("id");
   if (!id) return Response.json({ error: "id gerekli" }, { status: 400 });
-  const ok = await deleteInvoice(id);
+  const ok = await deleteInvoice(id, sp.get("scope") ?? undefined);
   return ok
     ? Response.json({ ok: true })
     : Response.json({ error: "bulunamadı" }, { status: 404 });

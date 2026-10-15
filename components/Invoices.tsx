@@ -100,7 +100,9 @@ function fmtMoney(n: number | null, pb: string | null): string {
   return `${n.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${pb ?? "TRY"}`;
 }
 
-export default function Invoices() {
+// scope: proje (sohbet) kimliği — her projenin fatura defteri ayrıdır.
+export default function Invoices({ scope }: { scope: string }) {
+  const q = `scope=${encodeURIComponent(scope)}`;
   const [records, setRecords] = useState<Rec[]>([]);
   const [busy, setBusy] = useState<string | null>(null); // durum metni
   const [error, setError] = useState<string | null>(null);
@@ -111,12 +113,12 @@ export default function Invoices() {
 
   const load = useCallback(async () => {
     try {
-      const d = await fetch("/api/invoice").then((r) => r.json());
+      const d = await fetch(`/api/invoice?${q}`).then((r) => r.json());
       setRecords(Array.isArray(d.invoices) ? d.invoices : []);
     } catch {
       setRecords([]);
     }
-  }, []);
+  }, [q]);
 
   useEffect(() => {
     load();
@@ -162,7 +164,7 @@ export default function Invoices() {
       const r = await fetch("/api/invoice", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fields: draft, kaynak: draftSource }),
+        body: JSON.stringify({ fields: draft, kaynak: draftSource, scope }),
       });
       if (!r.ok) throw new Error("Kaydedilemedi");
       setDraft(null);
@@ -177,7 +179,7 @@ export default function Invoices() {
 
   async function del(id: string) {
     if (!confirm("Bu fatura kaydı silinsin mi?")) return;
-    await fetch(`/api/invoice?id=${encodeURIComponent(id)}`, {
+    await fetch(`/api/invoice?id=${encodeURIComponent(id)}&${q}`, {
       method: "DELETE",
     });
     load();
@@ -230,7 +232,7 @@ export default function Invoices() {
           </button>
           {records.length > 0 && (
             <a
-              href="/api/invoice?excel=1"
+              href={`/api/invoice?excel=1&${q}`}
               className="btn-grad rounded-lg px-3 py-1.5 text-sm font-medium text-black"
               style={{ background: "var(--grad)" }}
             >

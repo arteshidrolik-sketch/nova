@@ -116,7 +116,7 @@ export default function ProjectView({ project, onClose }: { project: ProjectMeta
           {tab === "dosyalar" && <div className="absolute inset-0 overflow-y-auto"><Files prefix={scope} /></div>}
           {tab === "hafiza" && <div className="absolute inset-0 overflow-y-auto"><ProjectMemory id={project.id} /></div>}
           {tab === "beceriler" && <div className="absolute inset-0 overflow-y-auto"><Skills /></div>}
-          {tab === "fatura" && <div className="absolute inset-0 overflow-y-auto"><Invoices /></div>}
+          {tab === "fatura" && <div className="absolute inset-0 overflow-y-auto"><Invoices scope={project.id} /></div>}
           {tab === "raporlar" && <div className="absolute inset-0 overflow-y-auto"><ProjectReports id={project.id} /></div>}
           {tab === "gorevler" && <div className="absolute inset-0 overflow-y-auto"><Tasks /></div>}
         </main>
