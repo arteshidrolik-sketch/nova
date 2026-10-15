@@ -52,6 +52,7 @@ import { getSkillsByIds } from "@/lib/skills/store";
 import { logToVault } from "@/lib/vault/journal";
 import { getControl, isStopped } from "@/lib/control/store";
 import { getBudget, isOverCap, recordUsage } from "@/lib/budget/store";
+import { recordProjectUsage } from "@/lib/team/usage";
 import {
   wrapUntrusted,
   detectInjection,
@@ -770,6 +771,7 @@ export async function POST(req: Request) {
               final.usage.input_tokens ?? 0,
               final.usage.output_tokens ?? 0,
             ).catch(() => {});
+            recordProjectUsage(conversationId, teamMode ? "manager" : "direct", answerModel, final.usage);
           }
 
           // Güvenlik reddi (refusal): önce HAFIZASIZ dene, sonra daha güçlü modele

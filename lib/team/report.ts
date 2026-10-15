@@ -7,6 +7,7 @@ import path from "path";
 import { loadConversations, updateConversation } from "@/lib/conversations/store";
 import { getSkillsForTeamRole } from "@/lib/skills/store";
 import { recordUsage } from "@/lib/budget/store";
+import { recordProjectUsage } from "./usage";
 import { ensureTeamSkills } from "./skills";
 import { TEAM_META } from "./roles";
 import { readTeamLog, summarizeTeamLog } from "./log";
@@ -75,6 +76,7 @@ export async function runDailyReports(day = istanbulNow().day, markDay = true): 
         messages: [{ role: "user", content: `Bugünün kaydı:\n\n${transcript}` }],
       });
       if (res.usage) recordUsage(model, res.usage.input_tokens ?? 0, res.usage.output_tokens ?? 0).catch(() => {});
+      recordProjectUsage(c.id, "manager", model, res.usage);
       const text = res.content.filter((b) => b.type === "text").map((b) => (b as Anthropic.TextBlock).text).join("\n").trim();
       if (!text) { skipped++; continue; }
       const audit = summarizeTeamLog(await readTeamLog({ projectId: c.id, day }));

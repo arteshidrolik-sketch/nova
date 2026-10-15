@@ -19,6 +19,16 @@ const TIER_COLOR: Record<string, string> = { Haiku: "#2ff5b5", Sonnet: "#7aa2ff"
 const KIND_COLOR: Record<Ev["kind"], string> = { work: "#7aa2ff", done: "#2ff5b5", rev: "#ffb547", err: "#ff6b7a", tool: "#9d9d9d", info: "#9d9d9d" };
 const SPECIALISTS: TeamRole[] = ["research", "coder", "marketing"];
 
+type Totals = { input: number; cacheWrite: number; cacheRead: number; output: number; usd: number; calls: number };
+type ProjUsage = { since: number | null; total: Totals; roles: Partial<Record<TeamRole | "direct", Totals>> };
+const tokOf = (t?: Totals) => (t ? t.input + t.cacheWrite + t.cacheRead + t.output : 0);
+function fmtTok(n: number) {
+  if (n >= 1e6) return `${(n / 1e6).toLocaleString("tr-TR", { maximumFractionDigits: 2 })}M`;
+  if (n >= 1e3) return `${(n / 1e3).toLocaleString("tr-TR", { maximumFractionDigits: 1 })}K`;
+  return String(n);
+}
+const fmtUsd = (n: number) => "$" + (n < 10 ? n.toFixed(3) : n.toFixed(2));
+
 // Akış metnindeki ekip satırlarını olaylara çevir
 function parseEvents(text: string): { icon: string; text: string; kind: Ev["kind"] }[] {
   const out: { icon: string; text: string; kind: Ev["kind"] }[] = [];
@@ -45,6 +55,12 @@ export default function AgentMonitor({ convId }: { convId: string }) {
   const [startAt, setStartAt] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
   const [log, setLog] = useState<LogEntry[] | null>(null);
+  const [usage, setUsage] = useState<ProjUsage | null>(null);
+  const loadUsage = useCallback(() => {
+    fetch(`/api/team/usage?scope=${encodeURIComponent(convId)}`).then((r) => r.json())
+      .then((d) => { if (d?.total) setUsage(d); }).catch(() => {});
+  }, [convId]);
+  useEffect(() => { loadUsage(); }, [loadUsage]);
   const seen = useRef(0); // bu istekte işlenen olay sayısı
   const wasRunning = useRef(false);
 
@@ -65,19 +81,20 @@ export default function AgentMonitor({ convId }: { convId: string }) {
         seen.current = parsed.length;
         setEvents((prev) => [...prev, ...fresh]);
       }
-      if (!d.running && wasRunning.current) setTimeout(loadLog, 1500); // kayıt yazılsın, karneyi tazele
+      if (!d.running && wasRunning.current) { setTimeout(loadLog, 1500); setTimeout(loadUsage, 1500); } // kayıt yazılsın, karneyi tazele
       wasRunning.current = d.running;
       setRunning(d.running);
     };
     window.addEventListener("nova:stream", onStream);
     return () => window.removeEventListener("nova:stream", onStream);
-  }, [convId, loadLog]);
+  }, [convId, loadLog, loadUsage]);
 
   useEffect(() => {
     if (!running) return;
     const i = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(i);
-  }, [running]);
+    const u = setInterval(loadUsage, 4000); // çalışırken sayaç canlı artsın
+    return () => { clearInterval(i); clearInterval(u); };
+  }, [running, loadUsage]);
 
   // Şu an çalışan uzman: son "work" olayından sonra "done" gelmemişse
   let active: { text: string; t: number } | null = null;
@@ -122,6 +139,34 @@ export default function AgentMonitor({ convId }: { convId: string }) {
           <span className="inline-block h-2 w-2 rounded-full" style={{ background: running ? "#2ff5b5" : "#555", boxShadow: running ? "0 0 8px #2ff5b5" : "none" }} />
           {running ? "Canlı" : "Beklemede"}
         </span>
+      </div>
+
+      {/* Proje token sayacı (sabit) */}
+      <div className="shrink-0 px-4 py-3 text-[13px]" style={{ borderBottom: "1px solid var(--border)", background: "#1b1b1b" }}>
+        <div className="flex items-baseline justify-between gap-2">
+          <div className="text-[11px] font-semibold uppercase" style={{ color: "var(--text-muted)", letterSpacing: ".06em" }}>Proje boyunca</div>
+          {usage?.since && <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>sayım başlangıcı: {new Date(usage.since).toLocaleDateString("tr-TR", { day: "numeric", month: "short" })}</div>}
+        </div>
+        <div className="mt-1 flex items-baseline gap-3">
+          <span className="text-[22px] font-semibold tabular-nums">{fmtTok(tokOf(usage?.total))}</span>
+          <span className="text-[12px]" style={{ color: "var(--text-muted)" }}>token</span>
+          <span className="ml-auto text-[18px] font-semibold tabular-nums" style={{ color: "#2ff5b5" }}>{fmtUsd(usage?.total.usd ?? 0)}</span>
+        </div>
+        <div className="mt-2 grid grid-cols-4 gap-1.5">
+          {(["manager", "research", "coder", "marketing"] as TeamRole[]).map((r) => {
+            const t = usage?.roles[r];
+            return (
+              <div key={r} className="rounded-md px-2 py-1.5" style={{ background: "var(--bg-panel)", border: "1px solid var(--border)" }} title={t ? `${TEAM_META[r].name}: girdi ${t.input}, önbellek yazma ${t.cacheWrite}, önbellek okuma ${t.cacheRead}, çıktı ${t.output} · ${t.calls} çağrı` : TEAM_META[r].name}>
+                <div className="truncate text-[11px]" style={{ color: TEAM_META[r].color }}>{cast[r].name}</div>
+                <div className="font-semibold tabular-nums">{fmtTok(tokOf(t))}</div>
+                <div className="text-[11px] tabular-nums" style={{ color: "var(--text-muted)" }}>{fmtUsd(t?.usd ?? 0)}</div>
+              </div>
+            );
+          })}
+        </div>
+        {usage?.roles.direct && tokOf(usage.roles.direct) > 0 && (
+          <div className="mt-1.5 text-[11px]" style={{ color: "var(--text-muted)" }}>Ekip dışı (doğrudan) sohbet: {fmtTok(tokOf(usage.roles.direct))} · {fmtUsd(usage.roles.direct.usd)}</div>
+        )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 text-[13px]">

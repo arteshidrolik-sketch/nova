@@ -11,6 +11,7 @@ import { READ_TOOLS, READ_TOOL_NAMES, runReadTool } from "@/lib/tools/projectFil
 import { createTask } from "@/lib/tasks/store";
 import { appendAudit } from "@/lib/audit/store";
 import { recordUsage } from "@/lib/budget/store";
+import { recordProjectUsage } from "./usage";
 import { detectInjection, wrapUntrusted, UNTRUSTED_RULE } from "@/lib/security/untrusted";
 import { getSkillsForTeamRole } from "@/lib/skills/store";
 import { ensureTeamSkills } from "./skills";
@@ -46,6 +47,7 @@ export async function runSpecialist(opts: {
   model: string;
   effort?: "low" | "medium" | "high";
   role: Exclude<TeamRole, "manager">;
+  projectId?: string; // proje token sayacı için
   task: string;
   criteria: string;
   revisionNote?: string;
@@ -125,6 +127,7 @@ ${opts.history}
     const final = await stream.finalMessage();
     if (final.usage) {
       recordUsage(model, final.usage.input_tokens ?? 0, final.usage.output_tokens ?? 0).catch(() => {});
+      recordProjectUsage(opts.projectId, opts.role, model, final.usage);
       // önbellek dahil efektif girdi: yazma 1.25×, okuma 0.1× fiyatlanır
       const u = final.usage as { input_tokens?: number; cache_creation_input_tokens?: number | null; cache_read_input_tokens?: number | null };
       tokIn += (u.input_tokens ?? 0) + 1.25 * (u.cache_creation_input_tokens ?? 0) + 0.1 * (u.cache_read_input_tokens ?? 0);

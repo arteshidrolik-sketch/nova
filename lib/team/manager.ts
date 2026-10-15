@@ -114,7 +114,7 @@ export async function handleAssign(
   );
   const t0 = Date.now();
   const res = await runSpecialist({
-    client: ctx.client, model: T.model, effort: T.effort, role: r, task,
+    client: ctx.client, model: T.model, effort: T.effort, role: r, task, projectId: ctx.projectId,
     criteria: String(input.kabul_kriterleri || ""),
     revisionNote: isRevision ? String(input.revizyon_notu) : undefined,
     history: ctx.history,

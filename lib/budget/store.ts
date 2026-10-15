@@ -34,6 +34,10 @@ function todayKey(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+export function priceOf(model: string): [number, number] {
+  return PRICE[model] || [3, 15];
+}
+
 export function costOf(model: string, input: number, output: number): number {
   const p = PRICE[model] || [3, 15];
   return (input / 1e6) * p[0] + (output / 1e6) * p[1];
