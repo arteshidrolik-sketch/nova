@@ -124,7 +124,10 @@ ${opts.history}
     const final = await stream.finalMessage();
     if (final.usage) {
       recordUsage(model, final.usage.input_tokens ?? 0, final.usage.output_tokens ?? 0).catch(() => {});
-      tokIn += final.usage.input_tokens ?? 0; tokOut += final.usage.output_tokens ?? 0;
+      // önbellek dahil efektif girdi: yazma 1.25×, okuma 0.1× fiyatlanır
+      const u = final.usage as { input_tokens?: number; cache_creation_input_tokens?: number | null; cache_read_input_tokens?: number | null };
+      tokIn += (u.input_tokens ?? 0) + 1.25 * (u.cache_creation_input_tokens ?? 0) + 0.1 * (u.cache_read_input_tokens ?? 0);
+      tokOut += final.usage.output_tokens ?? 0;
     }
     const text = final.content.filter((b) => b.type === "text").map((b) => (b as Anthropic.TextBlock).text).join("\n").trim();
     if (text) finalText = text;
@@ -187,5 +190,5 @@ ${opts.history}
     }
     convo.push({ role: "user", content: results });
   }
-  return { text: finalText || "(uzman teslim metni üretemedi)", artifacts, actions, input: tokIn, output: tokOut };
+  return { text: finalText || "(uzman teslim metni üretemedi)", artifacts, actions, input: Math.round(tokIn), output: tokOut };
 }

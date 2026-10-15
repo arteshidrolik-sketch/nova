@@ -212,7 +212,7 @@ function ModelDecisions({ id }: { id: string }) {
     <div className="mb-6 rounded-xl p-4" style={{ background: "var(--bg-panel)", border: "1px solid var(--border)" }}>
       <div className="mb-2 flex items-baseline justify-between gap-3">
         <div className="text-[15px] font-bold">Model kararları <span className="text-[12px] font-normal" style={{ color: "var(--text-muted)" }}>son 30 gün</span></div>
-        <div className="text-[13px]" style={{ color: "var(--text-muted)" }}>{d.entries.length} çalışma · ~${d.costUsd.toFixed(2)}</div>
+        <div className="text-[13px]" style={{ color: "var(--text-muted)" }}>{d.entries.length} çalışma · ~${d.costUsd.toFixed(3)}</div>
       </div>
       {d.flags.length > 0 && (
         <ul className="mb-3 flex flex-col gap-1 text-[13px]">{d.flags.map((f, i) => <li key={i}>{f}</li>)}</ul>
