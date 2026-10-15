@@ -126,7 +126,7 @@ export default function AgentMonitor({ convId }: { convId: string }) {
   const totalCost = entries.reduce((a, e) => a + e.costUsd, 0);
   const fixes = entries.filter((e) => e.revision > 0 && e.note).slice(0, 8);
   const errors = entries.flatMap((e) => [
-    ...(e.failed ? [{ ts: e.ts, person: e.person, text: "Teslim metni üretemedi" }] : []),
+    ...(e.failed && !(e.errors ?? []).length ? [{ ts: e.ts, person: e.person, text: "Teslim metni üretemedi" }] : []),
     ...(e.errors ?? []).map((x) => ({ ts: e.ts, person: e.person, text: x })),
   ]).slice(0, 8);
   const flags = suggestions(entries);

@@ -105,11 +105,14 @@ ${opts.history}
   const artifacts: string[] = [];
   const errors: string[] = []; // araç hataları (performans paneli + kayıt)
   let actions = 0, finalText = "", searches = 0, tokIn = 0, tokOut = 0;
+  const stops: string[] = []; // her turun bitiş nedeni (teşhis)
+  let wrapUp = false; // teslim metni çıkmadıysa son "yalnız teslim yaz" turu
 
-  for (let iter = 0; iter < 10; iter++) {
+  for (let iter = 0; iter < 11; iter++) {
     if (canceled()) break;
+    if (iter === 10 && !wrapUp) break;
     const params = {
-      model, max_tokens: legacy ? 8000 : 16000, system, tools, messages: convo,
+      model, max_tokens: legacy ? 8000 : 32000, system, tools, messages: convo,
       cache_control: { type: "ephemeral" }, // tekrar eden sistem istemi/beceriler önbellekten (ucuz) okunur
       ...(legacy ? {} : { thinking: { type: "adaptive" }, output_config: { effort: opts.effort || "high" } }),
     } as unknown as Anthropic.MessageStreamParams;
@@ -133,6 +136,7 @@ ${opts.history}
       tokIn += (u.input_tokens ?? 0) + 1.25 * (u.cache_creation_input_tokens ?? 0) + 0.1 * (u.cache_read_input_tokens ?? 0);
       tokOut += final.usage.output_tokens ?? 0;
     }
+    stops.push(String(final.stop_reason));
     const text = final.content.filter((b) => b.type === "text").map((b) => (b as Anthropic.TextBlock).text).join("\n").trim();
     if (text) finalText = text;
     const uses = final.content.filter((b) => b.type === "tool_use") as Anthropic.ToolUseBlock[];
@@ -144,10 +148,25 @@ ${opts.history}
         if (content.length) convo.push({ role: "assistant", content });
         continue;
       }
+      // iş bitti ama teslim metni yok → bir kez "yalnız teslim metnini yaz" iste
+      if (!finalText && !wrapUp && final.stop_reason === "end_turn") {
+        wrapUp = true;
+        if (content.length) convo.push({ role: "assistant", content });
+        convo.push({ role: "user", content: "Teslim metnin boş geldi. Araç KULLANMADAN, şimdi müdüre teslim metnini yaz: ne yaptın, sonuç (yazdığın dosyaların linkleri dahil), kabul kriterleri, varsayımlar/riskler." });
+        continue;
+      }
       break;
     }
     convo.push({ role: "assistant", content });
     const results: Anthropic.ToolResultBlockParam[] = [];
+    // çıktı sınırında kesilen yanıttaki araç çağrıları yarımdır → çalıştırma, modele bildir
+    if (final.stop_reason === "max_tokens") {
+      for (const b of uses) results.push({ type: "tool_result", tool_use_id: b.id, is_error: true, content: "Yanıtın çıktı sınırında kesildi; bu araç çağrısının girdisi yarım kaldı ve ÇALIŞTIRILMADI. İçeriği daha kısa tut ya da birkaç parçaya bölüp ayrı ayrı yaz." });
+      errors.push("Yanıt çıktı sınırında kesildi; yarım araç çağrısı çalıştırılmadı");
+      emit(`\n❌ ${meta.name}: yanıt çıktı sınırında kesildi — yarım araç çağrısı çalıştırılmadı, kısaltıp tekrar deniyor\n`);
+      convo.push({ role: "user", content: results });
+      continue;
+    }
     for (const b of uses) {
       const input = (b.input ?? {}) as Record<string, unknown>;
       if (project && READ_TOOL_NAMES.has(b.name)) {
@@ -201,5 +220,14 @@ ${opts.history}
     }
     convo.push({ role: "user", content: results });
   }
-  return { text: finalText || "(uzman teslim metni üretemedi)", artifacts, actions, input: Math.round(tokIn), output: tokOut, errors, failed: !finalText };
+  if (!finalText && !canceled()) {
+    // teşhis: hangi turlarda nasıl bittiğini kayda ve sunucu loguna yaz
+    const why = `Teslim metni üretilemedi (tur bitişleri: ${stops.join(", ") || "yok"})`;
+    errors.push(why);
+    console.warn(`[ekip] ${meta.name} (${model}): ${why}`);
+  }
+  const fallback = artifacts.length
+    ? `(Uzman teslim metni yazmadı, ama şu çıktıları üretti:)\n${artifacts.join("\n")}`
+    : "(uzman teslim metni üretemedi)";
+  return { text: finalText || fallback, artifacts, actions, input: Math.round(tokIn), output: tokOut, errors, failed: !finalText };
 }

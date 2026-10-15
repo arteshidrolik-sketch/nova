@@ -242,9 +242,11 @@ export const ACTIONS: Record<string, ActionDef> = {
     makeSummary: (p) =>
       `Bilgisayardaki "workspace" klasörüne "${String(p.path)}" adlı bir dosya yazılacak (${lineCount(String(p.content))} satır).\n\nİçeriğin başı:\n${shorten(String(p.content), 200)}`,
     execute: async (p) => {
+      // içerik yoksa (ör. yanıt çıktı sınırında kesildi) boş dosya yazıp "yazıldı" deme
+      if (typeof p.content !== "string") throw new Error("İçerik (content) eksik — dosya yazılmadı. Yanıt kesilmiş olabilir; içeriği daha kısa parçalar hâlinde yaz.");
       const target = safeWorkspacePath(String(p.path));
       await fs.mkdir(path.dirname(target), { recursive: true });
-      const content = String(p.content ?? "");
+      const content = p.content;
       await fs.writeFile(target, content, "utf8");
       const sec = formatFindings(scanContent(String(p.path), content));
       const rel = String(p.path);
