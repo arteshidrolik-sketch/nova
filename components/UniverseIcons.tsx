@@ -69,6 +69,9 @@ export const IconReport = (p: P) => (
 export const IconGrid = (p: P) => (
   <Base {...p}><rect x="4" y="4" width="7" height="7" rx="1.5" /><rect x="13" y="4" width="7" height="7" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><rect x="13" y="13" width="7" height="7" rx="1.5" /></Base>
 );
+export const IconInvoice = (p: P) => (
+  <Base {...p}><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" /><path d="M9 8h6M9 12h6M9 16h3" /></Base>
+);
 export const IconClose = (p: P) => (
   <Base {...p}><path d="M6 6l12 12M18 6 6 18" /></Base>
 );

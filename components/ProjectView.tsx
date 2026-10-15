@@ -9,16 +9,18 @@ import Chat from "./Chat";
 import Files from "./Files";
 import Skills from "./Skills";
 import Tasks from "./Tasks";
+import Invoices from "./Invoices";
 import TeamOffice from "./TeamOffice";
 import SpaceControls from "./SpaceControls";
 import { Planet } from "./planet";
-import { IconBack, IconFolder, IconMemory, IconSkill, IconAgent, IconTasks, IconReport } from "./UniverseIcons";
+import { IconBack, IconFolder, IconMemory, IconSkill, IconAgent, IconTasks, IconReport, IconInvoice } from "./UniverseIcons";
 import type { ProjectMeta } from "./Universe";
 
-type TabKey = "sohbet" | "dosyalar" | "hafiza" | "raporlar" | "beceriler" | "gorevler";
+type TabKey = "sohbet" | "dosyalar" | "fatura" | "hafiza" | "raporlar" | "beceriler" | "gorevler";
 const TABS: { key: TabKey; label: string; color: string; Icon: ComponentType<SVGProps<SVGSVGElement>> }[] = [
   { key: "sohbet", label: "Ekip", color: "#3ee8ff", Icon: IconAgent },
   { key: "dosyalar", label: "Dosyalar", color: "#ffd166", Icon: IconFolder },
+  { key: "fatura", label: "Fatura", color: "#7ee8a2", Icon: IconInvoice },
   { key: "hafiza", label: "Hafıza", color: "#ff7ad9", Icon: IconMemory },
   { key: "raporlar", label: "Raporlar", color: "#2ff5b5", Icon: IconReport },
   { key: "beceriler", label: "Beceriler", color: "#b39bff", Icon: IconSkill },
@@ -114,6 +116,7 @@ export default function ProjectView({ project, onClose }: { project: ProjectMeta
           {tab === "dosyalar" && <div className="absolute inset-0 overflow-y-auto"><Files prefix={scope} /></div>}
           {tab === "hafiza" && <div className="absolute inset-0 overflow-y-auto"><ProjectMemory id={project.id} /></div>}
           {tab === "beceriler" && <div className="absolute inset-0 overflow-y-auto"><Skills /></div>}
+          {tab === "fatura" && <div className="absolute inset-0 overflow-y-auto"><Invoices /></div>}
           {tab === "raporlar" && <div className="absolute inset-0 overflow-y-auto"><ProjectReports id={project.id} /></div>}
           {tab === "gorevler" && <div className="absolute inset-0 overflow-y-auto"><Tasks /></div>}
         </main>
