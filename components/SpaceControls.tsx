@@ -37,7 +37,7 @@ export default function SpaceControls() {
   return (
     <div className="flex items-center gap-2">
       <button onClick={toggleMusic} className={btn} style={{ ...style, color: music ? "var(--accent)" : "var(--text-muted)" }}
-        aria-label={music ? "Uzay müziğini kapat" : "Uzay müziğini aç"} title={music ? "Müziği kapat" : "Uzay müziği"}>
+        aria-label={music ? "Caz müziğini kapat" : "Caz müziğini aç"} title={music ? "Müziği kapat" : "Kafe caz müziği"}>
         {music ? <IconMusic width={18} height={18} /> : <IconMusicOff width={18} height={18} />}
       </button>
       <button onClick={toggleFull} className={btn} style={style} aria-label={full ? "Tam ekrandan çık" : "Tam ekran"} title={full ? "Tam ekrandan çık" : "Tam ekran"}>
