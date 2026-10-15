@@ -34,7 +34,7 @@ const ROLE_PROMPT: Record<Exclude<TeamRole, "manager">, string> = {
     "Sen bir SATIŞ VE PAZARLAMA UZMANISIN. Hedef kitleye uygun, Türk pazarına ve diline uygun, net faydalı, yanıltıcı olmayan metin/teklif üret; gerekiyorsa generate_image ile görsel üret.",
 };
 
-export type SpecialistRun = { text: string; artifacts: string[]; actions: number; input: number; output: number };
+export type SpecialistRun = { text: string; artifacts: string[]; actions: number; input: number; output: number; errors: string[]; failed: boolean };
 
 const MEDIA_TOOLS = new Set([
   "generate_image", "edit_image", "restyle_image", "generate_document", "write_file", "edit_excel", "publish_project_file",
@@ -101,6 +101,7 @@ ${opts.history}
 
   const convo: Anthropic.MessageParam[] = [{ role: "user", content: user }];
   const artifacts: string[] = [];
+  const errors: string[] = []; // araç hataları (performans paneli + kayıt)
   let actions = 0, finalText = "", searches = 0, tokIn = 0, tokOut = 0;
 
   for (let iter = 0; iter < 10; iter++) {
@@ -180,6 +181,13 @@ ${opts.history}
       let result: string, ok = true;
       try { result = await executeAction(b.name, payload, scope); }
       catch (e) { ok = false; result = `Hata: ${e instanceof Error ? e.message : "bilinmeyen"}`; }
+      // fırlatmadan dönen hata metinleri de hata sayılır
+      if (ok && /^(⚠️|❌|Hata\b|Error\b)/u.test(result.trim())) ok = false;
+      if (!ok) {
+        const short = result.replace(/\s+/g, " ").trim().slice(0, 160);
+        errors.push(`${title}: ${short}`);
+        emit(`\n❌ ${meta.name}: ${title} — ${short}\n`);
+      }
       actions++;
       appendAudit({ agent: "general", model, action: b.name, tier: "auto", summary: `[${meta.name}] ${actionSummary(b.name, payload) || title}`, ok, result, project: project?.name }).catch(() => {});
       if (ok && MEDIA_TOOLS.has(b.name)) {
@@ -190,5 +198,5 @@ ${opts.history}
     }
     convo.push({ role: "user", content: results });
   }
-  return { text: finalText || "(uzman teslim metni üretemedi)", artifacts, actions, input: Math.round(tokIn), output: tokOut };
+  return { text: finalText || "(uzman teslim metni üretemedi)", artifacts, actions, input: Math.round(tokIn), output: tokOut, errors, failed: !finalText };
 }

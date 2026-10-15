@@ -129,6 +129,8 @@ export async function handleAssign(
     chosen, tier, model: T.model, revision: isRevision ? n - 1 : 0, task: head, sec,
     input: res.input, output: res.output, costUsd: Math.round(costOf(T.model, res.input, res.output) * 10000) / 10000,
     actions: res.actions, artifacts: res.artifacts.length,
+    errors: res.errors.length ? res.errors : undefined, failed: res.failed || undefined,
+    note: isRevision ? String(input.revizyon_notu).replace(/\s+/g, " ").trim().slice(0, 240) : undefined,
   }).catch(() => {});
   ctx.emit(`\n👥 ${meta.name} teslim etti (${person}, ${T.label}, ${sec} sn) — 👔 Müdür denetliyor…\n`);
   return {

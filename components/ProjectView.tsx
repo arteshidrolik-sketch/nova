@@ -11,6 +11,7 @@ import Skills from "./Skills";
 import Tasks from "./Tasks";
 import Invoices from "./Invoices";
 import TeamOffice from "./TeamOffice";
+import AgentMonitor from "./AgentMonitor";
 import SpaceControls from "./SpaceControls";
 import { Planet } from "./planet";
 import { IconBack, IconFolder, IconMemory, IconSkill, IconAgent, IconTasks, IconReport, IconInvoice } from "./UniverseIcons";
@@ -105,12 +106,19 @@ export default function ProjectView({ project, onClose }: { project: ProjectMeta
         <main className="relative min-h-0 flex-1 overflow-hidden">
           {/* Ekip: üstte ofis (masa başındaki ajanlar), altta müdürle sohbet.
               Her zaman bağlı kalır (gizlenir) → sekme değişince iş yarıda kesilmez */}
-          <div className="absolute inset-0 flex flex-col" hidden={tab !== "sohbet"}>
-            <div className="shrink-0 border-b" style={{ borderColor: "var(--border-strong)", background: "var(--surface-office)" }}>
-              <TeamOffice convId={project.id} compact={compact} />
+          <div className="absolute inset-0 flex" hidden={tab !== "sohbet"}>
+            {/* sol: ofis + sohbet */}
+            <div className="flex min-w-0 flex-1 flex-col">
+              <div className="shrink-0 border-b" style={{ borderColor: "var(--border-strong)", background: "var(--surface-office)" }}>
+                <TeamOffice convId={project.id} compact={compact} />
+              </div>
+              <div className="surface-dark relative min-h-0 flex-1">
+                <div className="absolute inset-0 flex flex-col"><Chat conversationId={project.id} /></div>
+              </div>
             </div>
-            <div className="surface-dark relative min-h-0 flex-1">
-              <div className="absolute inset-0 flex flex-col"><Chat conversationId={project.id} /></div>
+            {/* sağ: ajan performansı (geniş ekranda) */}
+            <div className="hidden w-[360px] shrink-0 lg:block xl:w-[400px]">
+              <AgentMonitor convId={project.id} />
             </div>
           </div>
           {tab === "dosyalar" && <div className="absolute inset-0 overflow-y-auto"><Files prefix={scope} /></div>}

@@ -22,6 +22,9 @@ export type TeamLogEntry = {
   costUsd: number;
   actions: number;
   artifacts: number;
+  errors?: string[]; // uzmanın araç hataları
+  failed?: boolean; // teslim metni üretilemedi
+  note?: string; // revizyonda müdürün düzeltme notu
 };
 
 const FILE = path.join(process.cwd(), "data", "team-log.jsonl");
