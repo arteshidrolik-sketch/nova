@@ -53,8 +53,9 @@ export default function ProjectView({ project, onClose }: { project: ProjectMeta
         opacity: shown ? 1 : 0, transform: shown ? "scale(1)" : "scale(.96)",
       }}
     >
+      <PageAnim />
       {/* başlık */}
-      <header className="flex items-center gap-3 border-b px-4 py-3 sm:px-6" style={{ borderColor: "var(--border-strong)", background: "var(--surface-header)" }}>
+      <header className="relative z-[1] flex items-center gap-3 border-b px-4 py-3 sm:px-6" style={{ borderColor: "var(--border-strong)", background: "var(--surface-header)" }}>
         <button
           onClick={onClose}
           className="flex h-11 items-center gap-1 rounded-full pl-2 pr-4 text-[14px] transition-colors duration-150"
@@ -71,7 +72,7 @@ export default function ProjectView({ project, onClose }: { project: ProjectMeta
         <SpaceControls />
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
+      <div className="relative z-[1] flex min-h-0 flex-1 flex-col sm:flex-row">
         {/* sekme rayı */}
         <nav
           className="flex shrink-0 gap-1 overflow-x-auto border-b px-2 py-2 sm:flex-col sm:overflow-visible sm:border-b-0 sm:border-r sm:px-2 sm:py-4"
@@ -248,6 +249,21 @@ function ModelDecisions({ id }: { id: string }) {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+// Sayfa arka planı: yavaşça gezinen renkli ışık lekeleri + yukarı süzülen parçacıklar
+const PARTICLES = Array.from({ length: 28 }, (_, i) => ({
+  left: (i * 37) % 100, size: 1 + (i % 3), dur: 18 + ((i * 7) % 16), delay: -((i * 5.3) % 30),
+}));
+function PageAnim() {
+  return (
+    <div className="page-anim" aria-hidden>
+      <div className="blob b1" /><div className="blob b2" /><div className="blob b3" />
+      {PARTICLES.map((p, i) => (
+        <span key={i} className="p" style={{ left: `${p.left}%`, width: p.size, height: p.size, animationDuration: `${p.dur}s`, animationDelay: `${p.delay}s` }} />
+      ))}
     </div>
   );
 }

@@ -9,6 +9,7 @@
 import { useEffect, useState } from "react";
 import { TEAM_META, TEAM_ROLES, teamCast, type Member, type TeamRole } from "@/lib/team/roles";
 import { IconClose, IconPlus } from "./UniverseIcons";
+import OfficeRoom from "./OfficeRoom";
 
 type Status = "idle" | "thinking" | "working" | "reviewing" | "done" | "speaking";
 const STATUS_TR: Record<Status, string> = {
@@ -63,9 +64,10 @@ export default function TeamOffice({ convId, compact = false }: { convId: string
   if (speaking && !running) st.manager = "speaking";
 
   return (
-    <div className="relative w-full">
+    <div className="relative w-full overflow-hidden">
+      <OfficeRoom />
       <div
-        className={`flex w-full items-end justify-center gap-2 overflow-x-auto px-3 sm:gap-6 ${compact ? "py-2" : "py-4"}`}
+        className={`relative z-[1] flex w-full items-end justify-center gap-2 overflow-x-auto px-3 sm:gap-6 ${compact ? "pb-2 pt-6" : "pb-3 pt-16"}`}
         role="list" aria-label="Proje ekibi"
       >
         {(["research", "manager", "coder", "marketing"] as TeamRole[]).map((r) => (

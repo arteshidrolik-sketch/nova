@@ -132,7 +132,7 @@ export default function AgentMonitor({ convId }: { convId: string }) {
   const flags = suggestions(entries);
 
   return (
-    <aside className="surface-dark flex h-full min-h-0 flex-col" style={{ background: "#181818", borderLeft: "1px solid var(--border)" }} aria-label="Ajan performansı">
+    <aside className="surface-dark flex h-full min-h-0 flex-col" style={{ background: "rgba(20, 20, 22, 0.88)", borderLeft: "1px solid var(--border)" }} aria-label="Ajan performansı">
       <div className="flex items-center justify-between gap-2 px-4 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
         <div className="text-[14px] font-semibold">Ajan performansı</div>
         <span className="flex items-center gap-1.5 text-[12px]" style={{ color: running ? "#2ff5b5" : "var(--text-muted)" }}>
@@ -142,7 +142,7 @@ export default function AgentMonitor({ convId }: { convId: string }) {
       </div>
 
       {/* Proje token sayacı (sabit) */}
-      <div className="shrink-0 px-4 py-3 text-[13px]" style={{ borderBottom: "1px solid var(--border)", background: "#1b1b1b" }}>
+      <div className="shrink-0 px-4 py-3 text-[13px]" style={{ borderBottom: "1px solid var(--border)", background: "rgba(28, 28, 30, 0.6)" }}>
         <div className="flex items-baseline justify-between gap-2">
           <div className="text-[11px] font-semibold uppercase" style={{ color: "var(--text-muted)", letterSpacing: ".06em" }}>Proje boyunca</div>
           {usage?.since && <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>sayım başlangıcı: {new Date(usage.since).toLocaleDateString("tr-TR", { day: "numeric", month: "short" })}</div>}

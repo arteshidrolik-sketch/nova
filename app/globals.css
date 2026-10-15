@@ -22,8 +22,8 @@
   --grad-3: linear-gradient(135deg, var(--accent-2), var(--accent-3));
   /* Katmanlı yüzeyler — aynı aileden ama birbirinden ayrışan tonlar */
   /* Karşıt katmanlar: turkuaz ray ↔ mürdüm başlık ↔ gün batımı ofis ↔ açık sohbet */
-  --surface-rail: linear-gradient(180deg, #0f5866 0%, #0b3f4b 100%);
-  --surface-header: linear-gradient(90deg, #4a1660 0%, #3a1452 55%, #5a1a55 100%);
+  --surface-rail: linear-gradient(180deg, rgba(15, 88, 102, 0.82) 0%, rgba(11, 63, 75, 0.82) 100%);
+  --surface-header: linear-gradient(90deg, rgba(74, 22, 96, 0.8) 0%, rgba(58, 20, 82, 0.8) 55%, rgba(90, 26, 85, 0.8) 100%);
   --surface-office: radial-gradient(70% 150% at 50% 115%, rgba(255, 168, 76, 0.38), transparent 60%), radial-gradient(60% 120% at 0% 0%, rgba(255, 79, 140, 0.32), transparent 60%), linear-gradient(180deg, #3d1745 0%, #2e1440 100%);
   --surface-chat: linear-gradient(180deg, #191f55 0%, #161b4b 100%);
   --surface-card: #2c3486;
@@ -465,15 +465,77 @@ body {
   --accent-dim: rgba(77, 170, 252, 0.14);
   --surface-card: #252526;
   --surface-input: #2b2b2b;
-  --surface-chat-header: #181818;
-  --surface-chat-footer: #181818;
+  --surface-chat-header: rgba(20, 20, 22, 0.9);
+  --surface-chat-footer: rgba(20, 20, 22, 0.9);
   --chip-bg: rgba(255, 255, 255, 0.07);
   color: var(--text);
-  background: #1e1e1e;
+  background: rgba(26, 26, 28, 0.86);
   font-family: "Segoe WPC", "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, Ubuntu, "Droid Sans", sans-serif, var(--font-emoji);
 }
 .surface-dark code,
 .surface-dark pre,
 .surface-dark kbd {
   font-family: Consolas, "Cascadia Mono", "Courier New", ui-monospace, monospace, var(--font-emoji);
+}
+
+/* ───────── Ekip ofisi: CSS 3B oda ───────── */
+.room3d { position: absolute; inset: 0; overflow: hidden; perspective: 720px; perspective-origin: 50% 42%; pointer-events: none; --rx: 0deg; --ry: 0deg; --d: 520px; }
+.room3d-stage { position: absolute; left: -9%; width: 118%; top: -6%; height: 112%; transform-style: preserve-3d; transform: rotateX(var(--rx)) rotateY(var(--ry)); transition: transform .9s cubic-bezier(.2,.7,.2,1); }
+.room3d-face { position: absolute; backface-visibility: hidden; }
+.room3d-back { inset: 0; transform: translateZ(calc(var(--d) * -1)); background: linear-gradient(180deg, #4a2b63 0%, #5b3270 55%, #3a2150 100%); box-shadow: inset 0 -40px 60px rgba(0,0,0,.25); }
+.room3d-floor { left: 0; right: 0; height: var(--d); top: calc(100% - var(--d)); transform-origin: bottom center; transform: rotateX(90deg);
+  background: repeating-linear-gradient(90deg, rgba(0,0,0,.18) 0 2px, transparent 2px 70px), repeating-linear-gradient(0deg, rgba(255,255,255,.05) 0 1px, transparent 1px 34px), linear-gradient(0deg, #8a5a3c 0%, #6b4430 60%, #4a2e22 100%); }
+.room3d-ceiling { left: 0; right: 0; height: var(--d); top: 0; transform-origin: top center; transform: rotateX(-90deg); background: linear-gradient(180deg, #2a1838, #36204a); }
+.room3d-left { top: 0; bottom: 0; width: var(--d); left: 0; transform-origin: left center; transform: rotateY(90deg); background: linear-gradient(90deg, #3a2250, #4d2c64); }
+.room3d-right { top: 0; bottom: 0; width: var(--d); left: calc(100% - var(--d)); transform-origin: right center; transform: rotateY(-90deg); background: linear-gradient(270deg, #3a2250, #4d2c64); }
+.room3d-rug { position: absolute; left: 22%; right: 22%; top: 8%; bottom: 30%; border-radius: 50%; background: radial-gradient(closest-side, rgba(255,140,90,.38), rgba(190,70,120,.28) 60%, transparent 100%); }
+
+.room3d-windows { position: absolute; left: 30%; right: 30%; top: 12%; height: 52%; display: flex; gap: 3%; }
+.room3d-window { position: relative; flex: 1; overflow: hidden; border: 4px solid #2a1838; border-radius: 3px; box-shadow: 0 0 30px rgba(255,170,110,.25), inset 0 0 0 1px rgba(255,255,255,.15); }
+.room3d-sky { position: absolute; inset: 0; background: linear-gradient(180deg, #1d2b6b 0%, #6d3b8f 45%, #ff8a5c 85%, #ffb36b 100%); }
+.room3d-cloud { position: absolute; left: -40%; width: 46%; height: 9%; border-radius: 50px; background: rgba(255,214,200,.55); filter: blur(1px); animation: r3dCloud 60s linear infinite; }
+.room3d-cloud.small { width: 28%; height: 6%; opacity: .7; animation-duration: 85s; }
+.room3d-skyline { position: absolute; left: 0; right: 0; bottom: 0; height: 70%; width: 100%; }
+.room3d-skyline .win.tw { animation: r3dTwinkle 5s ease-in-out infinite; }
+.room3d-board { position: absolute; left: 7%; top: 18%; width: 17%; height: 40%; background: #f8fafc; border: 4px solid #cbd5e1; border-radius: 3px; box-shadow: 0 6px 18px rgba(0,0,0,.3); }
+.room3d-clock { position: absolute; right: 12%; top: 10%; width: 7%; aspect-ratio: 1; filter: drop-shadow(0 4px 8px rgba(0,0,0,.35)); }
+.room3d-shelf { position: absolute; right: 7%; top: 52%; width: 16%; height: 4%; background: #8a5a3c; border-radius: 2px; box-shadow: 0 6px 12px rgba(0,0,0,.35); }
+.room3d-coffee { position: absolute; left: 20%; bottom: 100%; width: 24%; height: 340%; background: linear-gradient(180deg, #334155, #1e293b); border-radius: 4px 4px 2px 2px; }
+.room3d-coffee .steam { position: absolute; bottom: 100%; width: 6px; height: 18px; border-radius: 6px; background: rgba(255,255,255,.35); filter: blur(2px); animation: r3dSteam 3.2s ease-out infinite; }
+.room3d-coffee .s1 { left: 20%; } .room3d-coffee .s2 { left: 45%; animation-delay: 1s; } .room3d-coffee .s3 { left: 70%; animation-delay: 2.1s; }
+.room3d-bookcase { position: absolute; left: 18%; right: 18%; top: 20%; bottom: 22%; background: #5a3a28; padding: 4% 4%; display: flex; flex-direction: column; gap: 6%; border-radius: 3px; box-shadow: inset 0 0 0 3px #4a2e22; }
+.room3d-books { flex: 1; display: flex; align-items: flex-end; gap: 3%; border-bottom: 4px solid #3a2418; }
+.room3d-books span { flex: 1; border-radius: 1px 1px 0 0; }
+.room3d-poster { position: absolute; left: 40%; width: 22%; top: 18%; height: 46%; box-shadow: 0 6px 16px rgba(0,0,0,.35); }
+.room3d-lamp { position: absolute; top: 0; width: 60px; margin-left: -30px; transform: translateZ(calc(var(--d) * -.45)); transform-style: preserve-3d; animation: r3dSway 7s ease-in-out infinite; transform-origin: top center; }
+.room3d-lamp .cord { display: block; margin: 0 auto; width: 2px; height: 70px; background: #1a1026; }
+.room3d-lamp .shade { display: block; margin: -2px auto 0; width: 54px; height: 22px; border-radius: 30px 30px 6px 6px; background: linear-gradient(180deg, #f59e0b, #b45309); box-shadow: 0 10px 22px rgba(255,190,90,.6); }
+.room3d-lamp .glow { position: absolute; left: 50%; top: 80px; width: 240px; height: 240px; margin-left: -120px; border-radius: 50%; background: radial-gradient(closest-side, rgba(255,200,120,.38), transparent); mix-blend-mode: screen; animation: r3dGlow 4.5s ease-in-out infinite; }
+.room3d-plant { position: absolute; bottom: 0; width: 9%; aspect-ratio: 60 / 90; transform: translateZ(calc(var(--d) * -.18)); }
+.room3d-plant.left { left: 10%; } .room3d-plant.right { right: 10%; }
+.room3d-plant .leaves { transform-origin: 30px 62px; animation: r3dLeaves 6s ease-in-out infinite; }
+.room3d-dust { position: absolute; inset: 0; }
+.room3d-dust span { position: absolute; bottom: -6px; width: 3px; height: 3px; border-radius: 50%; background: rgba(255,226,180,.55); box-shadow: 0 0 6px rgba(255,210,150,.7); animation: r3dDust 12s linear infinite; }
+@keyframes r3dCloud { to { transform: translateX(330%); } }
+@keyframes r3dTwinkle { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+@keyframes r3dSteam { 0% { transform: translateY(0) scaleX(1); opacity: 0; } 20% { opacity: .8; } 100% { transform: translateY(-26px) scaleX(2); opacity: 0; } }
+@keyframes r3dSway { 0%, 100% { rotate: -1.6deg; } 50% { rotate: 1.6deg; } }
+@keyframes r3dGlow { 0%, 100% { opacity: .85; } 50% { opacity: 1; } }
+@keyframes r3dLeaves { 0%, 100% { transform: rotate(-2deg); } 50% { transform: rotate(2deg); } }
+@keyframes r3dDust { 0% { transform: translate(0, 0); opacity: 0; } 15% { opacity: 1; } 100% { transform: translate(30px, -320px); opacity: 0; } }
+
+/* ───────── Sayfa arka planı: hareketli ışık lekeleri + süzülen parçacıklar ───────── */
+.page-anim { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+.page-anim .blob { position: absolute; width: 60vmax; height: 60vmax; border-radius: 50%; opacity: .55; will-change: transform; }
+.page-anim .b1 { left: -20vmax; top: -25vmax; background: radial-gradient(closest-side, rgba(139,92,255,.55), transparent); animation: pageBlob1 34s ease-in-out infinite; }
+.page-anim .b2 { right: -22vmax; top: -10vmax; background: radial-gradient(closest-side, rgba(255,79,200,.40), transparent); animation: pageBlob2 41s ease-in-out infinite; }
+.page-anim .b3 { left: 20vmax; bottom: -35vmax; background: radial-gradient(closest-side, rgba(62,232,255,.35), transparent); animation: pageBlob3 47s ease-in-out infinite; }
+.page-anim .p { position: absolute; bottom: -8px; width: 2px; height: 2px; border-radius: 50%; background: #fff; opacity: 0; animation: pageFloat linear infinite; }
+@keyframes pageBlob1 { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(18vmax, 12vmax) scale(1.15); } }
+@keyframes pageBlob2 { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(-16vmax, 18vmax) scale(.9); } }
+@keyframes pageBlob3 { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(14vmax, -14vmax) scale(1.2); } }
+@keyframes pageFloat { 0% { transform: translateY(0); opacity: 0; } 10% { opacity: .7; } 90% { opacity: .5; } 100% { transform: translateY(-105vh); opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .room3d *, .room3d-stage, .page-anim * { animation: none !important; transition: none !important; }
 }
