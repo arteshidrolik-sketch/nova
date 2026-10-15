@@ -72,17 +72,25 @@ async function viaOpenAI(p: string): Promise<Buffer> {
   if (!b64) throw new Error(`OpenAI: ${r.error?.message?.slice(0, 120) || "görsel dönmedi"}`);
   return Buffer.from(b64, "base64");
 }
+// fal: önce nano-banana (kişi sayısına sadık, fotogerçekçi), olmazsa flux
 async function viaFal(p: string): Promise<Buffer> {
   const key = process.env.FAL_KEY;
   if (!key) throw new Error("FAL_KEY yok");
-  const r = await fetch("https://fal.run/fal-ai/flux/dev", {
-    method: "POST", headers: { "Content-Type": "application/json", Authorization: `Key ${key}` },
-    body: JSON.stringify({ prompt: p, image_size: { width: 1792, height: 768 }, num_images: 1 }),
-  });
-  const j = await r.json().catch(() => ({}));
-  const url = j.images?.[0]?.url;
-  if (!url) throw new Error(`fal: ${String(j.detail || r.status).slice(0, 120)}`);
-  return Buffer.from(await (await fetch(url)).arrayBuffer());
+  const errs: string[] = [];
+  for (const [model, body] of [
+    ["fal-ai/nano-banana", { prompt: p, aspect_ratio: "21:9", num_images: 1, output_format: "jpeg" }],
+    ["fal-ai/flux/dev", { prompt: p, image_size: { width: 1792, height: 768 }, num_images: 1 }],
+  ] as const) {
+    const r = await fetch(`https://fal.run/${model}`, {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Key ${key}` },
+      body: JSON.stringify(body),
+    });
+    const j = await r.json().catch(() => ({}));
+    const url = j.images?.[0]?.url;
+    if (url) return Buffer.from(await (await fetch(url)).arrayBuffer());
+    errs.push(`${model}: ${String(j.detail || r.status).slice(0, 100)}`);
+  }
+  throw new Error(`fal: ${errs.join(" / ")}`);
 }
 
 function imageSize(buf: Buffer): { w: number; h: number; mime: string } {
@@ -127,15 +135,23 @@ export async function generateScene(id: string): Promise<void> {
   pending.add(id);
   try {
     const p = prompt(id);
-    const errors: string[] = [];
-    let buf: Buffer | null = null, provider = "";
-    for (const [name, fn] of [["gemini", viaGemini], ["openai", viaOpenAI], ["fal", viaFal]] as const) {
-      try { buf = await fn(p); provider = name; break; } catch (e) { errors.push(e instanceof Error ? e.message : String(e)); }
+    let buf: Buffer | null = null, provider = "", boxes: Box[] = [], w = 0, h = 0;
+    // kişi sayısı 4 çıkmazsa en fazla 3 deneme; en iyi sonuç saklanır
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const errors: string[] = [];
+      let cand: Buffer | null = null, prov = "";
+      for (const [name, fn] of [["gemini", viaGemini], ["openai", viaOpenAI], ["fal", viaFal]] as const) {
+        try { cand = await fn(p); prov = name; break; } catch (e) { errors.push(e instanceof Error ? e.message : String(e)); }
+      }
+      if (!cand) { if (buf) break; throw new Error(errors.join(" · ")); }
+      const sz = imageSize(cand);
+      let found: Box[] = [];
+      try { found = await locate(cand, sz.mime); } catch (e) { console.warn("[ofis] konum bulunamadı:", e instanceof Error ? e.message : e); }
+      if (!buf || Math.abs(found.length - 4) < Math.abs(boxes.length - 4)) { buf = cand; provider = prov; boxes = found; w = sz.w; h = sz.h; }
+      if (found.length === 4) break;
+      console.warn(`[ofis] ${id.slice(0, 8)}: ${found.length} kişi bulundu, yeniden üretiliyor (${attempt + 1}/3)`);
     }
-    if (!buf) throw new Error(errors.join(" · "));
-    const { w, h, mime } = imageSize(buf);
-    let boxes: Box[] = [];
-    try { boxes = await locate(buf, mime); } catch (e) { console.warn("[ofis] konum bulunamadı:", e instanceof Error ? e.message : e); }
+    if (!buf) throw new Error("görsel üretilemedi");
     // 4 kişi bulunamadıysa eşit aralıklı varsayılan kutular
     if (boxes.length !== 4) boxes = SEATS.map((_, i) => ({ x: 4 + i * 24.5, y: 30, w: 18, h: 50 }));
     const scene: Scene = { createdAt: Date.now(), provider, width: w, height: h, boxes: Object.fromEntries(SEATS.map((r, i) => [r, boxes[i]])) };
