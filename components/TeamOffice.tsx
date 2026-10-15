@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { TEAM_META, TEAM_ROLES, teamCast, type Member, type TeamRole } from "@/lib/team/roles";
 import { IconClose, IconPlus } from "./UniverseIcons";
 import OfficeRoom from "./OfficeRoom";
+import CameraView, { type CamScene } from "./CameraView";
 
 type Status = "idle" | "thinking" | "working" | "reviewing" | "done" | "speaking";
 const STATUS_TR: Record<Status, string> = {
@@ -41,8 +42,22 @@ function parseStatuses(text: string, running: boolean) {
   return { st, tier };
 }
 
-export default function TeamOffice({ convId, compact = false }: { convId: string; compact?: boolean }) {
+export default function TeamOffice({ convId, title = "", compact = false }: { convId: string; title?: string; compact?: boolean }) {
   const [running, setRunning] = useState(false);
+  // gerçekçi kamera karesi (varsa); yoksa 3B çizim oda yedek olarak görünür
+  const [cam, setCam] = useState<{ status: string; scene?: CamScene; error?: string } | null>(null);
+  useEffect(() => {
+    let stop = false, timer = 0;
+    const poll = (n: number) => {
+      fetch(`/api/office?scope=${encodeURIComponent(convId)}`).then((r) => r.json()).then((d) => {
+        if (stop) return;
+        setCam(d);
+        if (d.status === "pending" && n < 20) timer = window.setTimeout(() => poll(n + 1), 12000);
+      }).catch(() => {});
+    };
+    poll(0);
+    return () => { stop = true; clearTimeout(timer); };
+  }, [convId]);
   const [text, setText] = useState("");
   const [speaking, setSpeaking] = useState(false);
   const [open, setOpen] = useState<TeamRole | null>(null);
@@ -63,9 +78,23 @@ export default function TeamOffice({ convId, compact = false }: { convId: string
   const { st, tier } = parseStatuses(text, running);
   if (speaking && !running) st.manager = "speaking";
 
+  if (cam?.status === "ready" && cam.scene) {
+    return (
+      <div className="relative w-full" style={{ height: compact ? 210 : 300 }}>
+        <CameraView convId={convId} title={title} scene={cam.scene} cast={cast} status={st} statusTr={STATUS_TR} tier={tier} onOpen={setOpen} />
+        {open && <AgentPanel role={open} person={cast[open].name} onClose={() => setOpen(null)} />}
+      </div>
+    );
+  }
+
   return (
     <div className="relative w-full overflow-hidden">
       <OfficeRoom />
+      {cam && cam.status !== "ready" && (
+        <div className="absolute left-2 top-2 z-[2] rounded-md px-2 py-1 text-[11px]" style={{ background: "rgba(0,0,0,.5)", color: "#e5e7eb" }} title={cam.error || ""}>
+          {cam.status === "pending" ? "📷 Gerçekçi kamera görüntüsü hazırlanıyor…" : "📷 Gerçekçi görüntü için görsel kredisi gerekli"}
+        </div>
+      )}
       <div
         className={`relative z-[1] flex w-full items-end justify-center gap-2 overflow-x-auto px-3 sm:gap-6 ${compact ? "pb-2 pt-6" : "pb-3 pt-16"}`}
         role="list" aria-label="Proje ekibi"

@@ -28,6 +28,9 @@ function fmtTok(n: number) {
   return String(n);
 }
 const fmtUsd = (n: number) => "$" + (n < 10 ? n.toFixed(3) : n.toFixed(2));
+// TL karşılığı (günlük kur; kur yoksa boş)
+let RATE = 0;
+const fmtTl = (usd: number) => (RATE ? "₺" + (usd * RATE).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "");
 
 // Akış metnindeki ekip satırlarını olaylara çevir
 function parseEvents(text: string): { icon: string; text: string; kind: Ev["kind"] }[] {
@@ -56,6 +59,10 @@ export default function AgentMonitor({ convId }: { convId: string }) {
   const [now, setNow] = useState(Date.now());
   const [log, setLog] = useState<LogEntry[] | null>(null);
   const [usage, setUsage] = useState<ProjUsage | null>(null);
+  const [fx, setFx] = useState<{ usdTry: number; date: string; source: string } | null>(null);
+  useEffect(() => {
+    fetch("/api/fx").then((r) => r.json()).then((d) => { if (d?.usdTry > 0) { RATE = d.usdTry; setFx(d); } }).catch(() => {});
+  }, []);
   const loadUsage = useCallback(() => {
     fetch(`/api/team/usage?scope=${encodeURIComponent(convId)}`).then((r) => r.json())
       .then((d) => { if (d?.total) setUsage(d); }).catch(() => {});
@@ -150,7 +157,10 @@ export default function AgentMonitor({ convId }: { convId: string }) {
         <div className="mt-1 flex items-baseline gap-3">
           <span className="text-[22px] font-semibold tabular-nums">{fmtTok(tokOf(usage?.total))}</span>
           <span className="text-[12px]" style={{ color: "var(--text-muted)" }}>token</span>
-          <span className="ml-auto text-[18px] font-semibold tabular-nums" style={{ color: "#2ff5b5" }}>{fmtUsd(usage?.total.usd ?? 0)}</span>
+          <span className="ml-auto flex flex-col items-end leading-tight">
+            <span className="text-[18px] font-semibold tabular-nums" style={{ color: "#2ff5b5" }}>{fmtUsd(usage?.total.usd ?? 0)}</span>
+            {fx && <span className="text-[13px] font-semibold tabular-nums" style={{ color: "#ffd166" }}>≈ {fmtTl(usage?.total.usd ?? 0)}</span>}
+          </span>
         </div>
         <div className="mt-2 grid grid-cols-4 gap-1.5">
           {(["manager", "research", "coder", "marketing"] as TeamRole[]).map((r) => {
@@ -160,12 +170,18 @@ export default function AgentMonitor({ convId }: { convId: string }) {
                 <div className="truncate text-[11px]" style={{ color: TEAM_META[r].color }}>{cast[r].name}</div>
                 <div className="font-semibold tabular-nums">{fmtTok(tokOf(t))}</div>
                 <div className="text-[11px] tabular-nums" style={{ color: "var(--text-muted)" }}>{fmtUsd(t?.usd ?? 0)}</div>
+                {fx && <div className="text-[11px] tabular-nums" style={{ color: "#ffd166" }}>{fmtTl(t?.usd ?? 0)}</div>}
               </div>
             );
           })}
         </div>
         {usage?.roles.direct && tokOf(usage.roles.direct) > 0 && (
-          <div className="mt-1.5 text-[11px]" style={{ color: "var(--text-muted)" }}>Ekip dışı (doğrudan) sohbet: {fmtTok(tokOf(usage.roles.direct))} · {fmtUsd(usage.roles.direct.usd)}</div>
+          <div className="mt-1.5 text-[11px]" style={{ color: "var(--text-muted)" }}>Ekip dışı (doğrudan) sohbet: {fmtTok(tokOf(usage.roles.direct))} · {fmtUsd(usage.roles.direct.usd)}{fx ? ` (${fmtTl(usage.roles.direct.usd)})` : ""}</div>
+        )}
+        {fx && (
+          <div className="mt-1.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
+            Kur: 1 USD = {fx.usdTry.toLocaleString("tr-TR", { maximumFractionDigits: 4 })} ₺ ({fx.source}{fx.date ? ` · ${fx.date}` : ""})
+          </div>
         )}
       </div>
 
@@ -204,7 +220,7 @@ export default function AgentMonitor({ convId }: { convId: string }) {
         )}
 
         {/* Karne */}
-        <Section title="Karne · son 30 gün" right={entries.length ? `~$${totalCost.toFixed(3)}` : undefined}>
+        <Section title="Karne · son 30 gün" right={entries.length ? `~$${totalCost.toFixed(3)}${fx ? ` · ${fmtTl(totalCost)}` : ""}` : undefined}>
           {log === null ? (
             <div style={{ color: "var(--text-muted)" }}>Yükleniyor…</div>
           ) : entries.length === 0 ? (
@@ -223,7 +239,7 @@ export default function AgentMonitor({ convId }: { convId: string }) {
                         <Stat label="1. sefer" value={c.firstTry === null ? "—" : `%${c.firstTry}`} color={c.firstTry !== null && c.firstTry < 60 ? "#ffb547" : undefined} />
                         <Stat label="Ort. süre" value={fmtSec(c.avg)} />
                         <Stat label="Hata" value={String(c.errs)} color={c.errs ? "#ff6b7a" : undefined} />
-                        <Stat label="Maliyet" value={`$${c.cost.toFixed(3)}`} />
+                        <Stat label={fx ? fmtTl(c.cost) : "Maliyet"} value={`$${c.cost.toFixed(3)}`} />
                       </div>
                       <div className="mt-2 flex gap-1">
                         {Object.entries(c.tiers).map(([k, v]) => (
