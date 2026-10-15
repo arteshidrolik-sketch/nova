@@ -367,7 +367,7 @@ export async function POST(req: Request) {
         `- app/api/chat/route.ts → sohbet orkestrasyonu (ajan seçimi, araçlar, akış döngüsü)\n` +
         `- lib/agents/ → orchestrator.ts (yönlendirme), prompts.ts (sistem promptları), models.ts (ajan→model), meta.ts (ajan tanımları)\n` +
         `- lib/tools/ → actions.ts (aksiyonlar: write/edit/run_command/git), projectFiles.ts (okuma araçları)\n` +
-        `- components/ → AppShell (kabuk), Sidebar (alt menü barı), Workspace (harita+sohbet), Chat (sohbet+ses), AgentMap (uzay/ajan haritası), Dashboard (yan pano), Projects\n` +
+        `- components/ → Universe (ana ekran: proje gezegenleri), ProjectView (proje sayfası + sekmeler), TeamOffice (ekip ofisi), Chat (müdürle sohbet + ses), planet (gezegen çizimi), SpaceControls (müzik/tam ekran)\n` +
         `- lib/projects/store.ts, lib/conversations/store.ts, data/*.json (yerel JSON depo)\n` +
         `- Doğrulama: \`npm run build\` · Yayına alma: commit → otomatik güvenli deploy\n\n` +
         `### Hafızan = commit geçmişin\n` +

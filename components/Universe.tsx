@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import SpaceBackground from "./SpaceBackground";
 import ProjectView from "./ProjectView";
 import { Planet } from "./planet";
-import { IconPlus, IconClose, IconGrid } from "./UniverseIcons";
+import { IconPlus, IconClose } from "./UniverseIcons";
 import SpaceControls from "./SpaceControls";
 
 // Yörünge geometrisi: yatay ekranda geniş-basık elips (perspektif), dikey ekranda
@@ -135,14 +135,6 @@ export default function Universe() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-        <a
-          href="/klasik"
-          className="flex h-11 items-center gap-2 rounded-full px-3 text-[13px] transition-transform duration-200 hover:scale-105"
-          style={{ background: "rgba(255,255,255,.08)", border: "1px solid var(--border-strong)", color: "var(--text)", backdropFilter: "blur(8px)" }}
-          title="Fatura, Kontrol, Denetim, Sürümler gibi araçlar"
-        >
-          <IconGrid width={18} height={18} /> <span className="hidden sm:inline">Araçlar</span>
-        </a>
         <SpaceControls />
         <button
           onClick={() => setCreating(true)}
