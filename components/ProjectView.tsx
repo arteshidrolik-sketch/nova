@@ -109,7 +109,7 @@ export default function ProjectView({ project, onClose }: { project: ProjectMeta
             <div className="shrink-0 border-b" style={{ borderColor: "var(--border-strong)", background: "var(--surface-office)" }}>
               <TeamOffice convId={project.id} compact={compact} />
             </div>
-            <div className="surface-light relative min-h-0 flex-1">
+            <div className="surface-dark relative min-h-0 flex-1">
               <div className="absolute inset-0 flex flex-col"><Chat conversationId={project.id} /></div>
             </div>
           </div>

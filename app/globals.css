@@ -451,3 +451,29 @@ body {
 }
 /* açık sohbet zemininde rozet metinleri okunur olsun (sarı/açık renkler koyulaşır) */
 .surface-light .agent-badge { filter: brightness(0.62) saturate(1.5); }
+
+/* Sohbet: VS Code koyu teması gibi — siyah zemin, beyaz yazı, Segoe UI / Consolas */
+.surface-dark {
+  --bg: #1e1e1e;
+  --bg-panel: #252526;
+  --bg-elevated: #2b2b2b;
+  --border: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.2);
+  --text: #f0f0f0;
+  --text-muted: #9d9d9d;
+  --accent: #4daafc;
+  --accent-dim: rgba(77, 170, 252, 0.14);
+  --surface-card: #252526;
+  --surface-input: #2b2b2b;
+  --surface-chat-header: #181818;
+  --surface-chat-footer: #181818;
+  --chip-bg: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+  background: #1e1e1e;
+  font-family: "Segoe WPC", "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, Ubuntu, "Droid Sans", sans-serif, var(--font-emoji);
+}
+.surface-dark code,
+.surface-dark pre,
+.surface-dark kbd {
+  font-family: Consolas, "Cascadia Mono", "Courier New", ui-monospace, monospace, var(--font-emoji);
+}
