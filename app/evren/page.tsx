@@ -1,10 +1,6 @@
-import Universe from "@/components/Universe";
+import { redirect } from "next/navigation";
 
-// Deneme: yeni ana ekran (proje gezegenleri). Beğenilirse "/" buna taşınır.
+// Eski deneme adresi: evren artık ana ekran ("/"). Eski bağlantılar bozulmasın.
 export default function EvrenPage() {
-  return (
-    <div style={{ height: "100dvh", width: "100vw" }}>
-      <Universe />
-    </div>
-  );
+  redirect("/");
 }

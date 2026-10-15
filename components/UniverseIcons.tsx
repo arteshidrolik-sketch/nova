@@ -66,6 +66,9 @@ export const IconMusicOff = (p: P) => (
 export const IconReport = (p: P) => (
   <Base {...p}><path d="M7 3h7l5 5v13H7z" /><path d="M14 3v5h5M10 13h6M10 17h6" /></Base>
 );
+export const IconGrid = (p: P) => (
+  <Base {...p}><rect x="4" y="4" width="7" height="7" rx="1.5" /><rect x="13" y="4" width="7" height="7" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><rect x="13" y="13" width="7" height="7" rx="1.5" /></Base>
+);
 export const IconClose = (p: P) => (
   <Base {...p}><path d="M6 6l12 12M18 6 6 18" /></Base>
 );
