@@ -178,6 +178,7 @@ function ProjectReports({ id }: { id: string }) {
       <p className="mb-6 text-[14px]" style={{ color: "var(--text-muted)" }}>
         Müdür her gün 18:00'de, o gün üzerinde çalışılan projeler için ilerleme raporu yazar. Raporlar sohbette de görünür.
       </p>
+      <ModelDecisions id={id} />
       {items === null ? (
         <div className="text-[14px]" style={{ color: "var(--text-muted)" }}>Yükleniyor…</div>
       ) : items.length === 0 ? (
@@ -193,6 +194,52 @@ function ProjectReports({ id }: { id: string }) {
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+// Müdürün model seçimleri (son 30 gün): hangi işe hangi seviye, revizyon, süre, maliyet
+type LogEntry = { ts: number; role: string; person: string; chosen: string; tier: string; revision: number; task: string; sec: number; costUsd: number };
+const TIER_LABEL: Record<string, string> = { hafif: "Haiku", standart: "Sonnet", agir: "Opus" };
+const TIER_COLOR: Record<string, string> = { hafif: "#2ff5b5", standart: "#7aa2ff", agir: "#ff7ad9" };
+function ModelDecisions({ id }: { id: string }) {
+  const [d, setD] = useState<{ entries: LogEntry[]; flags: string[]; costUsd: number } | null>(null);
+  useEffect(() => {
+    fetch(`/api/team/log?scope=${encodeURIComponent(id)}&days=30`).then((r) => r.json()).then(setD).catch(() => setD({ entries: [], flags: [], costUsd: 0 }));
+  }, [id]);
+  if (!d || d.entries.length === 0) return null;
+  return (
+    <div className="mb-6 rounded-xl p-4" style={{ background: "var(--bg-panel)", border: "1px solid var(--border)" }}>
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <div className="text-[15px] font-bold">Model kararları <span className="text-[12px] font-normal" style={{ color: "var(--text-muted)" }}>son 30 gün</span></div>
+        <div className="text-[13px]" style={{ color: "var(--text-muted)" }}>{d.entries.length} çalışma · ~${d.costUsd.toFixed(2)}</div>
+      </div>
+      {d.flags.length > 0 && (
+        <ul className="mb-3 flex flex-col gap-1 text-[13px]">{d.flags.map((f, i) => <li key={i}>{f}</li>)}</ul>
+      )}
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-[13px]">
+          <thead style={{ color: "var(--text-muted)" }}>
+            <tr><th className="py-1 pr-3">Tarih</th><th className="pr-3">Uzman</th><th className="pr-3">Seviye</th><th className="pr-3">İş</th><th className="pr-3 text-right">Süre</th><th className="text-right">$</th></tr>
+          </thead>
+          <tbody>
+            {d.entries.slice(0, 40).map((e, i) => (
+              <tr key={i} style={{ borderTop: "1px solid var(--border)" }}>
+                <td className="whitespace-nowrap py-1 pr-3">{new Date(e.ts).toLocaleString("tr-TR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
+                <td className="whitespace-nowrap pr-3">{e.person}</td>
+                <td className="whitespace-nowrap pr-3">
+                  <span style={{ color: TIER_COLOR[e.tier] }}>{TIER_LABEL[e.tier] ?? e.tier}</span>
+                  {e.tier !== e.chosen && <span style={{ color: "var(--text-muted)" }}> (↑{TIER_LABEL[e.chosen]})</span>}
+                  {e.revision > 0 && <span style={{ color: "var(--text-muted)" }}> · rev {e.revision}</span>}
+                </td>
+                <td className="max-w-[280px] truncate pr-3" title={e.task}>{e.task}</td>
+                <td className="whitespace-nowrap pr-3 text-right">{e.sec} sn</td>
+                <td className="whitespace-nowrap text-right">{e.costUsd.toFixed(3)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

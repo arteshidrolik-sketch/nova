@@ -9,6 +9,7 @@ import { getSkillsForTeamRole } from "@/lib/skills/store";
 import { recordUsage } from "@/lib/budget/store";
 import { ensureTeamSkills } from "./skills";
 import { TEAM_META } from "./roles";
+import { readTeamLog, summarizeTeamLog } from "./log";
 
 const FILE = path.join(process.cwd(), "data", "team-reports.json");
 type State = { lastDay?: string; convs: Record<string, { count: number; ts: number }> };
@@ -76,10 +77,11 @@ export async function runDailyReports(day = istanbulNow().day, markDay = true): 
       if (res.usage) recordUsage(model, res.usage.input_tokens ?? 0, res.usage.output_tokens ?? 0).catch(() => {});
       const text = res.content.filter((b) => b.type === "text").map((b) => (b as Anthropic.TextBlock).text).join("\n").trim();
       if (!text) { skipped++; continue; }
+      const audit = summarizeTeamLog(await readTeamLog({ projectId: c.id, day }));
       const dateTr = new Date(`${day}T12:00:00Z`).toLocaleDateString("tr-TR", { day: "numeric", month: "long", weekday: "long" });
       const report = {
         role: "assistant" as const,
-        content: `📋 **Gün sonu ilerleme raporu — ${dateTr}**\n\n${text}`,
+        content: `📋 **Gün sonu ilerleme raporu — ${dateTr}**\n\n${text}${audit ? `\n\n${audit}` : ""}`,
         agentName: TEAM_META.manager.name, agentEmoji: "👔", agentColor: TEAM_META.manager.color, model,
       };
       // yarış: rapor yazılırken yeni mesaj gelmiş olabilir → güncel listeye ekle

@@ -34,7 +34,7 @@ const ROLE_PROMPT: Record<Exclude<TeamRole, "manager">, string> = {
     "Sen bir SATIŞ VE PAZARLAMA UZMANISIN. Hedef kitleye uygun, Türk pazarına ve diline uygun, net faydalı, yanıltıcı olmayan metin/teklif üret; gerekiyorsa generate_image ile görsel üret.",
 };
 
-export type SpecialistRun = { text: string; artifacts: string[]; actions: number };
+export type SpecialistRun = { text: string; artifacts: string[]; actions: number; input: number; output: number };
 
 const MEDIA_TOOLS = new Set([
   "generate_image", "edit_image", "restyle_image", "generate_document", "write_file", "edit_excel", "publish_project_file",
@@ -101,7 +101,7 @@ ${opts.history}
 
   const convo: Anthropic.MessageParam[] = [{ role: "user", content: user }];
   const artifacts: string[] = [];
-  let actions = 0, finalText = "", searches = 0;
+  let actions = 0, finalText = "", searches = 0, tokIn = 0, tokOut = 0;
 
   for (let iter = 0; iter < 10; iter++) {
     if (canceled()) break;
@@ -122,7 +122,10 @@ ${opts.history}
     }
     if (canceled()) break;
     const final = await stream.finalMessage();
-    if (final.usage) recordUsage(model, final.usage.input_tokens ?? 0, final.usage.output_tokens ?? 0).catch(() => {});
+    if (final.usage) {
+      recordUsage(model, final.usage.input_tokens ?? 0, final.usage.output_tokens ?? 0).catch(() => {});
+      tokIn += final.usage.input_tokens ?? 0; tokOut += final.usage.output_tokens ?? 0;
+    }
     const text = final.content.filter((b) => b.type === "text").map((b) => (b as Anthropic.TextBlock).text).join("\n").trim();
     if (text) finalText = text;
     const uses = final.content.filter((b) => b.type === "tool_use") as Anthropic.ToolUseBlock[];
@@ -184,5 +187,5 @@ ${opts.history}
     }
     convo.push({ role: "user", content: results });
   }
-  return { text: finalText || "(uzman teslim metni üretemedi)", artifacts, actions };
+  return { text: finalText || "(uzman teslim metni üretemedi)", artifacts, actions, input: tokIn, output: tokOut };
 }

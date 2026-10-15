@@ -5,6 +5,9 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { getSkillsForTeamRole } from "@/lib/skills/store";
 import { ensureTeamSkills } from "./skills";
 import { runSpecialist } from "./runner";
+import { appendTeamLog } from "./log";
+import { istanbulNow } from "./report";
+import { costOf } from "@/lib/budget/store";
 import { SPECIALISTS, TEAM_META, TIERS, isTier, teamCast, type TeamRole, type Tier } from "./roles";
 
 export const ASSIGN_TOOL_NAME = "ajana_gorev_ver";
@@ -98,7 +101,8 @@ export async function handleAssign(
   const person = teamCast(ctx.projectId || "")[r].name;
   // Seviye: müdürün seçimi; revizyonda iş takılıyorsa (2. revizyondan itibaren) bir kademe yükselt
   const order: Tier[] = ["hafif", "standart", "agir"];
-  let tier: Tier = isTier(input.seviye) ? input.seviye : "standart";
+  const chosen: Tier = isTier(input.seviye) ? input.seviye : "standart";
+  let tier: Tier = chosen;
   if (isRevision && n - 1 >= 2 && tier !== "agir") tier = order[order.indexOf(tier) + 1];
   const T = TIERS[tier];
   const task = String(input.gorev || "").trim();
@@ -119,7 +123,14 @@ export async function handleAssign(
     project: ctx.project, scope: ctx.scope, emit: ctx.emit, canceled: ctx.canceled,
   });
   st.last[r] = res.text;
-  ctx.emit(`\n👥 ${meta.name} teslim etti (${person}, ${T.label}, ${Math.round((Date.now() - t0) / 1000)} sn) — 👔 Müdür denetliyor…\n`);
+  const sec = Math.round((Date.now() - t0) / 1000);
+  appendTeamLog({
+    ts: Date.now(), day: istanbulNow().day, projectId: ctx.projectId || "", role: r, person,
+    chosen, tier, model: T.model, revision: isRevision ? n - 1 : 0, task: head, sec,
+    input: res.input, output: res.output, costUsd: Math.round(costOf(T.model, res.input, res.output) * 10000) / 10000,
+    actions: res.actions, artifacts: res.artifacts.length,
+  }).catch(() => {});
+  ctx.emit(`\n👥 ${meta.name} teslim etti (${person}, ${T.label}, ${sec} sn) — 👔 Müdür denetliyor…\n`);
   return {
     content:
       `[${person} — ${meta.name} teslimi, seviye ${tier}${isRevision ? ` — revizyon ${n - 1}` : ""}]\n${res.text.slice(0, 14000)}` +
