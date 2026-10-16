@@ -152,13 +152,13 @@ export async function summaryText(projectId: string): Promise<string> {
   const top = [...vids].sort((a, b) => b.views - a.views).slice(0, 5);
   const recent = [...vids].sort((a, b) => b.publishedAt.localeCompare(a.publishedAt)).slice(0, 7);
   const movers = vids.map((v) => ({ v, g: v.views - (prevViews.get(v.id) ?? 0) })).filter((x) => x.g > 0).sort((a, b) => b.g - a.g).slice(0, 5);
-  const ds = (iso: string) => new Date(iso).toLocaleDateString("tr-TR", { day: "numeric", month: "short" });
+  const ds = (iso: string) => new Date(iso).toLocaleDateString("tr-TR", { day: "numeric", month: "short", timeZone: "Europe/Istanbul" });
   const lines = [
     `Kanal: ${link.title}${link.handle ? ` (${link.handle})` : ""} · ölçüm: ${when} (Nova her 6 saatte bir otomatik ölçer; rakamlar herkese açık YouTube verisi)`,
     `- Abone: ${n(last.subs)}${day ? ` · 24 saatte ${d(last.subs - day.subs)}` : ""}${week ? ` · 7 günde ${d(last.subs - week.subs)}` : ""}`,
     `- Toplam izlenme: ${n(last.views)}${day ? ` · 24 saatte ${d(last.views - day.views)}` : ""}${week ? ` · 7 günde ${d(last.views - week.views)}` : ""}`,
     `- Video: ${n(last.videoCount)} · video başına ortalama ${n(avg)} izlenme`,
-    `- Ölçüm geçmişi: ${snaps.length} kayıt, ilki ${new Date(first.ts).toLocaleDateString("tr-TR")}${!week ? " (7 günlük karşılaştırma için henüz yeterli geçmiş yok)" : ""}`,
+    `- Ölçüm geçmişi: ${snaps.length} kayıt, ilki ${new Date(first.ts).toLocaleDateString("tr-TR", { timeZone: "Europe/Istanbul" })}${!week ? " (7 günlük karşılaştırma için henüz yeterli geçmiş yok)" : ""}`,
     "En çok izlenenler:",
     ...top.map((v) => `  • ${v.title} — ${n(v.views)} izlenme, ${n(v.likes)} beğeni (${ds(v.publishedAt)})`),
     "Son yayınlananlar:",
