@@ -24,10 +24,13 @@ export async function register() {
   const { cronMatches } = await import("@/lib/loops/cron");
 
   const { maybeRunDailyReports } = await import("@/lib/team/report");
+  const { maybeSnapshotAll } = await import("@/lib/youtube/stats");
 
   setInterval(async () => {
     // Gün sonu (18:00 İstanbul) proje ilerleme raporları
     maybeRunDailyReports().catch((e) => console.warn("[rapor] zamanlayıcı:", e));
+    // bağlı YouTube kanallarının 6 saatlik ölçümü
+    maybeSnapshotAll().catch((e) => console.warn("[youtube] zamanlayıcı:", e));
     const now = new Date();
     for (const loop of LOOPS) {
       try {

@@ -192,6 +192,7 @@ function ProjectReports({ id }: { id: string }) {
       <p className="mb-6 text-[14px]" style={{ color: "var(--text-muted)" }}>
         Müdür her gün 18:00'de, o gün üzerinde çalışılan projeler için ilerleme raporu yazar. Raporlar sohbette de görünür.
       </p>
+      <YouTubeCard id={id} />
       <ModelDecisions id={id} />
       {items === null ? (
         <div className="text-[14px]" style={{ color: "var(--text-muted)" }}>Yükleniyor…</div>
@@ -350,5 +351,99 @@ function BriefEditor({ id }: { id: string }) {
         style={{ background: "var(--bg-panel)", border: "1px solid var(--border)", color: "var(--text)", resize: "vertical" }}
       />
     </section>
+  );
+}
+
+// YouTube kanal kartı (Raporlar): bağlı kanalın rakamları, 24 saat / 7 gün değişimi,
+// izlenme grafiği ve öne çıkan videolar. Bağlı değilse bağlama kutusu.
+type YtVid = { id: string; title: string; publishedAt: string; views: number; likes: number };
+type YtData = {
+  link: { channelId: string; title: string; handle?: string } | null; hasKey?: boolean;
+  latest?: { ts: number; subs: number; views: number; videoCount: number; videos: YtVid[] } | null;
+  series?: { ts: number; subs: number; views: number }[];
+};
+function YouTubeCard({ id }: { id: string }) {
+  const [d, setD] = useState<YtData | null>(null);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const load = () => fetch(`/api/youtube?scope=${encodeURIComponent(id)}`).then((r) => r.json()).then(setD).catch(() => {});
+  useEffect(() => { load(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const act = async (method: "POST" | "PUT") => {
+    setBusy(true); setErr("");
+    const r = await fetch(`/api/youtube?scope=${encodeURIComponent(id)}`, { method, headers: { "Content-Type": "application/json" }, body: method === "POST" ? JSON.stringify({ channel: input }) : undefined }).then((x) => x.json()).catch(() => ({ error: "bağlantı hatası" }));
+    if (r.error) setErr(r.error); else await load();
+    setBusy(false);
+  };
+  if (!d) return null;
+  const n = (x: number) => x.toLocaleString("tr-TR");
+  const box = { background: "var(--bg-panel)", border: "1px solid var(--border)" };
+  if (!d.link) {
+    return (
+      <div className="mb-6 rounded-xl p-4" style={box}>
+        <div className="mb-1 text-[15px] font-bold">YouTube kanalı</div>
+        <p className="mb-3 text-[13px]" style={{ color: "var(--text-muted)" }}>
+          Kanalı bağla; Nova 6 saatte bir rakamları ölçer, ekip gelişmeyi her görevde görür.
+          {!d.hasKey && <span style={{ color: "#ffb547" }}> Sunucuda YouTube anahtarı henüz yok.</span>}
+        </p>
+        <div className="flex gap-2">
+          <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="@kanaladi, kanal bağlantısı ya da bir video bağlantısı"
+            className="min-w-0 flex-1 rounded-lg px-3 py-2 text-[13px] outline-none" style={{ background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)" }} />
+          <button onClick={() => act("POST")} disabled={busy || !input.trim()} className="rounded-lg px-3 py-2 text-[13px] font-medium disabled:opacity-40" style={{ background: "var(--grad)", color: "#0b1030" }}>
+            {busy ? "Bağlanıyor…" : "Bağla"}
+          </button>
+        </div>
+        {err && <div className="mt-2 text-[12px]" style={{ color: "#ff6b7a" }}>{err}</div>}
+      </div>
+    );
+  }
+  const L = d.latest, S = d.series ?? [];
+  const ago = (ms: number) => { const t = Date.now() - ms; for (let i = S.length - 1; i >= 0; i--) if (S[i].ts <= t) return S[i]; return null; };
+  const day = ago(20 * 3600e3), week = ago(6.5 * 86400e3);
+  const delta = (a: number, b?: number) => (b === undefined ? null : a - b);
+  const Chip = ({ v }: { v: number | null }) => v === null ? null : <span className="text-[11px]" style={{ color: v > 0 ? "#2ff5b5" : v < 0 ? "#ff6b7a" : "var(--text-muted)" }}>{v > 0 ? "+" : ""}{n(v)}</span>;
+  // izlenme grafiği (basit çizgi)
+  const pts = S.slice(-60);
+  const minV = Math.min(...pts.map((p) => p.views)), maxV = Math.max(...pts.map((p) => p.views));
+  const path = pts.map((p, i) => `${i ? "L" : "M"}${(i / Math.max(1, pts.length - 1)) * 300},${58 - ((p.views - minV) / Math.max(1, maxV - minV)) * 52}`).join(" ");
+  const top = [...(L?.videos ?? [])].sort((a, b) => b.views - a.views).slice(0, 5);
+  return (
+    <div className="mb-6 rounded-xl p-4" style={box}>
+      <div className="mb-3 flex items-baseline justify-between gap-2">
+        <div className="text-[15px] font-bold">YouTube · {d.link.title} <span className="text-[12px] font-normal" style={{ color: "var(--text-muted)" }}>{d.link.handle}</span></div>
+        <button onClick={() => act("PUT")} disabled={busy} className="text-[12px] underline disabled:opacity-40" style={{ color: "var(--text-muted)" }}>{busy ? "ölçülüyor…" : "şimdi ölç"}</button>
+      </div>
+      {L && (
+        <>
+          <div className="grid grid-cols-3 gap-3 text-center">
+            {[["Abone", L.subs, day?.subs, week?.subs], ["İzlenme", L.views, day?.views, week?.views], ["Video", L.videoCount, undefined, undefined]].map(([label, v, dd, ww]) => (
+              <div key={label as string}>
+                <div className="text-[22px] font-semibold tabular-nums">{n(v as number)}</div>
+                <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>{label as string}</div>
+                <div className="flex justify-center gap-2">{dd !== undefined && <span>24s <Chip v={delta(v as number, dd as number)} /></span>}{ww !== undefined && <span>7g <Chip v={delta(v as number, ww as number)} /></span>}</div>
+              </div>
+            ))}
+          </div>
+          {pts.length > 1 && (
+            <svg viewBox="0 0 300 60" className="mt-3 h-[60px] w-full" preserveAspectRatio="none" aria-label="İzlenme gelişimi">
+              <path d={path} fill="none" stroke="#2ff5b5" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+            </svg>
+          )}
+          <div className="mt-3 text-[12px] font-semibold uppercase" style={{ color: "var(--text-muted)", letterSpacing: ".06em" }}>En çok izlenenler</div>
+          <ul className="mt-1 flex flex-col gap-1 text-[13px]">
+            {top.map((v) => (
+              <li key={v.id} className="flex justify-between gap-3">
+                <a href={`https://youtube.com/shorts/${v.id}`} target="_blank" rel="noreferrer" className="truncate hover:underline">{v.title}</a>
+                <span className="shrink-0 tabular-nums" style={{ color: "var(--text-muted)" }}>{n(v.views)} izl · {n(v.likes)} ♥</span>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
+            Son ölçüm {new Date(L.ts).toLocaleString("tr-TR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })} · Nova 6 saatte bir ölçer · {S.length} kayıt
+          </div>
+        </>
+      )}
+      {err && <div className="mt-2 text-[12px]" style={{ color: "#ff6b7a" }}>{err}</div>}
+    </div>
   );
 }
