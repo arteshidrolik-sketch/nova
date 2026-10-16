@@ -42,18 +42,37 @@ function parseStatuses(text: string, running: boolean) {
   return { st, tier };
 }
 
+// Proje kamera bilgileri tarayıcıda saklanır → sekme geçişi anında, ara görüntü yok
+type CamData = { status: string; scene?: CamScene; error?: string; clipsBusy?: boolean; fallback?: { scope: string; scene: CamScene } | null };
+const camCache = new Map<string, CamData>();
+const IDLE: Record<TeamRole, string> = { manager: "idle", research: "idle", coder: "idle", marketing: "idle" };
+export function prefetchOffices(ids: string[]) {
+  for (const id of ids) {
+    if (camCache.get(id)?.status === "ready") continue;
+    fetch(`/api/office?scope=${encodeURIComponent(id)}`).then((r) => r.json()).then((d: CamData) => {
+      camCache.set(id, d);
+      const sc = d.scene ?? d.fallback?.scene;
+      if (sc) { const im = new Image(); im.src = `/api/office?scope=${encodeURIComponent(d.scene ? id : d.fallback!.scope)}&img=1&v=${sc.createdAt}`; }
+    }).catch(() => {});
+  }
+}
+
 export default function TeamOffice({ convId, title = "", compact = false }: { convId: string; title?: string; compact?: boolean }) {
   const [running, setRunning] = useState(false);
-  // gerçekçi kamera karesi (varsa); yoksa 3B çizim oda yedek olarak görünür
-  const [cam, setCam] = useState<{ status: string; scene?: CamScene; error?: string } | null>(null);
+  // gerçekçi kamera karesi; hazır değilse başka projenin sahnesi (etiketsiz), o da yoksa çizim oda
+  const [cam, setCam] = useState<CamData | null>(() => camCache.get(convId) ?? null);
   useEffect(() => {
     let stop = false, timer = 0;
+    setCam(camCache.get(convId) ?? null);
     const poll = (n: number) => {
-      fetch(`/api/office?scope=${encodeURIComponent(convId)}`).then((r) => r.json()).then((d) => {
+      fetch(`/api/office?scope=${encodeURIComponent(convId)}`).then((r) => r.json()).then((d: CamData) => {
         if (stop) return;
+        camCache.set(convId, d);
         setCam(d);
-        if ((d.status === "pending" || d.clipsBusy) && n < 40) timer = window.setTimeout(() => poll(n + 1), 12000); // kare/klipler hazırlanırken tazele
-      }).catch(() => {});
+        if ((d.status !== "ready" || d.clipsBusy) && n < 60) timer = window.setTimeout(() => poll(n + 1), 10000); // kare/videolar hazırlanırken tazele
+      }).catch(() => {
+        if (!stop && n < 30) timer = window.setTimeout(() => poll(n + 1), 3000); // ağ hatası: kısa aralıkla yeniden dene
+      });
     };
     poll(0);
     return () => { stop = true; clearTimeout(timer); };
@@ -78,11 +97,31 @@ export default function TeamOffice({ convId, title = "", compact = false }: { co
   const { st, tier } = parseStatuses(text, running);
   if (speaking && !running) st.manager = "speaking";
 
+  const camBox = { aspectRatio: "21 / 9", maxHeight: compact ? 230 : 380, minHeight: compact ? 170 : 240 } as const;
   if (cam?.status === "ready" && cam.scene) {
     return (
-      <div className="relative w-full" style={{ aspectRatio: "21 / 9", maxHeight: compact ? 230 : 380, minHeight: compact ? 170 : 240 }}>
+      <div className="relative w-full" style={camBox}>
         <CameraView convId={convId} title={title} scene={cam.scene} cast={cast} status={st} statusTr={STATUS_TR} tier={tier} onOpen={setOpen} />
         {open && <AgentPanel role={open} person={cast[open].name} onClose={() => setOpen(null)} />}
+      </div>
+    );
+  }
+  // kendi ofisi hazırlanıyor: başka projenin gerçekçi ofisi, etiketsiz
+  if (cam?.fallback) {
+    return (
+      <div className="relative w-full" style={camBox}>
+        <CameraView convId={cam.fallback.scope} title={title} scene={cam.fallback.scene} cast={cast} status={IDLE} statusTr={STATUS_TR} tier={{}} onOpen={setOpen} labels={false} />
+        <div className="absolute bottom-3 left-1/2 z-[4] -translate-x-1/2 rounded-full px-3 py-1.5 text-[12px]" style={{ background: "rgba(0,0,0,.6)", color: "#f1f5f9" }} title={cam.error || ""}>
+          {cam.status === "pending" ? "📷 Ekibinizin ofisi hazırlanıyor… (1–3 dk)" : "📷 Ofis görüntüsü için görsel kredisi gerekli"}
+        </div>
+      </div>
+    );
+  }
+  // ilk yükleme: çizim oda yerine koyu kamera ekranı
+  if (!cam) {
+    return (
+      <div className="relative flex w-full items-center justify-center bg-black" style={camBox}>
+        <span className="text-[12px]" style={{ color: "#9ca3af", fontFamily: "Consolas, monospace" }}>● KAM-01 · bağlanıyor…</span>
       </div>
     );
   }

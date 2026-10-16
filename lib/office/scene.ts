@@ -27,6 +27,18 @@ export async function getScene(id: string): Promise<Scene | null> {
   try { return JSON.parse(await fs.readFile(metaPath(id), "utf8")) as Scene; } catch { return null; }
 }
 
+// Hazır olmayan proje için geçici gösterim: videosu olan başka bir projenin sahnesi
+export async function fallbackScene(exceptId: string): Promise<{ scope: string; scene: Scene } | null> {
+  try {
+    const files = (await fs.readdir(DIR)).filter((f) => f.endsWith(".json") && !f.startsWith(safe(exceptId)));
+    for (const f of files) {
+      const s = JSON.parse(await fs.readFile(path.join(DIR, f), "utf8")) as Scene & { video?: unknown };
+      if (s.video) return { scope: f.replace(/\.json$/, ""), scene: s };
+    }
+  } catch { /* klasör yok */ }
+  return null;
+}
+
 export function sceneStatus(id: string): { pending: boolean; fail: Fail | null } {
   return { pending: pending.has(id), fail: fails.get(id) ?? null };
 }

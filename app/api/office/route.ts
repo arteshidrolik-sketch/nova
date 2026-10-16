@@ -6,7 +6,7 @@
 // POST ?scope=<proje>          → yeniden üret
 // POST ?scope=<proje>&clips=1  → canlı sahne videolarını üret (görsel 2× büyütülür); clips=idle,coder → yalnız onlar
 import { promises as fs } from "fs";
-import { generateScene, getScene, imagePath, resetScene, sceneStatus } from "@/lib/office/scene";
+import { fallbackScene, generateScene, getScene, imagePath, resetScene, sceneStatus } from "@/lib/office/scene";
 import { generateVideos, STATES, videoPath, videosBusy, type VidState } from "@/lib/office/clips";
 
 export const runtime = "nodejs";
@@ -39,11 +39,12 @@ export async function GET(req: Request) {
   const scene = await getScene(id);
   if (scene) return Response.json({ status: "ready", scene, clipsBusy: videosBusy(id) });
   const st = sceneStatus(id);
+  const fallback = await fallbackScene(id); // kendi ofisi hazırlanırken gösterilecek gerçekçi sahne
   if (!st.pending && !(st.fail && Date.now() - st.fail.at < 20 * 60e3)) {
     generateScene(id).catch(() => {});
-    return Response.json({ status: "pending" });
+    return Response.json({ status: "pending", fallback });
   }
-  return st.pending ? Response.json({ status: "pending" }) : Response.json({ status: "none", error: st.fail?.error ?? "" });
+  return st.pending ? Response.json({ status: "pending", fallback }) : Response.json({ status: "none", error: st.fail?.error ?? "", fallback });
 }
 
 export async function POST(req: Request) {

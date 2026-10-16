@@ -39,6 +39,7 @@ function ago(ts: number): string {
 export default function Universe() {
   const [projects, setProjects] = useState<ProjectMeta[]>([]);
   const [open, setOpen] = useState<ProjectMeta | null>(null);
+  const [switched, setSwitched] = useState(false); // sekmeyle proje değişti mi (animasyonsuz açılış)
   const [hover, setHover] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -225,7 +226,7 @@ export default function Universe() {
 
       {/* proje sayfası */}
       {open && (
-        <ProjectView key={open.id} project={open} projects={projects} onSwitch={(p) => setOpen(p)} onClose={() => { setOpen(null); load(); }} />
+        <ProjectView key={open.id} instant={switched} project={open} projects={projects} onSwitch={(p) => { setSwitched(true); setOpen(p); }} onClose={() => { setSwitched(false); setOpen(null); load(); }} />
       )}
     </div>
   );

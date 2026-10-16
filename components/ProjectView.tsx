@@ -10,7 +10,7 @@ import Files from "./Files";
 import Skills from "./Skills";
 import Tasks from "./Tasks";
 import Invoices from "./Invoices";
-import TeamOffice from "./TeamOffice";
+import TeamOffice, { prefetchOffices } from "./TeamOffice";
 import AgentMonitor from "./AgentMonitor";
 import SpaceControls from "./SpaceControls";
 import NovaCost from "./NovaCost";
@@ -29,9 +29,12 @@ const TABS: { key: TabKey; label: string; color: string; Icon: ComponentType<SVG
   { key: "gorevler", label: "Onaylar", color: "#ff9f6b", Icon: IconTasks },
 ];
 
-export default function ProjectView({ project, projects = [], onSwitch, onClose }: {
+export default function ProjectView({ project, projects = [], onSwitch, onClose, instant = false }: {
   project: ProjectMeta; projects?: ProjectMeta[]; onSwitch?: (p: ProjectMeta) => void; onClose: () => void;
+  instant?: boolean; // sekmeyle geçişte giriş animasyonu yok (görüntü bir an kaybolmasın)
 }) {
+  // tüm projelerin kamera bilgilerini önceden yükle → sekme geçişi anında
+  useEffect(() => { prefetchOffices(projects.map((p) => p.id)); }, [projects]);
   const [tab, setTab] = useState<TabKey>("sohbet");
   const [compact, setCompact] = useState(false);
   useEffect(() => {
@@ -39,7 +42,7 @@ export default function ProjectView({ project, projects = [], onSwitch, onClose 
     f(); window.addEventListener("resize", f);
     return () => window.removeEventListener("resize", f);
   }, []);
-  const [shown, setShown] = useState(false);
+  const [shown, setShown] = useState(instant);
   useEffect(() => { const t = requestAnimationFrame(() => setShown(true)); return () => cancelAnimationFrame(t); }, []);
   useEffect(() => {
     const k = (e: KeyboardEvent) => { if (e.key === "Escape" && tab !== "sohbet") onClose(); };

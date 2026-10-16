@@ -20,13 +20,14 @@ const ROLES: TeamRole[] = ["research", "manager", "coder", "marketing"];
 const ACTIVE = new Set(["working", "thinking", "reviewing", "speaking"]);
 
 export default function CameraView({
-  convId, title, scene, cast, status, statusTr, tier, onOpen,
+  convId, title, scene, cast, status, statusTr, tier, onOpen, labels = true,
 }: {
   convId: string; title: string; scene: CamScene;
   cast: Record<TeamRole, Member>;
   status: Record<TeamRole, string>; statusTr: Record<string, string>;
   tier: Partial<Record<TeamRole, string>>;
   onOpen: (r: TeamRole) => void;
+  labels?: boolean; // false: isim/durum kutuları gizli (başka projenin sahnesi geçici gösterilirken)
 }) {
   const wrap = useRef<HTMLDivElement>(null);
   const vids = useRef<Partial<Record<VidState, HTMLVideoElement | null>>>({});
@@ -95,7 +96,7 @@ export default function CameraView({
             style={{ opacity: k === want ? 1 : 0 }}
           />
         ))}
-        {ROLES.map((r) => {
+        {labels && ROLES.map((r) => {
           const b0 = scene.boxes[r];
           if (!b0) return null;
           const b = tx(b0);
