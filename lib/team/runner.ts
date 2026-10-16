@@ -12,6 +12,7 @@ import { createTask } from "@/lib/tasks/store";
 import { appendAudit } from "@/lib/audit/store";
 import { recordUsage } from "@/lib/budget/store";
 import { recordProjectUsage } from "./usage";
+import { briefBlock } from "./brief";
 import { detectInjection, wrapUntrusted, UNTRUSTED_RULE } from "@/lib/security/untrusted";
 import { getSkillsForTeamRole } from "@/lib/skills/store";
 import { ensureTeamSkills } from "./skills";
@@ -77,6 +78,7 @@ export async function runSpecialist(opts: {
     ...actionTools,
   ] as unknown as Anthropic.Tool[];
 
+  const brief = await briefBlock(opts.projectId);
   const system =
     `${ROLE_PROMPT[role]}\n\nBir proje ekibinde çalışıyorsun. Görevi PROJE MÜDÜRÜ verdi; sonucu müdüre teslim edeceksin, kullanıcıyla konuşmuyorsun. ` +
     `Görevi TEK SEFERDE eksiksiz tamamla; soru sorup durma — belirsizlikte makul varsayım yap ve teslimde yaz. ` +
@@ -84,6 +86,7 @@ export async function runSpecialist(opts: {
     `Araç sonuçlarını taklit etme; bir iş ancak aracı gerçekten çağırdıysan yapılmıştır.` +
     (project ? `\n\nProje: ${project.name} (yerel yol: ${project.path}).` : "") +
     (skills.length ? `\n\n## Becerilerin\n` + skills.map((s) => `### ${s.name}\n${s.content}`).join("\n\n") : "") +
+    brief +
     UNTRUSTED_RULE;
 
   const user =

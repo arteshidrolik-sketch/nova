@@ -149,6 +149,7 @@ function ProjectMemory({ id }: { id: string }) {
   }, [id]);
   return (
     <div className="mx-auto max-w-3xl p-4 sm:p-8">
+      <BriefEditor id={id} />
       <div className="mb-1 text-[20px] font-bold">Proje hafızası</div>
       <p className="mb-6 text-[14px]" style={{ color: "var(--text-muted)" }}>
         Nova bu projede konuştukça önemli bilgileri buraya not eder. Bu notlar yalnız bu projede kullanılır.
@@ -302,5 +303,52 @@ function ProjectTabs({ project, projects, onSwitch }: { project: ProjectMeta; pr
         );
       })}
     </nav>
+  );
+}
+
+// Proje kimliği: müdür ve uzmanlar her görevde bunu okur (amaç, kitle, kurallar, durum, hedef)
+function BriefEditor({ id }: { id: string }) {
+  const [text, setText] = useState<string | null>(null);
+  const [saved, setSaved] = useState("");
+  const [state, setState] = useState<"" | "saving" | "ok" | "err">("");
+  useEffect(() => {
+    fetch(`/api/team/brief?scope=${encodeURIComponent(id)}`).then((r) => r.json())
+      .then((d) => { setText(d.brief ?? ""); setSaved(d.brief ?? ""); }).catch(() => setText(""));
+  }, [id]);
+  const save = async () => {
+    if (text === null) return;
+    setState("saving");
+    try {
+      const r = await fetch(`/api/team/brief?scope=${encodeURIComponent(id)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ brief: text }) });
+      if (!r.ok) throw new Error();
+      setSaved(text); setState("ok");
+    } catch { setState("err"); }
+  };
+  const dirty = text !== null && text !== saved;
+  return (
+    <section className="mb-10">
+      <div className="mb-1 flex items-center justify-between gap-3">
+        <div className="text-[20px] font-bold">Proje kimliği</div>
+        <button
+          onClick={save} disabled={!dirty || state === "saving"}
+          className="rounded-lg px-3 py-1.5 text-[13px] font-medium disabled:opacity-40"
+          style={{ background: "var(--grad)", color: "#0b1030" }}
+        >
+          {state === "saving" ? "Kaydediliyor…" : "Kaydet"}
+        </button>
+      </div>
+      <p className="mb-3 text-[14px]" style={{ color: "var(--text-muted)" }}>
+        Müdür ve uzmanlar her görevde bunu okur: projenin amacı, kitlesi, kuralları, güncel durumu ve hedefleri.
+        {state === "ok" && !dirty && <span style={{ color: "#2ff5b5" }}> · Kaydedildi</span>}
+        {state === "err" && <span style={{ color: "#ff6b7a" }}> · Kaydedilemedi</span>}
+      </p>
+      <textarea
+        value={text ?? ""} onChange={(e) => { setText(e.target.value); setState(""); }}
+        placeholder={text === null ? "Yükleniyor…" : "Henüz kimlik yok. Projeyi birkaç paragrafla anlat: ne, kimin için, kurallar, şu anki durum, hedef."}
+        rows={14}
+        className="w-full rounded-xl p-3 font-mono text-[13px] leading-relaxed outline-none"
+        style={{ background: "var(--bg-panel)", border: "1px solid var(--border)", color: "var(--text)", resize: "vertical" }}
+      />
+    </section>
   );
 }

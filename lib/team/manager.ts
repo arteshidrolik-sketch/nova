@@ -8,6 +8,7 @@ import { runSpecialist } from "./runner";
 import { appendTeamLog } from "./log";
 import { istanbulNow } from "./report";
 import { costOf } from "@/lib/budget/store";
+import { briefBlock } from "./brief";
 import { SPECIALISTS, TEAM_META, TIERS, isTier, teamCast, type TeamRole, type Tier } from "./roles";
 
 export const ASSIGN_TOOL_NAME = "ajana_gorev_ver";
@@ -37,6 +38,7 @@ export async function buildManagerSystem(project: { name: string; path: string }
   await ensureTeamSkills();
   const skills = await getSkillsForTeamRole("manager");
   const cast = teamCast(projectId);
+  const brief = await briefBlock(projectId);
   return (
     `Sen ${cast.manager.name}, "${title}" projesinin PROJE MÜDÜRÜSÜN. Kullanıcının tek muhatabısın. Ekibin: ` +
     SPECIALISTS.map((r) => `${cast[r].name} — ${TEAM_META[r].name} uzmanı (ajan=${r}): ${TEAM_META[r].desc}`).join("; ") + ". " +
@@ -61,7 +63,8 @@ export async function buildManagerSystem(project: { name: string; path: string }
     "kendin yazma. Sohbet geçmişindeki eski komut çıktıları ESKİDİR (o andan sonra token/dosya değişmiş olabilir); onları güncel sonuç gibi sunma. " +
     "Kullanıcı 'yükledim/yeniledim/düzelttim' derse önce coder'a doğrulat.\n" +
     (project ? `\nBu sohbet "${project.name}" proje klasörüne bağlı (${project.path}); kodu denetlemek için okuma araçlarını (list_files/read_file/search_files) kullanabilirsin.\n` : "") +
-    (skills.length ? "\n## Becerilerin\n" + skills.map((s) => `### ${s.name}\n${s.content}`).join("\n\n") : "")
+    (skills.length ? "\n## Becerilerin\n" + skills.map((s) => `### ${s.name}\n${s.content}`).join("\n\n") : "") +
+    brief
   );
 }
 
