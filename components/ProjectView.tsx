@@ -13,6 +13,7 @@ import Invoices from "./Invoices";
 import TeamOffice from "./TeamOffice";
 import AgentMonitor from "./AgentMonitor";
 import SpaceControls from "./SpaceControls";
+import NovaCost from "./NovaCost";
 import { Planet } from "./planet";
 import { IconBack, IconFolder, IconMemory, IconSkill, IconAgent, IconTasks, IconReport, IconInvoice } from "./UniverseIcons";
 import type { ProjectMeta } from "./Universe";
@@ -69,6 +70,7 @@ export default function ProjectView({ project, onClose }: { project: ProjectMeta
           <div className="truncate text-[16px] font-bold">{project.title}</div>
           <div className="text-[12px] font-medium" style={{ color: "#ffb4e6", letterSpacing: ".05em" }}>PROJE · MÜDÜR + 3 UZMAN</div>
         </div>
+        <NovaCost />
         <SpaceControls />
       </header>
 

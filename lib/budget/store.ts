@@ -9,9 +9,13 @@ export type DayUsage = {
   output: number;
   costUsd: number; // ~tahmini
   requests: number;
+  cacheRead?: number; // önbellekten okunan girdi tokenı (0.1× fiyat)
+  cacheWrite?: number; // önbelleğe yazılan girdi tokenı (1.25× fiyat)
 };
+export type AllTime = DayUsage & { since: string }; // Nova genelinde tüm zamanlar toplamı
 export type Budget = {
   dailyTokenCap: number; // 0 = sınırsız
+  allTime?: AllTime;
   days: Record<string, DayUsage>; // "YYYY-MM-DD" → kullanım
 };
 
@@ -50,6 +54,17 @@ async function ensureLoaded(): Promise<void> {
     const raw = await fs.readFile(FILE, "utf8");
     const d = JSON.parse(raw);
     if (d && typeof d.dailyTokenCap === "number" && d.days) state = d;
+    // ilk kez: tüm zamanlar toplamını eldeki günlerden başlat (geçmiş dahil)
+    if (!state.allTime) {
+      const keys = Object.keys(state.days).sort();
+      const a: AllTime = { input: 0, output: 0, costUsd: 0, requests: 0, cacheRead: 0, cacheWrite: 0, since: keys[0] ?? todayKey() };
+      for (const k of keys) {
+        const u = state.days[k];
+        a.input += u.input; a.output += u.output; a.costUsd += u.costUsd; a.requests += u.requests;
+        a.cacheRead! += u.cacheRead ?? 0; a.cacheWrite! += u.cacheWrite ?? 0;
+      }
+      state.allTime = a;
+    }
   } catch {
     /* yok → varsayılan (sınırsız) */
   }
@@ -85,19 +100,43 @@ export async function recordUsage(
   model: string,
   input: number,
   output: number,
+  cache?: { read?: number | null; write?: number | null },
 ): Promise<void> {
   await ensureLoaded();
+  const i = Math.max(0, input | 0), o = Math.max(0, output | 0);
+  const cr = Math.max(0, (cache?.read ?? 0) | 0), cw = Math.max(0, (cache?.write ?? 0) | 0);
+  const [pi] = priceOf(model);
+  const cost = costOf(model, i, o) + (cr * pi * 0.1 + cw * pi * 1.25) / 1e6;
   const k = todayKey();
+  const add = (u: DayUsage) => {
+    u.input += i; u.output += o; u.costUsd += cost; u.requests += 1;
+    u.cacheRead = (u.cacheRead ?? 0) + cr; u.cacheWrite = (u.cacheWrite ?? 0) + cw;
+  };
   const u = state.days[k] || { input: 0, output: 0, costUsd: 0, requests: 0 };
-  u.input += Math.max(0, input | 0);
-  u.output += Math.max(0, output | 0);
-  u.costUsd += costOf(model, Math.max(0, input | 0), Math.max(0, output | 0));
-  u.requests += 1;
+  add(u);
   state.days[k] = u;
-  // eski günleri buda
+  state.allTime ??= { input: 0, output: 0, costUsd: 0, requests: 0, since: k };
+  add(state.allTime);
+  // eski günleri buda (tüm zamanlar toplamı ayrıca tutulur, kaybolmaz)
   const keys = Object.keys(state.days).sort();
-  while (keys.length > 40) delete state.days[keys.shift() as string];
+  while (keys.length > 400) delete state.days[keys.shift() as string];
   await persist();
+}
+
+// Nova geneli harcama özeti (tüm projeler + ekip dışı işler)
+export async function usageTotals() {
+  await ensureLoaded();
+  const tok = (u?: DayUsage) => (u ? u.input + u.output + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0) : 0);
+  const today = todayUsage();
+  const month = todayKey().slice(0, 7);
+  let mUsd = 0, mTok = 0;
+  for (const [k, u] of Object.entries(state.days)) if (k.startsWith(month)) { mUsd += u.costUsd; mTok += tok(u); }
+  const a = state.allTime;
+  return {
+    allTime: { tokens: tok(a), usd: a?.costUsd ?? 0, requests: a?.requests ?? 0, since: a?.since ?? todayKey() },
+    month: { tokens: mTok, usd: mUsd },
+    today: { tokens: tok(today), usd: today.costUsd, requests: today.requests },
+  };
 }
 
 export async function setCap(cap: number): Promise<Budget> {

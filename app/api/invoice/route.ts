@@ -17,6 +17,7 @@ import {
   type InvoiceFields,
   type InvoiceItem,
 } from "@/lib/invoices/store";
+import { recordUsage } from "@/lib/budget/store";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -230,6 +231,7 @@ export async function POST(req: Request) {
         { role: "user", content: blocks as Anthropic.ContentBlockParam[] },
       ],
     });
+    if (resp.usage) recordUsage(EXTRACT_MODEL, resp.usage.input_tokens ?? 0, resp.usage.output_tokens ?? 0).catch(() => {});
     const toolUse = resp.content.find((b) => b.type === "tool_use") as
       | { input?: Record<string, unknown> }
       | undefined;

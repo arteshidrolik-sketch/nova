@@ -10,6 +10,7 @@ import ProjectView from "./ProjectView";
 import { Planet } from "./planet";
 import { IconPlus, IconClose } from "./UniverseIcons";
 import SpaceControls from "./SpaceControls";
+import NovaCost from "./NovaCost";
 
 // Yörünge geometrisi: yatay ekranda geniş-basık elips (perspektif), dikey ekranda
 // (telefon) daha yuvarlak ve geniş yörünge + küçük gezegenler → merkezle çakışmaz.
@@ -135,6 +136,7 @@ export default function Universe() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+        <NovaCost />
         <SpaceControls />
         <button
           onClick={() => setCreating(true)}

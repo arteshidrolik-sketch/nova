@@ -770,6 +770,7 @@ export async function POST(req: Request) {
               answerModel,
               final.usage.input_tokens ?? 0,
               final.usage.output_tokens ?? 0,
+              { read: (final.usage as { cache_read_input_tokens?: number | null }).cache_read_input_tokens, write: (final.usage as { cache_creation_input_tokens?: number | null }).cache_creation_input_tokens },
             ).catch(() => {});
             recordProjectUsage(conversationId, teamMode ? "manager" : "direct", answerModel, final.usage);
           }

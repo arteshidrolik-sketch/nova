@@ -75,7 +75,7 @@ export async function runDailyReports(day = istanbulNow().day, markDay = true): 
           (skills.length ? "\n\n" + skills.map((s) => `### ${s.name}\n${s.content}`).join("\n\n") : ""),
         messages: [{ role: "user", content: `Bugünün kaydı:\n\n${transcript}` }],
       });
-      if (res.usage) recordUsage(model, res.usage.input_tokens ?? 0, res.usage.output_tokens ?? 0).catch(() => {});
+      if (res.usage) recordUsage(model, res.usage.input_tokens ?? 0, res.usage.output_tokens ?? 0, { read: (res.usage as { cache_read_input_tokens?: number | null }).cache_read_input_tokens, write: (res.usage as { cache_creation_input_tokens?: number | null }).cache_creation_input_tokens }).catch(() => {});
       recordProjectUsage(c.id, "manager", model, res.usage);
       const text = res.content.filter((b) => b.type === "text").map((b) => (b as Anthropic.TextBlock).text).join("\n").trim();
       if (!text) { skipped++; continue; }
