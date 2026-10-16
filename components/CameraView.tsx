@@ -9,7 +9,8 @@ import { useEffect, useRef, useState } from "react";
 import { TEAM_META, type Member, type TeamRole } from "@/lib/team/roles";
 
 type Box = { x: number; y: number; w: number; h: number };
-export type CamScene = { width: number; height: number; createdAt: number; boxes: Partial<Record<TeamRole, Box>> };
+type Clip = { rect: Box; idle?: boolean; work?: boolean };
+export type CamScene = { width: number; height: number; createdAt: number; boxes: Partial<Record<TeamRole, Box>>; clips?: Partial<Record<TeamRole, Clip>>; clipsAt?: number };
 
 export default function CameraView({
   convId, title, scene, cast, status, statusTr, tier, onOpen,
@@ -48,6 +49,19 @@ export default function CameraView({
       <div className="cam-drift absolute" style={{ width: geo.w, height: geo.h, left: geo.left, top: geo.top }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={`/api/office?scope=${encodeURIComponent(convId)}&img=1&v=${scene.createdAt}`} alt="" className="cam-img absolute inset-0 h-full w-full select-none" draggable={false} />
+        {/* canlı ajanlar: boşta ↔ çalışıyor klipleri arasında yumuşak geçiş */}
+        {roles.map((r) => {
+          const c = scene.clips?.[r];
+          if (!c || (!c.idle && !c.work)) return null;
+          const active = status[r] !== "idle" && status[r] !== "done";
+          const src = (st: string) => `/api/office?scope=${encodeURIComponent(convId)}&clip=${r}-${st}&v=${scene.clipsAt ?? 0}`;
+          return (
+            <div key={`clip-${r}`} className="cam-clip absolute" style={{ left: `${c.rect.x}%`, top: `${c.rect.y}%`, width: `${c.rect.w}%`, height: `${c.rect.h}%` }}>
+              {c.idle && <video src={src("idle")} autoPlay muted loop playsInline preload="auto" style={{ opacity: active && c.work ? 0 : 1 }} />}
+              {c.work && <video src={src("work")} autoPlay muted loop playsInline preload="auto" style={{ opacity: active || !c.idle ? 1 : 0 }} />}
+            </div>
+          );
+        })}
         {roles.map((r) => {
           const b = scene.boxes[r];
           if (!b) return null;
@@ -73,7 +87,7 @@ export default function CameraView({
         })}
       </div>
       {/* kamera dokusu */}
-      <div className="cam-scan" /><div className="cam-grain" /><div className="cam-vignette" />
+      <div className="cam-vignette" />
       {/* arayüz */}
       <div className="cam-hud tl"><span className="rec" /> REC &nbsp;·&nbsp; KAM-01 &nbsp;·&nbsp; {title.toLocaleUpperCase("tr-TR")} OFİS</div>
       <div className="cam-hud tr tabular-nums">{ts}</div>

@@ -174,4 +174,6 @@ export async function resetScene(id: string): Promise<void> {
   fails.delete(id);
   await fs.rm(imagePath(id), { force: true });
   await fs.rm(metaPath(id), { force: true });
+  // eski canlı klipler de gider (yeni karede kişilerin yeri değişir)
+  for (const r of SEATS) for (const st of ["idle", "work"]) await fs.rm(path.join(DIR, `${safe(id)}-${r}-${st}.mp4`), { force: true });
 }

@@ -2,9 +2,13 @@
 // GET  ?scope=<proje>          → {status:"ready", scene} | {status:"pending"} | {status:"none", error}
 //                                 (yoksa arka planda üretimi başlatır)
 // GET  ?scope=<proje>&img=1    → görselin kendisi
+// GET  ?scope=<proje>&clip=<rol>-<idle|work> → ajanın canlı klibi (mp4)
 // POST ?scope=<proje>          → yeniden üret
+// POST ?scope=<proje>&clips=1  → canlı ajan kliplerini üret (görsel 2× büyütülür)
 import { promises as fs } from "fs";
 import { generateScene, getScene, imagePath, resetScene, sceneStatus } from "@/lib/office/scene";
+import { clipPath, clipsBusy, generateClips } from "@/lib/office/clips";
+import type { TeamRole } from "@/lib/team/roles";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -13,6 +17,20 @@ export async function GET(req: Request) {
   const sp = new URL(req.url).searchParams;
   const id = sp.get("scope");
   if (!id) return Response.json({ error: "scope gerekli" }, { status: 400 });
+  const clip = sp.get("clip");
+  if (clip) {
+    const m = clip.match(/^(research|manager|coder|marketing)-(idle|work)$/);
+    if (!m) return new Response("geçersiz", { status: 400 });
+    try {
+      const buf = await fs.readFile(clipPath(id, m[1] as TeamRole, m[2] as "idle" | "work"));
+      const range = req.headers.get("range")?.match(/bytes=(\d*)-(\d*)/);
+      if (range) {
+        const start = Number(range[1] || 0), end = range[2] ? Math.min(Number(range[2]), buf.length - 1) : buf.length - 1;
+        return new Response(new Uint8Array(buf.subarray(start, end + 1)), { status: 206, headers: { "Content-Type": "video/mp4", "Content-Range": `bytes ${start}-${end}/${buf.length}`, "Accept-Ranges": "bytes", "Content-Length": String(end - start + 1), "Cache-Control": "private, max-age=86400" } });
+      }
+      return new Response(new Uint8Array(buf), { headers: { "Content-Type": "video/mp4", "Accept-Ranges": "bytes", "Cache-Control": "private, max-age=86400" } });
+    } catch { return new Response("yok", { status: 404 }); }
+  }
   if (sp.get("img")) {
     try {
       const buf = await fs.readFile(imagePath(id));
@@ -21,7 +39,7 @@ export async function GET(req: Request) {
     } catch { return new Response("yok", { status: 404 }); }
   }
   const scene = await getScene(id);
-  if (scene) return Response.json({ status: "ready", scene });
+  if (scene) return Response.json({ status: "ready", scene, clipsBusy: clipsBusy(id) });
   const st = sceneStatus(id);
   if (!st.pending && !(st.fail && Date.now() - st.fail.at < 20 * 60e3)) {
     generateScene(id).catch(() => {});
@@ -31,8 +49,14 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const id = new URL(req.url).searchParams.get("scope");
+  const sp = new URL(req.url).searchParams;
+  const id = sp.get("scope");
   if (!id) return Response.json({ error: "scope gerekli" }, { status: 400 });
+  if (sp.get("clips")) {
+    if (!(await getScene(id))) return Response.json({ error: "önce kamera karesi gerekli" }, { status: 409 });
+    generateClips(id).catch(() => {});
+    return Response.json({ status: "clips-pending" });
+  }
   await resetScene(id);
   generateScene(id).catch(() => {});
   return Response.json({ status: "pending" });

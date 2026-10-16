@@ -52,7 +52,7 @@ export default function TeamOffice({ convId, title = "", compact = false }: { co
       fetch(`/api/office?scope=${encodeURIComponent(convId)}`).then((r) => r.json()).then((d) => {
         if (stop) return;
         setCam(d);
-        if (d.status === "pending" && n < 20) timer = window.setTimeout(() => poll(n + 1), 12000);
+        if ((d.status === "pending" || d.clipsBusy) && n < 40) timer = window.setTimeout(() => poll(n + 1), 12000); // kare/klipler hazırlanırken tazele
       }).catch(() => {});
     };
     poll(0);
