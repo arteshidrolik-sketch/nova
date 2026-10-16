@@ -161,6 +161,8 @@ export async function generateScene(id: string): Promise<void> {
     await fs.writeFile(metaPath(id), JSON.stringify(scene));
     fails.delete(id);
     console.log(`[ofis] ${id.slice(0, 8)}: kamera karesi üretildi (${provider}, ${w}x${h})`);
+    // ardından canlı sahne videoları (fal varsa); döngüsel içe aktarmayı önlemek için dinamik
+    if (process.env.FAL_KEY && process.env.NOVA_OFFICE_VIDEO !== "off") import("./clips").then((m) => m.generateVideos(id)).catch(() => {});
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e);
     fails.set(id, { at: Date.now(), error });
