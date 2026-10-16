@@ -23,8 +23,8 @@ export type SceneWithClips = Scene & { upscaled?: boolean; clips?: Partial<Recor
 
 const VIDEO_MODEL = process.env.NOVA_OFFICE_VIDEO_MODEL || "fal-ai/wan/v2.2-5b/image-to-video";
 const PROMPTS = {
-  idle: "Static security camera, the camera does not move at all. The person sits leaning back relaxed in the office chair, slowly sips coffee from a mug, lowers it and calmly looks around. Subtle natural motion, realistic, same lighting and colors.",
-  work: "Static security camera, the camera does not move at all. The person leans forward close to the computer and types quickly on the keyboard while looking at the monitor, focused and busy. Subtle natural motion, realistic, same lighting and colors.",
+  idle: "Static security camera, the camera does not move at all. The person sits leaning back relaxed in the office chair, slowly sips coffee from a mug, lowers it and calmly looks around. Subtle natural motion, realistic. No zoom, no camera movement, keep the exact same colors, lighting and framing.",
+  work: "Static security camera, the camera does not move at all. The person leans forward close to the computer and types quickly on the keyboard while looking at the monitor, both hands on the keyboard, focused and busy. Subtle natural motion, realistic. No zoom, no camera movement, keep the exact same colors, lighting and framing.",
 };
 const busy = new Set<string>();
 
@@ -99,7 +99,8 @@ async function makeClip(id: string, role: TeamRole, state: "idle" | "work", crop
 
 export function clipsBusy(id: string) { return busy.has(id); }
 
-export async function generateClips(id: string, roles: TeamRole[] = SEATS): Promise<void> {
+// only: yalnız belirli klipler (ör. ["coder-work"]) — beğenilmeyenleri yeniden üretmek için
+export async function generateClips(id: string, roles: TeamRole[] = SEATS, only?: string[]): Promise<void> {
   if (busy.has(id)) return;
   busy.add(id);
   try {
@@ -111,8 +112,9 @@ export async function generateClips(id: string, roles: TeamRole[] = SEATS): Prom
       const c = cropRect(scene, role);
       if (!c) return;
       const crop = await sharp(src).extract({ left: c.left, top: c.top, width: c.side, height: c.side }).jpeg({ quality: 92 }).toBuffer();
-      const info: ClipInfo = { rect: c.pct };
+      const info: ClipInfo = { ...(clips[role] ?? {}), rect: c.pct };
       for (const state of ["idle", "work"] as const) {
+        if (only && !only.includes(`${role}-${state}`)) continue;
         try { await makeClip(id, role, state, crop, c.side); info[state] = true; }
         catch (e) { console.warn(`[ofis] ${id.slice(0, 8)} ${role}/${state} klip üretilemedi:`, e instanceof Error ? e.message : e); }
       }

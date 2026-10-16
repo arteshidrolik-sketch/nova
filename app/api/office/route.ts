@@ -54,7 +54,9 @@ export async function POST(req: Request) {
   if (!id) return Response.json({ error: "scope gerekli" }, { status: 400 });
   if (sp.get("clips")) {
     if (!(await getScene(id))) return Response.json({ error: "önce kamera karesi gerekli" }, { status: 409 });
-    generateClips(id).catch(() => {});
+    const only = sp.get("clips") === "1" ? undefined : String(sp.get("clips")).split(",").filter((x) => /^(research|manager|coder|marketing)-(idle|work)$/.test(x));
+    const roles = only ? ([...new Set(only.map((x) => x.split("-")[0]))] as TeamRole[]) : undefined;
+    generateClips(id, roles, only).catch(() => {});
     return Response.json({ status: "clips-pending" });
   }
   await resetScene(id);
