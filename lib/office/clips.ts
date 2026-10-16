@@ -119,6 +119,8 @@ export async function generateVideos(id: string, only?: VidState[]): Promise<voi
         console.warn(`[ofis] ${id.slice(0, 8)} ${st} videosu üretilemedi:`, e instanceof Error ? e.message : e);
       }
     }));
+    // hiçbiri üretilemediyse (ör. bakiye bitti) kayıt bırakma → sonra yeniden denenebilsin
+    if (!Object.values(states).some(Boolean)) throw new Error("hiçbir video üretilemedi");
     const latest = ((await getScene(id)) as SceneWithVideo | null) ?? scene;
     await fs.writeFile(metaPath(id), JSON.stringify({ ...latest, video: { crop: c.pct, states, at: Date.now() } }));
     console.log(`[ofis] ${id.slice(0, 8)}: canlı sahne videoları hazır (${Object.keys(states).length}/5)`);
