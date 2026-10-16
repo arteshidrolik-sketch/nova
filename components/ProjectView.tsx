@@ -4,7 +4,7 @@
 // ile sekmeler: Sohbet (bu projenin yapay zekâ sohbeti), Dosyalar (yalnız bu
 // projenin klasörü), Hafıza (yalnız bu projenin notları), Beceriler, Ajanlar,
 // Görevler. Sohbet, projenin kendi conversationId'si ile çalışır → yalıtılmış.
-import { useEffect, useState, type ComponentType, type SVGProps } from "react";
+import { useEffect, useRef, useState, type ComponentType, type SVGProps } from "react";
 import Chat from "./Chat";
 import Files from "./Files";
 import Skills from "./Skills";
@@ -29,7 +29,9 @@ const TABS: { key: TabKey; label: string; color: string; Icon: ComponentType<SVG
   { key: "gorevler", label: "Onaylar", color: "#ff9f6b", Icon: IconTasks },
 ];
 
-export default function ProjectView({ project, onClose }: { project: ProjectMeta; onClose: () => void }) {
+export default function ProjectView({ project, projects = [], onSwitch, onClose }: {
+  project: ProjectMeta; projects?: ProjectMeta[]; onSwitch?: (p: ProjectMeta) => void; onClose: () => void;
+}) {
   const [tab, setTab] = useState<TabKey>("sohbet");
   const [compact, setCompact] = useState(false);
   useEffect(() => {
@@ -65,11 +67,8 @@ export default function ProjectView({ project, onClose }: { project: ProjectMeta
         >
           <IconBack width={18} height={18} /> Evren
         </button>
-        <Planet seed={project.id + project.title} size={32} spin={false} />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[16px] font-bold">{project.title}</div>
-          <div className="text-[12px] font-medium" style={{ color: "#ffb4e6", letterSpacing: ".05em" }}>PROJE · MÜDÜR + 3 UZMAN</div>
-        </div>
+        {/* proje sekmeleri: evrene dönmeden projeler arasında geçiş */}
+        <ProjectTabs project={project} projects={projects} onSwitch={onSwitch} />
         <NovaCost />
         <SpaceControls />
       </header>
@@ -267,5 +266,38 @@ function PageAnim() {
         <span key={i} className="p" style={{ left: `${p.left}%`, width: p.size, height: p.size, animationDuration: `${p.dur}s`, animationDelay: `${p.delay}s` }} />
       ))}
     </div>
+  );
+}
+
+// Üst çubukta proje sekmeleri (aktif olan vurgulu); dar ekranda yatay kayar
+function ProjectTabs({ project, projects, onSwitch }: { project: ProjectMeta; projects: ProjectMeta[]; onSwitch?: (p: ProjectMeta) => void }) {
+  const list = projects.some((p) => p.id === project.id) ? projects : [project, ...projects];
+  const activeRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => { activeRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" }); }, [project.id]);
+  return (
+    <nav className="no-scrollbar flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto" aria-label="Projeler">
+      {list.map((p) => {
+        const active = p.id === project.id;
+        return (
+          <button
+            key={p.id}
+            ref={active ? activeRef : undefined}
+            onClick={() => !active && onSwitch?.(p)}
+            aria-current={active ? "page" : undefined}
+            title={p.title}
+            className="flex h-10 shrink-0 items-center gap-2 rounded-full pl-1.5 pr-3.5 text-[13px] transition-colors duration-150"
+            style={{
+              background: active ? "rgba(255,255,255,.14)" : "transparent",
+              border: `1px solid ${active ? "rgba(255,255,255,.35)" : "transparent"}`,
+              color: active ? "var(--text)" : "var(--text-muted)",
+              fontWeight: active ? 700 : 500,
+            }}
+          >
+            <Planet seed={p.id + p.title} size={24} spin={false} />
+            <span className="max-w-[160px] truncate">{p.title}</span>
+          </button>
+        );
+      })}
+    </nav>
   );
 }

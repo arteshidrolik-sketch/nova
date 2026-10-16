@@ -225,7 +225,7 @@ export default function Universe() {
 
       {/* proje sayfası */}
       {open && (
-        <ProjectView project={open} onClose={() => { setOpen(null); load(); }} />
+        <ProjectView key={open.id} project={open} projects={projects} onSwitch={(p) => setOpen(p)} onClose={() => { setOpen(null); load(); }} />
       )}
     </div>
   );

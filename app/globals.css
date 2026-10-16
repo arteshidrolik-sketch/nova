@@ -571,3 +571,7 @@ body {
 @keyframes camRec { 50% { opacity: .15; } }
 @keyframes camTrack { 0%, 100% { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 40%, transparent), 0 0 0 0 transparent; } 50% { box-shadow: inset 0 0 0 1px var(--c), 0 0 18px -4px var(--c); } }
 @media (prefers-reduced-motion: reduce) { .cam-drift, .cam-grain, .cam-vignette, .cam-box.on, .cam-hud .rec { animation: none !important; } }
+
+/* yatay kayan sekme şeridi: kaydırma çubuğu gizli */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
