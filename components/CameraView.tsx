@@ -1,16 +1,23 @@
 "use client";
 
 // Gerçekçi ofis — güvenlik kamerası görünümü. Proje için üretilmiş fotoğraf
-// gerçekliğindeki ofis karesi, yavaş kamera kayması (pan/zoom), tarama çizgileri,
-// kumlanma, vinyet ve REC/saat arayüzü. Her ajanın üstünde "takip kutusu":
-// çalışırken rol renginde parlar, isim/durum/model etiketi taşır; tıklanınca
-// ajanın becerileri açılır.
+// gerçekliğindeki ofis karesi; varsa sahnenin TAMAMI için canlı videolar
+// (herkes boşta / şu ajan çalışıyor) — o an kim çalışıyorsa onun videosu oynar,
+// geçişler yumuşaktır. Üstte REC/saat arayüzü, her ajanın üstünde takip kutusu
+// (çalışırken rol renginde parlar; tıklanınca becerileri açılır).
 import { useEffect, useRef, useState } from "react";
 import { TEAM_META, type Member, type TeamRole } from "@/lib/team/roles";
 
 type Box = { x: number; y: number; w: number; h: number };
-type Clip = { rect: Box; idle?: boolean; work?: boolean };
-export type CamScene = { width: number; height: number; createdAt: number; boxes: Partial<Record<TeamRole, Box>>; clips?: Partial<Record<TeamRole, Clip>>; clipsAt?: number };
+type VidState = "idle" | TeamRole;
+export type CamScene = {
+  width: number; height: number; createdAt: number;
+  boxes: Partial<Record<TeamRole, Box>>;
+  video?: { crop: Box; states: Partial<Record<VidState, boolean>>; at: number };
+};
+
+const ROLES: TeamRole[] = ["research", "manager", "coder", "marketing"];
+const ACTIVE = new Set(["working", "thinking", "reviewing", "speaking"]);
 
 export default function CameraView({
   convId, title, scene, cast, status, statusTr, tier, onOpen,
@@ -22,49 +29,76 @@ export default function CameraView({
   onOpen: (r: TeamRole) => void;
 }) {
   const wrap = useRef<HTMLDivElement>(null);
+  const vids = useRef<Partial<Record<VidState, HTMLVideoElement | null>>>({});
   const [geo, setGeo] = useState({ w: 0, h: 0, left: 0, top: 0 });
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t); }, []);
+
+  // Görünen çerçeve: video varsa onun 16:9 kesiti, yoksa tüm görsel
+  const crop: Box = scene.video?.crop ?? { x: 0, y: 0, w: 100, h: 100 };
+  const fw = (scene.width * crop.w) / 100, fh = (scene.height * crop.h) / 100;
 
   // object-fit: cover hesabı → kutular kişilerin tam üstüne otursun
   useEffect(() => {
     const el = wrap.current;
     if (!el) return;
     const ro = new ResizeObserver(() => {
-      const W = el.clientWidth, H = el.clientHeight, ar = scene.width / scene.height;
-      const s = Math.max(W / scene.width, H / scene.height) * 1.02; // kamera kayması için az pay
-      const w = scene.width * s, h = w / ar;
-      setGeo({ w, h, left: (W - w) / 2, top: Math.min(0, (H - h) * 0.45) });
+      const W = el.clientWidth, H = el.clientHeight;
+      const s = Math.max(W / fw, H / fh) * 1.01;
+      const w = fw * s, h = fh * s;
+      setGeo({ w, h, left: (W - w) / 2, top: Math.min(0, (H - h) * 0.42) });
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [scene.width, scene.height]);
+  }, [fw, fh]);
+
+  // Hangi video: çalışan uzman > müdür > herkes boşta
+  const has = scene.video?.states ?? {};
+  let want: VidState = "idle";
+  for (const r of ["research", "coder", "marketing"] as TeamRole[]) if (status[r] === "working" && has[r]) want = r;
+  if (want === "idle" && ACTIVE.has(status.manager) && has.manager) want = "manager";
+  if (!has[want]) want = "idle";
+  const wantRef = useRef(want);
+  wantRef.current = want;
+
+  // yalnız görünen video oynar (diğerleri geçişten sonra durur → işlemci yorulmaz)
+  useEffect(() => {
+    for (const [k, v] of Object.entries(vids.current)) {
+      if (!v) continue;
+      if (k === want) v.play().catch(() => {});
+      else setTimeout(() => { if (k !== wantRef.current) v.pause(); }, 900);
+    }
+  }, [want]);
 
   const ts = now.toLocaleString("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  const roles: TeamRole[] = ["research", "manager", "coder", "marketing"];
+  const q = encodeURIComponent(convId);
+  // görsel yüzdesi → çerçeve yüzdesi
+  const tx = (b: Box): Box => ({ x: ((b.x - crop.x) / crop.w) * 100, y: ((b.y - crop.y) / crop.h) * 100, w: (b.w / crop.w) * 100, h: (b.h / crop.h) * 100 });
 
   return (
     <div ref={wrap} className="cam relative h-full w-full overflow-hidden bg-black">
-      <div className="cam-drift absolute" style={{ width: geo.w, height: geo.h, left: geo.left, top: geo.top }}>
+      <div className="cam-drift absolute overflow-hidden" style={{ width: geo.w, height: geo.h, left: geo.left, top: geo.top }}>
+        {/* sabit kare (video yüklenene kadar ve videosuz projelerde) */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={`/api/office?scope=${encodeURIComponent(convId)}&img=1&v=${scene.createdAt}`} alt="" className="cam-img absolute inset-0 h-full w-full select-none" draggable={false} />
-        {/* canlı ajanlar: boşta ↔ çalışıyor klipleri arasında yumuşak geçiş */}
-        {roles.map((r) => {
-          const c = scene.clips?.[r];
-          if (!c || (!c.idle && !c.work)) return null;
-          const active = status[r] !== "idle" && status[r] !== "done";
-          const src = (st: string) => `/api/office?scope=${encodeURIComponent(convId)}&clip=${r}-${st}&v=${scene.clipsAt ?? 0}`;
-          return (
-            <div key={`clip-${r}`} className="cam-clip absolute" style={{ left: `${c.rect.x}%`, top: `${c.rect.y}%`, width: `${c.rect.w}%`, height: `${c.rect.h}%` }}>
-              {c.idle && <video src={src("idle")} autoPlay muted loop playsInline preload="auto" style={{ opacity: active && c.work ? 0 : 1 }} />}
-              {c.work && <video src={src("work")} autoPlay muted loop playsInline preload="auto" style={{ opacity: active || !c.idle ? 1 : 0 }} />}
-            </div>
-          );
-        })}
-        {roles.map((r) => {
-          const b = scene.boxes[r];
-          if (!b) return null;
+        <img
+          src={`/api/office?scope=${q}&img=1&v=${scene.createdAt}`} alt="" draggable={false}
+          className="cam-img absolute select-none"
+          style={{ width: `${10000 / crop.w}%`, height: `${10000 / crop.h}%`, left: `${(-crop.x / crop.w) * 100}%`, top: `${(-crop.y / crop.h) * 100}%`, maxWidth: "none" }}
+        />
+        {(Object.keys(has) as VidState[]).filter((k) => has[k]).map((k) => (
+          <video
+            key={k} ref={(el) => { vids.current[k] = el; }}
+            src={`/api/office?scope=${q}&clip=${k}&v=${scene.video?.at ?? 0}`}
+            muted loop playsInline preload="auto" autoPlay={k === want}
+            className="cam-vid absolute inset-0 h-full w-full"
+            style={{ opacity: k === want ? 1 : 0 }}
+          />
+        ))}
+        {ROLES.map((r) => {
+          const b0 = scene.boxes[r];
+          if (!b0) return null;
+          const b = tx(b0);
           const st = status[r];
           const active = st !== "idle";
           const c = TEAM_META[r].color;
@@ -86,12 +120,10 @@ export default function CameraView({
           );
         })}
       </div>
-      {/* kamera dokusu */}
       <div className="cam-vignette" />
-      {/* arayüz */}
       <div className="cam-hud tl"><span className="rec" /> REC &nbsp;·&nbsp; KAM-01 &nbsp;·&nbsp; {title.toLocaleUpperCase("tr-TR")} OFİS</div>
       <div className="cam-hud tr tabular-nums">{ts}</div>
-      <div className="cam-hud bl">1080p · 25fps · IR otomatik</div>
+      <div className="cam-hud bl">1080p · 24fps · canlı</div>
     </div>
   );
 }

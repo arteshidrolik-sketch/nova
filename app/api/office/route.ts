@@ -2,13 +2,12 @@
 // GET  ?scope=<proje>          → {status:"ready", scene} | {status:"pending"} | {status:"none", error}
 //                                 (yoksa arka planda üretimi başlatır)
 // GET  ?scope=<proje>&img=1    → görselin kendisi
-// GET  ?scope=<proje>&clip=<rol>-<idle|work> → ajanın canlı klibi (mp4)
+// GET  ?scope=<proje>&clip=<idle|research|manager|coder|marketing> → canlı sahne videosu (mp4)
 // POST ?scope=<proje>          → yeniden üret
-// POST ?scope=<proje>&clips=1  → canlı ajan kliplerini üret (görsel 2× büyütülür)
+// POST ?scope=<proje>&clips=1  → canlı sahne videolarını üret (görsel 2× büyütülür); clips=idle,coder → yalnız onlar
 import { promises as fs } from "fs";
 import { generateScene, getScene, imagePath, resetScene, sceneStatus } from "@/lib/office/scene";
-import { clipPath, clipsBusy, generateClips } from "@/lib/office/clips";
-import type { TeamRole } from "@/lib/team/roles";
+import { generateVideos, STATES, videoPath, videosBusy, type VidState } from "@/lib/office/clips";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -19,10 +18,9 @@ export async function GET(req: Request) {
   if (!id) return Response.json({ error: "scope gerekli" }, { status: 400 });
   const clip = sp.get("clip");
   if (clip) {
-    const m = clip.match(/^(research|manager|coder|marketing)-(idle|work)$/);
-    if (!m) return new Response("geçersiz", { status: 400 });
+    if (!(STATES as readonly string[]).includes(clip)) return new Response("geçersiz", { status: 400 });
     try {
-      const buf = await fs.readFile(clipPath(id, m[1] as TeamRole, m[2] as "idle" | "work"));
+      const buf = await fs.readFile(videoPath(id, clip as VidState));
       const range = req.headers.get("range")?.match(/bytes=(\d*)-(\d*)/);
       if (range) {
         const start = Number(range[1] || 0), end = range[2] ? Math.min(Number(range[2]), buf.length - 1) : buf.length - 1;
@@ -39,7 +37,7 @@ export async function GET(req: Request) {
     } catch { return new Response("yok", { status: 404 }); }
   }
   const scene = await getScene(id);
-  if (scene) return Response.json({ status: "ready", scene, clipsBusy: clipsBusy(id) });
+  if (scene) return Response.json({ status: "ready", scene, clipsBusy: videosBusy(id) });
   const st = sceneStatus(id);
   if (!st.pending && !(st.fail && Date.now() - st.fail.at < 20 * 60e3)) {
     generateScene(id).catch(() => {});
@@ -54,9 +52,8 @@ export async function POST(req: Request) {
   if (!id) return Response.json({ error: "scope gerekli" }, { status: 400 });
   if (sp.get("clips")) {
     if (!(await getScene(id))) return Response.json({ error: "önce kamera karesi gerekli" }, { status: 409 });
-    const only = sp.get("clips") === "1" ? undefined : String(sp.get("clips")).split(",").filter((x) => /^(research|manager|coder|marketing)-(idle|work)$/.test(x));
-    const roles = only ? ([...new Set(only.map((x) => x.split("-")[0]))] as TeamRole[]) : undefined;
-    generateClips(id, roles, only).catch(() => {});
+    const only = sp.get("clips") === "1" ? undefined : (String(sp.get("clips")).split(",").filter((x) => (STATES as readonly string[]).includes(x)) as VidState[]);
+    generateVideos(id, only).catch(() => {});
     return Response.json({ status: "clips-pending" });
   }
   await resetScene(id);
