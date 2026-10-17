@@ -44,7 +44,10 @@ function h32(s: string): number {
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
   return h >>> 0;
 }
-// Her projede 2 kadın + 2 erkek; kimin hangi rolde olduğu ve isimler projeye göre değişir ama sabit kalır
+// Ekip tamamen kadın (Yücel'in kararı, 2026-10-17). İsimler projeye göre değişir ama sabit kalır.
+// Eskiden 2 kadın + 2 erkekti: o zamanki kadın üyeler adlarını korusun diye önce onlara
+// eski sırayla isim verilir, sonra eskiden erkek olan rollere yeni kadın adları.
+const ALL_FEMALE = true;
 export function teamCast(projectId: string): Record<TeamRole, Member> {
   const h = h32(projectId || "nova");
   const patterns: Gender[][] = [
@@ -57,11 +60,13 @@ export function teamCast(projectId: string): Record<TeamRole, Member> {
     return pool[0];
   };
   const out = {} as Record<TeamRole, Member>;
-  TEAM_ROLES.forEach((r, i) => {
-    const gender = g[i];
+  const order = TEAM_ROLES.map((r, i) => ({ r, old: g[i] }));
+  if (ALL_FEMALE) order.sort((a, b) => (a.old === b.old ? 0 : a.old === "k" ? -1 : 1));
+  for (const { r, old } of order) {
+    const gender: Gender = ALL_FEMALE ? "k" : old;
     const seed = h32(projectId + r);
     out[r] = { name: pick(gender === "k" ? FEMALE : MALE, seed), gender, look: seed };
-  });
+  }
   return out;
 }
 
