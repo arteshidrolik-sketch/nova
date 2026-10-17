@@ -13,6 +13,7 @@ import { appendAudit } from "@/lib/audit/store";
 import { recordUsage } from "@/lib/budget/store";
 import { recordProjectUsage } from "./usage";
 import { briefBlock } from "./brief";
+import { syncRepo } from "./gitsync";
 import { detectInjection, wrapUntrusted, UNTRUSTED_RULE } from "@/lib/security/untrusted";
 import { getSkillsForTeamRole } from "@/lib/skills/store";
 import { ensureTeamSkills } from "./skills";
@@ -91,7 +92,10 @@ export async function runSpecialist(opts: {
     brief +
     UNTRUSTED_RULE;
 
+  // kod uzmanı: proje kopyasını GitHub ile eşitle ve gerçek durumu bildir (eski kodu güncel sanmasın)
+  const repoState = role === "coder" && project ? await syncRepo(project.path).catch(() => "") : "";
   const user =
+    (repoState ? `KOD DEPOSU DURUMU (az önce kontrol edildi): ${repoState}\n\n` : "") +
     (opts.history ? `PROJENİN SON KONUŞMALARI (bağlam — projede daha önce yapılanlar ve kararlar; bunlarla tutarlı ilerle):
 ${opts.history}
 
