@@ -45,6 +45,8 @@ function parseStatuses(text: string, running: boolean) {
 // Proje kamera bilgileri tarayıcıda saklanır → sekme geçişi anında, ara görüntü yok
 type CamData = { status: string; scene?: CamScene; error?: string; clipsBusy?: boolean; fallback?: { scope: string; scene: CamScene } | null };
 const camCache = new Map<string, CamData>();
+type CamSize = "kucuk" | "orta" | "buyuk";
+const CAM_SIZES: Record<CamSize, { h: number; label: string }> = { kucuk: { h: 140, label: "Küçük" }, orta: { h: 220, label: "Orta" }, buyuk: { h: 380, label: "Büyük" } };
 const IDLE: Record<TeamRole, string> = { manager: "idle", research: "idle", coder: "idle", marketing: "idle" };
 export function prefetchOffices(ids: string[]) {
   for (const id of ids) {
@@ -59,6 +61,14 @@ export function prefetchOffices(ids: string[]) {
 
 export default function TeamOffice({ convId, title = "", compact = false }: { convId: string; title?: string; compact?: boolean }) {
   const [running, setRunning] = useState(false);
+  const [camSize, setCamSize] = useState<CamSize>("orta");
+  useEffect(() => { try { const v = localStorage.getItem("nova:camSize"); if (v && v in CAM_SIZES) setCamSize(v as CamSize); } catch { /* yoksay */ } }, []);
+  const cycleCamSize = () => setCamSize((s) => {
+    const order: CamSize[] = ["kucuk", "orta", "buyuk"];
+    const next = order[(order.indexOf(s) + 1) % order.length];
+    try { localStorage.setItem("nova:camSize", next); } catch { /* yoksay */ }
+    return next;
+  });
   // gerçekçi kamera karesi; hazır değilse başka projenin sahnesi (etiketsiz), o da yoksa çizim oda
   const [cam, setCam] = useState<CamData | null>(() => camCache.get(convId) ?? null);
   useEffect(() => {
@@ -97,11 +107,25 @@ export default function TeamOffice({ convId, title = "", compact = false }: { co
   const { st, tier } = parseStatuses(text, running);
   if (speaking && !running) st.manager = "speaking";
 
-  const camBox = { aspectRatio: "21 / 9", maxHeight: compact ? 230 : 380, minHeight: compact ? 170 : 240 } as const;
+  // kamera şeridi yüksekliği (küçük/orta/büyük) — sohbete yer kalsın; seçim tarayıcıda saklanır
+  const H = CAM_SIZES[camSize].h;
+  const camBox = { height: compact ? Math.min(H, 180) : H } as const;
+  const sizeBtn = (
+    <button
+      onClick={cycleCamSize}
+      className="absolute bottom-2 right-2 z-[5] rounded-md px-2 py-1 text-[11px]"
+      style={{ background: "rgba(0,0,0,.55)", color: "#f1f5f9", border: "1px solid rgba(255,255,255,.2)" }}
+      title="Kamera boyutu: küçük / orta / büyük"
+      aria-label={`Kamera boyutu: ${CAM_SIZES[camSize].label}. Değiştir`}
+    >
+      ⤢ {CAM_SIZES[camSize].label}
+    </button>
+  );
   if (cam?.status === "ready" && cam.scene) {
     return (
       <div className="relative w-full" style={camBox}>
         <CameraView convId={convId} title={title} scene={cam.scene} cast={cast} status={st} statusTr={STATUS_TR} tier={tier} onOpen={setOpen} />
+        {sizeBtn}
         {open && <AgentPanel role={open} person={cast[open].name} onClose={() => setOpen(null)} />}
       </div>
     );
@@ -111,6 +135,7 @@ export default function TeamOffice({ convId, title = "", compact = false }: { co
     return (
       <div className="relative w-full" style={camBox}>
         <CameraView convId={cam.fallback.scope} title={title} scene={cam.fallback.scene} cast={cast} status={IDLE} statusTr={STATUS_TR} tier={{}} onOpen={setOpen} labels={false} />
+        {sizeBtn}
         <div className="absolute bottom-3 left-1/2 z-[4] -translate-x-1/2 rounded-full px-3 py-1.5 text-[12px]" style={{ background: "rgba(0,0,0,.6)", color: "#f1f5f9" }} title={cam.error || ""}>
           {cam.status === "pending" ? "📷 Ekibinizin ofisi hazırlanıyor… (1–3 dk)" : "📷 Ofis görüntüsü için görsel kredisi gerekli"}
         </div>

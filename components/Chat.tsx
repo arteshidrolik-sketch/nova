@@ -2012,7 +2012,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
                   )}
                   {m.content && (
                     <div
-                      className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-sm px-4 py-3 text-sm leading-relaxed"
+                      className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-sm px-4 py-3 text-[15px] leading-[1.65]"
                       style={{
                         background:
                           "linear-gradient(135deg, var(--accent-2), var(--accent))",
@@ -2051,7 +2051,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
                     ✦
                   </span>
                   <div
-                    className="whitespace-pre-wrap rounded-2xl rounded-tl-sm px-4 py-3 text-sm leading-relaxed"
+                    className="whitespace-pre-wrap rounded-2xl rounded-tl-sm px-4 py-3 text-[15px] leading-[1.65]"
                     style={{
                       background: "var(--surface-card)",
                       border: "1px solid var(--border-strong)",
