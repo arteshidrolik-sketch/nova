@@ -62,10 +62,12 @@ const LIGHT = (() => { const v = [-0.62, -0.38, 0.69]; const l = Math.hypot(...v
 const RING_IN = 1.25, RING_OUT = 2.2, RING_FLAT = 0.3;
 
 export function Planet({
-  seed, size, spin = true, earth = false, style,
-}: { seed: string; size: number; spin?: boolean; earth?: boolean; style?: CSSProperties }) {
+  seed, size: box, spin = true, earth = false, style, fit = false,
+}: { seed: string; size: number; spin?: boolean; earth?: boolean; style?: CSSProperties; fit?: boolean }) {
   const ref = useRef<HTMLCanvasElement | null>(null);
   const K = kindFor(seed, earth);
+  // fit: halka dahil yer kaplasın (sekme gibi dar yerlerde yazının üstüne taşmasın)
+  const size = fit && K.ring ? Math.round(box * 0.7) : box;
   const tilt = ((hashStr(seed + "t") % 50) - 25) * (Math.PI / 180) * (earth ? 0.5 : 1);
   const phase0 = (hashStr(seed + "p") % 1000) / 1000;
 
@@ -191,7 +193,7 @@ export function Planet({
   // yalnız atmosferi olan gezegenlerde yumuşak ışıma (havasızlarda hale olmasın)
   const glow = K.atmo ? `rgba(${K.atmo[0]},${K.atmo[1]},${K.atmo[2]},.28)` : "";
   return (
-    <div style={{ position: "relative", width: size, height: size, ...style }}>
+    <div style={{ position: "relative", width: fit ? Math.ceil(size * ringScale) : size, height: fit ? box : size, flexShrink: 0, ...style }}>
       {/* yumuşak atmosfer ışıması */}
       {glow && <div aria-hidden style={{ position: "absolute", inset: size * 0.04, borderRadius: "50%", boxShadow: `0 0 ${size * 0.3}px ${glow}` }} />}
       <canvas

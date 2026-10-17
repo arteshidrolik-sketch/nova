@@ -398,7 +398,7 @@ function ProjectTabs({ project, projects, onSwitch, onRenamed }: { project: Proj
                 fontWeight: active ? 700 : 500,
               }}
             >
-              <Planet seed={p.id + p.title} size={24} spin={false} />
+              <Planet seed={p.id + p.title} size={24} spin={false} fit />
               {editing === p.id ? editBox : <span className="max-w-[160px] truncate">{p.title}</span>}
               {editing !== p.id && onBar(p.id) && (
                 <button
@@ -443,7 +443,7 @@ function ProjectTabs({ project, projects, onSwitch, onRenamed }: { project: Proj
                     className="w-5 text-[15px]"
                     style={{ color: onBar(p.id) ? "#ffd166" : "var(--text-muted)" }}
                   >{onBar(p.id) ? "★" : "☆"}</button>
-                  <Planet seed={p.id + p.title} size={20} spin={false} />
+                  <Planet seed={p.id + p.title} size={20} spin={false} fit />
                   {editing === p.id ? editBox : (
                     <button
                       onClick={() => { if (p.id !== project.id) onSwitch?.(p); setMenu(false); }}
