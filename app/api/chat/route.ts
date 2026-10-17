@@ -447,7 +447,8 @@ export async function POST(req: Request) {
     : [
     GITHUB_TOOL,
     { type: "web_search_20260209", name: "web_search", max_uses: webSearchMaxUses },
-    ...GENERAL_ACTION_TOOLS,
+    // Pıtır köprüsü yalnız Pıtır TV projesinde
+    ...GENERAL_ACTION_TOOLS.filter((t) => (t as { name: string }).name !== "pitir_bota_gonder" || conversationId === process.env.PITIR_PROJECT_ID),
     ...(project ? [...READ_TOOLS, ...PROJECT_ACTION_TOOLS] : []),
   ]) as unknown as Anthropic.Tool[];
   const assignState = newAssignState();

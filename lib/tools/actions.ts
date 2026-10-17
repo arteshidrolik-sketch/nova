@@ -9,6 +9,7 @@ import { promisify } from "util";
 import Anthropic, { toFile } from "@anthropic-ai/sdk";
 import { resolveIn } from "./projectFiles";
 import { scanContent, formatFindings } from "@/lib/security/scan";
+import { isPitirScope, sendToPitirBot, type PitirScript } from "./pitir";
 
 const execAsync = promisify(exec);
 type Payload = Record<string, unknown>;
@@ -225,6 +226,43 @@ function readWorkspacePath(p: string): string {
 
 export const ACTIONS: Record<string, ActionDef> = {
   // --- Genel aksiyonlar ---
+  // Pıtır TV → Pıtır botu (yalnız Pıtır TV projesinde): senaryoları botun gelen kutusuna bırakır,
+  // kullanıcıya Pıtır botundan Telegram'da haber verir. Üretimi bot, kullanıcının onaylarıyla yapar.
+  pitir_bota_gonder: {
+    dangerous: false,
+    project: false,
+    description:
+      "YALNIZ Pıtır TV projesinde: hazır senaryoları Pıtır botuna (Telegram, aynı sunucu) teslim eder. Her senaryo için başlık + ya tam metin (metin) ya da projedeki dosya adı (dosya: .md/.txt/.docx — örn. daha önce generate_document ile yazılan docx). " +
+      "Bot kullanıcıya Telegram'dan haber verir; video üretimini bot, kullanıcının her adımdaki onayıyla yapar (bu araç üretim BAŞLATMAZ, kredi harcamaz). Toplu gönderebilirsin.",
+    input_schema: {
+      type: "object",
+      properties: {
+        senaryolar: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              numara: { type: "number", description: "Takvimdeki sıra numarası" },
+              baslik: { type: "string" },
+              metin: { type: "string", description: "Tam senaryo (replikler: kim P/S + [duygu] + metin, sahne listesi, YouTube paketi)" },
+              dosya: { type: "string", description: "Ya da projedeki dosya adı (metin yerine)" },
+            },
+            required: ["baslik"],
+          },
+        },
+      },
+      required: ["senaryolar"],
+    },
+    makeTitle: (p) => `Pıtır botuna ${(p.senaryolar as unknown[] | undefined)?.length ?? 0} senaryo gönder`,
+    makeSummary: (p) => `Pıtır botunun gelen kutusuna ${(p.senaryolar as unknown[] | undefined)?.length ?? 0} senaryo bırakılacak ve kullanıcıya Telegram'dan haber verilecek.`,
+    execute: async (p) => {
+      const scope = wsScope.getStore() || "";
+      if (!isPitirScope(scope)) throw new Error("Bu araç yalnız Pıtır TV projesinde kullanılabilir.");
+      const items = (Array.isArray(p.senaryolar) ? p.senaryolar : []) as PitirScript[];
+      return sendToPitirBot(items, (name) => workspaceReadPath(scope, String(name)));
+    },
+  },
+
   write_file: {
     dangerous: true,
     project: false,

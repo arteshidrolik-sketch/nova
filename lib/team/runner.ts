@@ -24,7 +24,7 @@ const ROLE_ACTIONS: Record<Exclude<TeamRole, "manager">, string[]> = {
     "write_file", "generate_document", "edit_excel", "write_project_file", "edit_project_file",
     "publish_project_file", "run_command", "git_commit_push", "deploy_vercel", "github_create_issue",
   ],
-  marketing: ["write_file", "generate_document", "generate_image", "edit_image", "restyle_image", "generate_video", "edit_video", "images_to_video"],
+  marketing: ["write_file", "generate_document", "generate_image", "edit_image", "restyle_image", "generate_video", "edit_video", "images_to_video", "pitir_bota_gonder"],
 };
 
 const ROLE_PROMPT: Record<Exclude<TeamRole, "manager">, string> = {
@@ -66,7 +66,9 @@ export async function runSpecialist(opts: {
   const skills = await getSkillsForTeamRole(role);
   const allowed = new Set(ROLE_ACTIONS[role]);
   const actionTools = [...GENERAL_ACTION_TOOLS, ...PROJECT_ACTION_TOOLS].filter(
-    (t) => allowed.has((t as { name: string }).name) && (project || !isProjectAction((t as { name: string }).name)),
+    (t) => allowed.has((t as { name: string }).name) && (project || !isProjectAction((t as { name: string }).name)) &&
+      // Pıtır köprüsü yalnız Pıtır TV projesinde görünür
+      ((t as { name: string }).name !== "pitir_bota_gonder" || (!!process.env.PITIR_PROJECT_ID && opts.projectId === process.env.PITIR_PROJECT_ID)),
   );
   // Haiku 4.5: yeni (dinamik filtreli) web araçlarını ve uyarlanabilir düşünmeyi desteklemez → eski sürümler
   const legacy = /haiku/.test(model);
