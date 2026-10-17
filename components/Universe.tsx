@@ -11,6 +11,7 @@ import { Planet } from "./planet";
 import { IconPlus, IconClose } from "./UniverseIcons";
 import SpaceControls from "./SpaceControls";
 import NovaCost from "./NovaCost";
+import NovaVoice from "./NovaVoice";
 
 // Yörünge geometrisi: yatay ekranda geniş-basık elips (perspektif), dikey ekranda
 // (telefon) daha yuvarlak ve geniş yörünge + küçük gezegenler → merkezle çakışmaz.
@@ -228,6 +229,13 @@ export default function Universe() {
       {open && (
         <ProjectView key={open.id} instant={switched} project={open} projects={projects} onSwitch={(p) => { setSwitched(true); setOpen(p); }} onClose={() => { setSwitched(false); setOpen(null); load(); }} />
       )}
+      {/* Nova: her sayfada sesli asistan ("Nova" deyince dinler, arayüzü sesle yönetir) */}
+      <NovaVoice
+        projects={projects}
+        openId={open?.id ?? null}
+        onOpenProject={(p) => { setSwitched(!!open); setOpen(p); }}
+        onHome={() => { setSwitched(false); setOpen(null); load(); }}
+      />
     </div>
   );
 }

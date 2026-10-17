@@ -697,6 +697,19 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     return lines.slice(last + 1).join("\n");
   }
 
+  // Akan cevabın konuşulabilir kısmı: düşünceler (💭…U+2063; kapanmamış düşünce kesilir),
+  // durum satırları, tablolar ve kod blokları çıkarılır. Yalnız sona eklenerek büyür.
+  function speakable(text: string, final: boolean): string {
+    let t = text;
+    const open = t.lastIndexOf("💭");
+    if (open >= 0 && t.indexOf("\u2063", open) === -1) t = t.slice(0, open);
+    if (!final && (t.match(/```/g) || []).length % 2 === 1) t = t.slice(0, t.lastIndexOf("```"));
+    t = t.replace(/💭[\s\S]*?\u2063/gu, " ").replace(/```[\s\S]*?```/g, " ");
+    const lines = t.split("\n");
+    if (!final) lines.pop(); // son satır yarım olabilir (durum satırı olup olmadığı henüz belli değil)
+    return lines.filter((l) => !STATUS_LINE.test(l) && !/^\s*\|/.test(l)).join("\n") + (final ? "" : "\n");
+  }
+
   // Sesli okunacak kısım = konuşma balonu: son durum satırından sonraki nihai cevap;
   // düşünce metni (💭 … görünmez ayraç U+2063) ve tablo satırları okunmaz.
   function speechText(text: string): string {
@@ -983,6 +996,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     if (ttsActiveRef.current || ttsQueueRef.current.length === 0) return;
     ttsActiveRef.current = true;
     setSpeaking(true);
+    window.dispatchEvent(new CustomEvent("nova:tts", { detail: { speaking: true } }));
     pauseWake(); // konuşurken wake dinlemesin (kendi "Nova" sözüne tetiklenmesin)
     // Araya girme: konuşma boyunca kullanıcıyı dinle (yankı filtresiyle)
     spokenWordsRef.current = new Set();
@@ -1011,6 +1025,8 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     ttsActiveRef.current = false;
     lastTtsEndRef.current = Date.now(); // konuşma sonrası yankı penceresi başlangıcı
     setSpeaking(false);
+    // akış sürüyorsa (daha cümle gelecek) Nova'ya "bitti" deme; iş bitince runDone bildirir
+    if (!runActiveRef.current) window.dispatchEvent(new CustomEvent("nova:tts", { detail: { speaking: false } }));
     stopTtsKeepAlive();
     const wasGreeting = listenAfterSpeakRef.current;
     listenAfterSpeakRef.current = false;
@@ -1035,8 +1051,10 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   }
 
   function cancelSpeak() {
+    const was = ttsActiveRef.current;
     ttsQueueRef.current = [];
     ttsActiveRef.current = false;
+    if (was && typeof window !== "undefined") window.dispatchEvent(new CustomEvent("nova:tts", { detail: { speaking: false } }));
     try {
       currentAudioRef.current?.pause();
     } catch {
@@ -1096,6 +1114,32 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     [/denetim/, "denetim", "Denetim"],
     [/ayar/, "ayarlar", "Ayarlar"],
   ];
+
+  // Nova (her sayfadaki sesli asistan) ile bağlantı:
+  // - nova:voice-send {convId,text} → bu sohbete sesli iş olarak gönder
+  // - nova:voice-mode {on} → açıkken her cevap sesli (metin akarken) okunur
+  // - nova:stop-speaking → okumayı kes
+  const novaVoiceOnRef = useRef(false);
+  const runActiveRef = useRef(false);
+  const extSendRef = useRef<(t: string) => void>(() => {});
+  extSendRef.current = (t: string) => { voiceReplyRef.current = true; send(t); };
+  useEffect(() => {
+    const onSend = (e: Event) => {
+      const d = (e as CustomEvent<{ convId: string; text: string }>).detail;
+      if (d && d.convId === conversationId && d.text) extSendRef.current(d.text);
+    };
+    const onMode = (e: Event) => { novaVoiceOnRef.current = !!(e as CustomEvent<{ on: boolean }>).detail?.on; };
+    const onStop = () => cancelSpeak();
+    window.addEventListener("nova:voice-send", onSend);
+    window.addEventListener("nova:voice-mode", onMode);
+    window.addEventListener("nova:stop-speaking", onStop);
+    try { novaVoiceOnRef.current = localStorage.getItem("nova:wake") === "1"; } catch { /* yoksay */ }
+    return () => {
+      window.removeEventListener("nova:voice-send", onSend);
+      window.removeEventListener("nova:voice-mode", onMode);
+      window.removeEventListener("nova:stop-speaking", onStop);
+    };
+  }, [conversationId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Konuşma modu: Nova dinler → sen susunca gönderir → cevabı okur → yeniden dinler (mikrofona basmadan)
   const [convMode, setConvMode] = useState(false);
@@ -1754,41 +1798,30 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       let stopped = false;
       const startedAt = Date.now();
       let lastGrowth = startedAt; // son yeni çıktının geldiği an
+      runActiveRef.current = true;
 
       // Streaming TTS: cevap akarken tamamlanan cümleleri anında oku (bitişi bekleme)
-      const willSpeak = speakRef.current || voiceReplyRef.current || convModeRef.current;
+      const willSpeak = speakRef.current || voiceReplyRef.current || convModeRef.current || novaVoiceOnRef.current;
       if (willSpeak) cancelSpeak(); // önceki cevabın sesini durdur
-      let spokenChar = 0;
-      let hold = true; // ara metin/düşünce okunmasın: yalnız nihai cevap, iş bitince bir kerede
+      let spokenSpeak = 0; // konuşulabilir metinde okunan uzunluk
       const pump = (final: boolean) => {
         if (!willSpeak || !active()) return; // arka plandaki sohbet sesli okumasın
-        if (!hold && hasStatus(acc)) {
-          hold = true;
-          if (spokenChar > 0) cancelSpeak(); // ara metni okumaya başlamışsa sustur
-        }
-        if (hold) {
-          if (!final) return;
-          const cleaned = speechText(acc);
+        // Nova: metin akarken oku — yalnız konuşulabilir kısım (bkz. speakable)
+        {
+          const sp = speakable(acc, final);
+          let end = sp.length;
+          if (!final) {
+            const seg = sp.slice(spokenSpeak);
+            const m = seg.match(/^[\s\S]*[.!?…:\n]/);
+            if (!m) return;
+            end = spokenSpeak + m[0].length;
+          }
+          if (end <= spokenSpeak) return;
+          const cleaned = cleanForSpeech(sp.slice(spokenSpeak, end));
+          spokenSpeak = end;
           if (cleaned) enqueueSpeak(cleaned);
           return;
         }
-        let end = acc.length;
-        if (!final) {
-          // açık kod bloğu içindeysek kapanana kadar bekle (kodu okumayalım)
-          if ((acc.match(/```/g) || []).length % 2 === 1) {
-            const li = acc.lastIndexOf("```");
-            end = li >= 0 ? li : acc.length;
-          }
-          // sadece son cümle sınırına kadar olan kısmı seslendir
-          const seg = acc.slice(spokenChar, end);
-          const m = seg.match(/^[\s\S]*[.!?…\n]/);
-          if (!m) return;
-          end = spokenChar + m[0].length;
-        }
-        if (end <= spokenChar) return;
-        const cleaned = cleanForSpeech(acc.slice(spokenChar, end));
-        spokenChar = end;
-        if (cleaned) enqueueSpeak(cleaned);
       };
       while (status === "running") {
         await new Promise((r) => setTimeout(r, 700));
@@ -1854,6 +1887,10 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
 
       pump(true); // kalan son cümleyi de oku
       voiceReplyRef.current = false;
+      runActiveRef.current = false;
+      window.dispatchEvent(new CustomEvent("nova:reply-done"));
+      // okunacak bir şey kalmadıysa Nova'ya okumanın bittiğini bildir
+      if (!ttsActiveRef.current && ttsQueueRef.current.length === 0) window.dispatchEvent(new CustomEvent("nova:tts", { detail: { speaking: false } }));
       if (convModeRef.current) setTimeout(() => { if (!ttsActiveRef.current && ttsQueueRef.current.length === 0) listenAgain(300); }, 400);
 
       fetch("/api/memory", {
@@ -2002,6 +2039,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
             </span>
           )}
           <button
+            hidden
             onClick={toggleConvMode}
             title="Konuşma modu: Nova seni dinler, sen susunca gönderir, cevabı okur ve yeniden dinler"
             className="rounded-lg border px-3 py-1.5 text-sm transition-colors"

@@ -11,7 +11,6 @@ import Skills from "./Skills";
 import Tasks from "./Tasks";
 import Invoices from "./Invoices";
 import TeamOffice, { prefetchOffices } from "./TeamOffice";
-import { teamCast } from "@/lib/team/roles";
 import AgentMonitor from "./AgentMonitor";
 import SpaceControls from "./SpaceControls";
 import NovaCost from "./NovaCost";
@@ -37,6 +36,12 @@ export default function ProjectView({ project, projects = [], onSwitch, onClose,
   // tüm projelerin kamera bilgilerini önceden yükle → sekme geçişi anında
   useEffect(() => { prefetchOffices(projects.map((p) => p.id)); }, [projects]);
   const [tab, setTab] = useState<TabKey>("sohbet");
+  // Nova sesli komutu: "dosyalar sekmesini aç" vb.
+  useEffect(() => {
+    const onTab = (e: Event) => { const k = (e as CustomEvent<TabKey>).detail; if (TABS.some((t) => t.key === k)) setTab(k); };
+    window.addEventListener("nova:tab", onTab);
+    return () => window.removeEventListener("nova:tab", onTab);
+  }, []);
   // sürüklenebilir yerleşim (kamera yüksekliği, sağ panel genişliği) — tarayıcıda saklanır
   const [layout, setLayout] = useState<typeof DEFAULT_LAYOUT>(() => {
     try { const v = JSON.parse(localStorage.getItem("nova:layout") || "null"); if (v && typeof v.camH === "number" && typeof v.panelW === "number") return v; } catch { /* yoksay */ }
@@ -129,7 +134,7 @@ export default function ProjectView({ project, projects = [], onSwitch, onClose,
                 onDrag={(d) => setLayout((l) => ({ ...l, camH: clamp(l.camH + d, 90, 560) }))}
                 onReset={() => setLayout((l) => ({ ...l, camH: DEFAULT_LAYOUT.camH }))} />
               <div className="surface-dark relative min-h-0 flex-1">
-                <div className="absolute inset-0 flex flex-col"><Chat conversationId={project.id} speakerGender={teamCast(project.id).manager.gender === "k" ? "k" : "e"} /></div>
+                <div className="absolute inset-0 flex flex-col"><Chat conversationId={project.id} speakerGender="k" /></div>
               </div>
             </div>
             {/* sürükle: sağ panel genişliği */}
