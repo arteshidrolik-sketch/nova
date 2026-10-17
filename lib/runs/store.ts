@@ -76,3 +76,12 @@ export function cancelRun(id: string): void {
 export function isCanceled(id: string): boolean {
   return runs.get(id)?.canceled ?? false;
 }
+
+// Şu an süren işler (canlıya alma bunları bekler; yarıda kesilmesin).
+// 10 dakikadır hiç çıktı üretmeyen "running" kayıt takılmış sayılır, beklenmez.
+export function activeRuns(): { id: string; agent: string; ageSec: number }[] {
+  const now = Date.now();
+  return [...runs.values()]
+    .filter((r) => r.status === "running" && now - r.updatedAt < 10 * 60 * 1000)
+    .map((r) => ({ id: r.id, agent: r.agent, ageSec: Math.round((now - r.createdAt) / 1000) }));
+}

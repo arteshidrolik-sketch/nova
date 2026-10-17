@@ -1340,7 +1340,7 @@ export async function GET(req: Request) {
   if (!run) {
     return Response.json({
       status: "error",
-      error: "Oturum bulunamadı (sunucu yeniden başlamış olabilir).",
+      error: "İş yarıda kesildi: Nova bu sırada yeniden başladı. Buraya kadar yapılanlar yukarıda duruyor; \"devam et\" yazarak kaldığı yerden sürdürebilirsin.",
       chunk: "",
       len: from,
     });
