@@ -223,7 +223,7 @@ function MessageBody({ content }: { content: string }) {
   let m: RegExpExecArray | null;
   while ((m = re.exec(content))) {
     if (m.index > last)
-      parts.push(<span key={k++}>{content.slice(last, m.index)}</span>);
+      parts.push(<TextWithThoughts key={k++} text={content.slice(last, m.index)} />);
     if (m[1]) parts.push(<GeneratedVideo key={k++} url={m[1]} />);
     else if (m[2]) parts.push(<GeneratedImage key={k++} url={m[2]} />);
     else if (m[4])
@@ -233,8 +233,23 @@ function MessageBody({ content }: { content: string }) {
     last = m.index + m[0].length;
   }
   if (last < content.length)
-    parts.push(<span key={k++}>{content.slice(last)}</span>);
+    parts.push(<TextWithThoughts key={k++} text={content.slice(last)} />);
   return <>{parts}</>;
+}
+
+// Düşünce metni (💭 … görünmez ayraç U+2063) soluk ve italik; asıl cevap (konuşma balonu) normal
+function TextWithThoughts({ text }: { text: string }) {
+  const out: ReactNode[] = [];
+  const re = /💭([\s\S]*?)(?:\u2063|$)/gu;
+  let last = 0, k = 0, m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    if (m.index > last) out.push(<span key={k++}>{text.slice(last, m.index)}</span>);
+    if (m[1].trim()) out.push(<span key={k++} className="block text-[13px] italic" style={{ color: "var(--text-muted)", opacity: 0.8 }}>💭 {m[1].trim()}</span>);
+    last = m.index + m[0].length;
+    if (m[0].length === 0) re.lastIndex++;
+  }
+  if (last < text.length) out.push(<span key={k++}>{text.slice(last).replace(/\u2063/g, "")}</span>);
+  return <>{out}</>;
 }
 
 function AgentBadge({ m }: { m: Message }) {
@@ -664,6 +679,17 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     return lines.slice(last + 1).join("\n");
   }
 
+  // Sesli okunacak kısım = konuşma balonu: son durum satırından sonraki nihai cevap;
+  // düşünce metni (💭 … görünmez ayraç U+2063) ve tablo satırları okunmaz.
+  function speechText(text: string): string {
+    const t = finalSegment(text)
+      .replace(/💭[\s\S]*?(?:\u2063|$)/gu, " ")
+      .split("\n")
+      .filter((l) => !/^\s*\|/.test(l))
+      .join("\n");
+    return cleanForSpeech(t);
+  }
+
   // Sadece Türkçe düz metni bırak — kodları/teknik kısımları SESLENDİRME.
   function cleanForSpeech(text: string): string {
     return stripStatus(text)
@@ -939,8 +965,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     spokenListRef.current = [];
     spokenTrigramsRef.current = new Set();
     bargeFiredRef.current = false;
-    stopBarge();
-    startBarge();
+    stopBarge(); // araya girme dinleyicisi kapalı (yankıyla okumayı yarıda kesiyordu); susturmak için "Sustur" düğmesi
     while (ttsActiveRef.current && ttsQueueRef.current.length > 0) {
       const chunk = ttsQueueRef.current.shift();
       if (chunk == null) continue;
@@ -979,6 +1004,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     // demeden DOĞRUDAN dinle; sessizlikte kendiliğinden wake'e döner.
     // (Whisper yolunda kayıt elle durduğu için otomatik başlatma yapılmaz.)
     // Hoparlörün kuyruğu (yankı) mikrofona girmesin diye kısa bir nefes payı
+    if (convModeRef.current) { listenAgain(650); return; }
     if (wasGreeting || (wakeOnRef.current && !preferWhisper()))
       setTimeout(() => { if (!ttsActiveRef.current) micRef.current(); }, 550);
     else resumeWake();
@@ -1047,9 +1073,35 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     [/ayar/, "ayarlar", "Ayarlar"],
   ];
 
+  // Konuşma modu: Nova dinler → sen susunca gönderir → cevabı okur → yeniden dinler (mikrofona basmadan)
+  const [convMode, setConvMode] = useState(false);
+  const convModeRef = useRef(false);
+  const sentAtRef = useRef(0); // son sesli gönderim (iş başlamadan yeniden dinleyip çift göndermesin)
+  function listenAgain(delay: number) {
+    setTimeout(() => {
+      if (!convModeRef.current || ttsActiveRef.current || recognitionRef.current) return;
+      if (Date.now() - sentAtRef.current < 2500 && runningRef.current.size === 0) { listenAgain(800); return; }
+      if (runningRef.current.size > 0) return; // iş sürerken dinleme; cevap okununca yeniden dinler
+      startListening();
+    }, delay);
+  }
+  function toggleConvMode() {
+    if (convModeRef.current) {
+      convModeRef.current = false;
+      setConvMode(false);
+      stopListening();
+      return;
+    }
+    convModeRef.current = true;
+    setConvMode(true);
+    cancelSpeak();
+    startListening();
+  }
+
   function voiceSend(raw: string) {
     const t = raw.trim();
     if (!t) return;
+    sentAtRef.current = Date.now();
     const n = normTr(t);
     const ns = n.replace(/\s/g, "");
     const wantsNav = /(^|\s)(ac|git|gec|goster|gel|getir)\w*(\s|$)|sekme|ekran|bolum/.test(n);
@@ -1306,7 +1358,8 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         if (recognitionRef.current === rec) {
           setListening(false);
           recognitionRef.current = null;
-          resumeWake(); // wake'e geri dön (konuşma bitince)
+          if (convModeRef.current) listenAgain(400); // konuşma modu: sessizlikte dinlemeye devam
+          else resumeWake(); // wake'e geri dön (konuşma bitince)
         }
       };
       rec.onerror = (e) => {
@@ -1543,6 +1596,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   // unmount'ta wake'i kapat + TTS keepalive'i durdur
   useEffect(() => {
     return () => {
+      convModeRef.current = false;
       wakeOnRef.current = false;
       try {
         wakeRef.current?.abort();
@@ -1678,10 +1732,10 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       let lastGrowth = startedAt; // son yeni çıktının geldiği an
 
       // Streaming TTS: cevap akarken tamamlanan cümleleri anında oku (bitişi bekleme)
-      const willSpeak = speakRef.current || voiceReplyRef.current;
+      const willSpeak = speakRef.current || voiceReplyRef.current || convModeRef.current;
       if (willSpeak) cancelSpeak(); // önceki cevabın sesini durdur
       let spokenChar = 0;
-      let hold = false; // arama/araç adımı görüldü → yalnız nihai cevabı, sonda oku
+      let hold = true; // ara metin/düşünce okunmasın: yalnız nihai cevap, iş bitince bir kerede
       const pump = (final: boolean) => {
         if (!willSpeak || !active()) return; // arka plandaki sohbet sesli okumasın
         if (!hold && hasStatus(acc)) {
@@ -1690,7 +1744,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         }
         if (hold) {
           if (!final) return;
-          const cleaned = cleanForSpeech(finalSegment(acc));
+          const cleaned = speechText(acc);
           if (cleaned) enqueueSpeak(cleaned);
           return;
         }
@@ -1776,6 +1830,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
 
       pump(true); // kalan son cümleyi de oku
       voiceReplyRef.current = false;
+      if (convModeRef.current) setTimeout(() => { if (!ttsActiveRef.current && ttsQueueRef.current.length === 0) listenAgain(300); }, 400);
 
       fetch("/api/memory", {
         method: "POST",
@@ -1920,6 +1975,28 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
             >
               ⚠ {ttsNote}
             </span>
+          )}
+          <button
+            onClick={toggleConvMode}
+            title="Konuşma modu: Nova seni dinler, sen susunca gönderir, cevabı okur ve yeniden dinler"
+            className="rounded-lg border px-3 py-1.5 text-sm transition-colors"
+            style={{
+              borderColor: convMode ? "#2ff5b5" : "var(--border)",
+              color: convMode ? "#06121d" : "var(--text-muted)",
+              background: convMode ? "#2ff5b5" : "transparent",
+            }}
+          >
+            {convMode ? (speaking ? "🗣️ Nova konuşuyor" : listening ? "🎙️ Dinliyorum…" : loading ? "⏳ Düşünüyor…" : "🎙️ Konuşma açık") : "🎙️ Konuşma modu"}
+          </button>
+          {speaking && (
+            <button
+              onClick={() => { cancelSpeak(); if (convModeRef.current) listenAgain(300); }}
+              title="Okumayı durdur"
+              className="rounded-lg border px-3 py-1.5 text-sm"
+              style={{ borderColor: "var(--border)", color: "var(--text-muted)", background: "transparent" }}
+            >
+              ⏹ Sustur
+            </button>
           )}
           <button
             onClick={clearChat}

@@ -677,6 +677,7 @@ export async function POST(req: Request) {
           let canceledMid = false;
           // Model metnindeki uydurma görsel/video/dosya linklerini süz
           const textFilter = makeModelTextFilter((s) => emit(s));
+          let inThinking = false;
           for await (const event of stream) {
             if (isStopped()) {
               stoppedMid = true;
@@ -701,7 +702,13 @@ export async function POST(req: Request) {
               event.type === "content_block_start" &&
               (event.content_block as { type?: string })?.type === "thinking"
             ) {
+              inThinking = true;
               emit("\n\n💭 ");
+            } else if (event.type === "content_block_stop" && inThinking) {
+              // düşünme bitti: görünmez ayraç (U+2063) → istemci düşünceyi cevaptan ayırır
+              // (sesli okumada yalnız cevap okunur, ekranda düşünce soluk gösterilir)
+              inThinking = false;
+              emit("⁣\n\n");
             } else if (
               event.type === "content_block_start" &&
               (event.content_block as { type?: string })?.type ===
