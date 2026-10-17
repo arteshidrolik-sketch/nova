@@ -74,7 +74,7 @@ export default function ProjectView({ project, projects = [], onSwitch, onRename
     >
       <PageAnim />
       {/* başlık */}
-      <header className="relative z-[1] flex items-center gap-3 border-b px-4 py-3 sm:px-6" style={{ borderColor: "var(--border-strong)", background: "var(--surface-header)" }}>
+      <header className="relative z-[40] flex items-center gap-3 border-b px-4 py-3 sm:px-6" style={{ borderColor: "var(--border-strong)", background: "var(--surface-header)" }}>
         <button
           onClick={onClose}
           className="flex h-11 items-center gap-1 rounded-full pl-2 pr-4 text-[14px] transition-colors duration-150"
