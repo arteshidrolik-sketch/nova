@@ -114,7 +114,7 @@ export default function CameraView({
               <i className="tl" /><i className="tr" /><i className="bl" /><i className="br" />
               <span className="cam-tag">
                 <b>{cast[r].name}</b>
-                <span style={{ color: c }}>{TEAM_META[r].name}</span>
+                <span className="cam-role" style={{ color: c }}>{TEAM_META[r].name}</span>
                 <span className={`cam-st ${active ? "on" : ""}`}>{statusTr[st]}{st === "working" && tier[r] ? ` · ${tier[r]}` : ""}</span>
               </span>
             </button>
@@ -122,7 +122,7 @@ export default function CameraView({
         })}
       </div>
       <div className="cam-vignette" />
-      <div className="cam-hud tl"><span className="rec" /> REC &nbsp;·&nbsp; KAM-01 &nbsp;·&nbsp; {title.toLocaleUpperCase("tr-TR")} OFİS</div>
+      <div className="cam-hud tl"><span className="rec" /> REC<span className="cam-title"> &nbsp;·&nbsp; KAM-01 &nbsp;·&nbsp; {title.toLocaleUpperCase("tr-TR")} OFİS</span></div>
       <div className="cam-hud tr tabular-nums">{ts}</div>
       <div className="cam-hud bl">1080p · 24fps · canlı</div>
     </div>

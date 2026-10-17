@@ -570,6 +570,14 @@ body {
 @keyframes camFlicker { 0%, 96%, 100% { opacity: 1; } 97% { opacity: .85; } 98% { opacity: 1; } 99% { opacity: .9; } }
 @keyframes camRec { 50% { opacity: .15; } }
 @keyframes camTrack { 0%, 100% { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 40%, transparent), 0 0 0 0 transparent; } 50% { box-shadow: inset 0 0 0 1px var(--c), 0 0 18px -4px var(--c); } }
+/* telefon: etiketler birbirine girmesin — yalnız isim (+ çalışırken durum), küçük arayüz */
+@media (max-width: 639px) {
+  .cam-tag { font-size: 9px; gap: 3px; padding: 1px 4px; left: 50%; transform: translateX(-50%); }
+  .cam-tag .cam-role, .cam-st:not(.on) { display: none; }
+  .cam-hud { font-size: 9px; padding: 2px 5px; }
+  .cam-hud.tl { left: 6px; top: 6px; } .cam-hud.tr { right: 6px; top: 6px; }
+  .cam-hud .cam-title, .cam-hud.bl { display: none; }
+}
 @media (prefers-reduced-motion: reduce) { .cam-drift, .cam-grain, .cam-vignette, .cam-box.on, .cam-hud .rec { animation: none !important; } }
 
 /* yatay kayan sekme şeridi: kaydırma çubuğu gizli */
