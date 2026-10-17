@@ -212,6 +212,9 @@ function FileDownload({ href, label }: { href: string; label: string }) {
 
 // Asistan mesajını render eder: markdown görselleri (![](url)) <img>,
 // belge indirme linklerini ([ad](/api/files?...)) indirme butonu olarak gösterir.
+// Tarayıcı sesinin okuma hızı (1 = normal). Noktalarda bekleme hissini de azaltır.
+const TTS_RATE = 1.15;
+
 function MessageBody({ content }: { content: string }) {
   // Sıra önemli: video işareti (!video[..](url)) görsel işaretinden ÖNCE denenir.
   // Görsel/video URL'i hem uzak (http) hem yerel (/api/files) olabilir.
@@ -731,10 +734,16 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       cleanText.match(/[^.!?…\n]+[.!?…]*/g)?.map((s) => s.trim()).filter(Boolean) ?? [
         cleanText,
       ];
+    // Cümleleri ~250 karakterlik parçalarda birleştir: her parça ayrı başlatıldığı için
+    // tek tek cümle göndermek noktalarda uzun duraklama yapıyordu
+    let buf = "";
+    const flush = () => { if (buf) ttsQueueRef.current.push(buf); buf = ""; };
     for (const p of parts) {
-      if (p.length <= 220) ttsQueueRef.current.push(p);
-      else for (let i = 0; i < p.length; i += 200) ttsQueueRef.current.push(p.slice(i, i + 200));
+      if (p.length > 250) { flush(); for (let i = 0; i < p.length; i += 240) ttsQueueRef.current.push(p.slice(i, i + 240)); continue; }
+      if (buf.length + p.length + 1 > 250) flush();
+      buf = buf ? `${buf} ${p}` : p;
     }
+    flush();
     runQueue();
   }
 
@@ -872,7 +881,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       } else {
         u.lang = "tr-TR";
       }
-      u.rate = 1;
+      u.rate = TTS_RATE; // biraz hızlı: doğal Türkçe konuşma temposu
       u.pitch = 1;
       let settled = false;
       let started = false;
