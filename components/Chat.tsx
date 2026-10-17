@@ -771,7 +771,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
           const res = await fetch("/api/tts", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text }),
+            body: JSON.stringify({ text, gender: speakerGenderRef.current }),
           });
           if (res.status === 501) return resolve("nokey"); // anahtar yok → tarayıcıya düş
           if (!res.ok) {

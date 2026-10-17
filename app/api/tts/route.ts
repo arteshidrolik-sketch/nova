@@ -17,7 +17,8 @@ function markDown(p: "openai" | "fal", status: number, body: string) {
   if (status === 429 || /quota|credit|balance/i.test(body)) why = "kredi/kota bitti";
   else if (status === 403 && /top_up|locked/i.test(body)) why = "bakiye yüklenmeli";
   else if (status === 401) why = "anahtar geçersiz";
-  down[p] = { until: Date.now() + COOLDOWN_MS, why };
+  // kredi/kota bittiyse saatlerce düzelmez → 6 saat deneme (her cümlede boşuna beklenmesin)
+  down[p] = { until: Date.now() + (why === "kredi/kota bitti" || why === "bakiye yüklenmeli" ? 6 * 3600_000 : COOLDOWN_MS), why };
 }
 
 async function openaiTts(text: string, voice: string): Promise<ArrayBuffer | null> {
@@ -53,6 +54,7 @@ async function openaiTts(text: string, voice: string): Promise<ArrayBuffer | nul
 // döner: { audio: { url } } → mp3'ü indirip aynen geçiriyoruz.
 async function falTts(text: string): Promise<ArrayBuffer | null> {
   const key = process.env.FAL_KEY;
+  if (process.env.NOVA_FAL_TTS !== "1") return null; // varsayılan KAPALI: tek (kadın) sesti + fal bakiyesi harcıyordu
   if (!key || Date.now() < down.fal.until) return null;
   const model = process.env.NOVA_FAL_TTS_MODEL || "fal-ai/elevenlabs/tts/turbo-v2.5";
   const voice = process.env.NOVA_FAL_TTS_VOICE || "Rachel";
@@ -86,7 +88,8 @@ async function falTts(text: string): Promise<ArrayBuffer | null> {
 }
 
 export async function POST(req: Request) {
-  if (!process.env.OPENAI_API_KEY && !process.env.FAL_KEY)
+  const falOn = !!process.env.FAL_KEY && process.env.NOVA_FAL_TTS === "1";
+  if (!process.env.OPENAI_API_KEY && !falOn)
     return new Response("TTS anahtarı tanımlı değil", { status: 501 });
 
   let text = "";
@@ -95,6 +98,9 @@ export async function POST(req: Request) {
     const body = await req.json();
     if (typeof body?.text === "string") text = body.text;
     if (typeof body?.voice === "string" && body.voice) voice = body.voice;
+    // konuşan müdürün cinsiyeti: kadın → nova, erkek → onyx (NOVA_TTS_VOICE_K / _E ile değiştirilebilir)
+    if (body?.gender === "e") voice = process.env.NOVA_TTS_VOICE_E || "onyx";
+    else if (body?.gender === "k") voice = process.env.NOVA_TTS_VOICE_K || process.env.NOVA_TTS_VOICE || "nova";
   } catch {
     return new Response("Geçersiz istek", { status: 400 });
   }
@@ -107,7 +113,7 @@ export async function POST(req: Request) {
     // 503 + JSON: Cloudflare 502/504'ü kendi HTML sayfasıyla değiştiriyor, 503'ü geçirir
     const parts: string[] = [];
     if (process.env.OPENAI_API_KEY) parts.push(`OpenAI: ${down.openai.why || "yanıt yok"}`);
-    if (process.env.FAL_KEY) parts.push(`fal: ${down.fal.why || "yanıt yok"}`);
+    if (falOn) parts.push(`fal: ${down.fal.why || "yanıt yok"}`);
     const retryIn = Math.max(0, Math.min(down.openai.until || Infinity, down.fal.until || Infinity) - Date.now());
     return Response.json(
       { error: "tts_unavailable", reason: parts.join(" · "), retryInMs: Number.isFinite(retryIn) ? retryIn : COOLDOWN_MS },
