@@ -50,8 +50,9 @@ export default function ProjectView({ project, projects = [], onSwitch, onRename
   });
   useEffect(() => { try { localStorage.setItem("nova:layout", JSON.stringify(layout)); } catch { /* yoksay */ } }, [layout]);
   const [compact, setCompact] = useState(false);
+  const [narrowW, setNarrowW] = useState(0); // telefon genişliği (0 = geniş ekran)
   useEffect(() => {
-    const f = () => setCompact(window.innerWidth < 760 || window.innerHeight < 760);
+    const f = () => { setCompact(window.innerWidth < 760 || window.innerHeight < 760); setNarrowW(window.innerWidth < 640 ? window.innerWidth : 0); };
     f(); window.addEventListener("resize", f);
     return () => window.removeEventListener("resize", f);
   }, []);
@@ -81,12 +82,12 @@ export default function ProjectView({ project, projects = [], onSwitch, onRename
           style={{ border: "1px solid var(--border-strong)", color: "var(--text-muted)" }}
           aria-label="Evrene dön"
         >
-          <IconBack width={18} height={18} /> Evren
+          <IconBack width={18} height={18} /> <span className="hidden sm:inline">Evren</span>
         </button>
         {/* proje sekmeleri: evrene dönmeden projeler arasında geçiş */}
-        <ProjectTabs project={project} projects={projects} onSwitch={onSwitch} onRenamed={onRenamed} />
+        <ProjectTabs project={project} projects={projects} onSwitch={onSwitch} onRenamed={onRenamed} narrow={narrowW > 0} />
         <NovaCost />
-        <SpaceControls />
+        <div className="hidden sm:contents"><SpaceControls /></div>
       </header>
 
       <div className="relative z-[1] flex min-h-0 flex-1 flex-col sm:flex-row">
@@ -128,12 +129,13 @@ export default function ProjectView({ project, projects = [], onSwitch, onRename
             {/* sol: ofis + sohbet */}
             <div className="flex min-w-0 flex-1 flex-col">
               <div className="shrink-0" style={{ background: "var(--surface-office)" }}>
-                <TeamOffice convId={project.id} title={project.title} compact={compact} height={layout.camH} />
+                {/* telefonda kare tam genişlikte, kırpılmadan (16:9) — 4 kişinin hepsi görünür */}
+                <TeamOffice convId={project.id} title={project.title} compact={compact} height={narrowW ? Math.round(narrowW * 9 / 16) : layout.camH} />
               </div>
               {/* sürükle: kamera yüksekliği */}
-              <Splitter dir="y" title="Sürükle: kamera yüksekliği · çift tık: varsayılan"
+              {!narrowW && <Splitter dir="y" title="Sürükle: kamera yüksekliği · çift tık: varsayılan"
                 onDrag={(d) => setLayout((l) => ({ ...l, camH: clamp(l.camH + d, 90, 560) }))}
-                onReset={() => setLayout((l) => ({ ...l, camH: DEFAULT_LAYOUT.camH }))} />
+                onReset={() => setLayout((l) => ({ ...l, camH: DEFAULT_LAYOUT.camH }))} />}
               <div className="surface-dark relative min-h-0 flex-1">
                 <div className="absolute inset-0 flex flex-col"><Chat conversationId={project.id} speakerGender="k" /></div>
               </div>
@@ -315,7 +317,7 @@ function loadTabIds(): string[] | null {
 
 // Üst çubukta proje sekmeleri: çift tıkla yeniden adlandır, × ile çubuktan kaldır,
 // "Tümü" menüsünden ara / sekmeye ekle / adlandır. Çubuk taşarsa fare tekerleğiyle yatay kayar.
-function ProjectTabs({ project, projects, onSwitch, onRenamed }: { project: ProjectMeta; projects: ProjectMeta[]; onSwitch?: (p: ProjectMeta) => void; onRenamed?: (id: string, title: string) => void }) {
+function ProjectTabs({ project, projects, onSwitch, onRenamed, narrow = false }: { project: ProjectMeta; projects: ProjectMeta[]; onSwitch?: (p: ProjectMeta) => void; onRenamed?: (id: string, title: string) => void; narrow?: boolean }) {
   const all = projects.some((p) => p.id === project.id) ? projects : [project, ...projects];
   const [ids, setIds] = useState<string[] | null>(null);
   useEffect(() => { setIds(loadTabIds()); }, []);
@@ -377,7 +379,7 @@ function ProjectTabs({ project, projects, onSwitch, onRenamed }: { project: Proj
 
   return (
     <div className="flex min-w-0 flex-1 items-center gap-1.5">
-      <nav ref={barRef} className="no-scrollbar flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto" aria-label="Projeler">
+      <nav ref={barRef} hidden={narrow} className="no-scrollbar flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto" aria-label="Projeler">
         {shown.map((p) => {
           const active = p.id === project.id;
           return (
@@ -413,19 +415,19 @@ function ProjectTabs({ project, projects, onSwitch, onRenamed }: { project: Proj
           );
         })}
       </nav>
-      <div ref={menuRef} className="relative shrink-0">
+      <div ref={menuRef} className={narrow ? "relative min-w-0 flex-1" : "relative shrink-0"}>
         <button
           onClick={() => { setMenu((m) => !m); setQ(""); }}
           aria-expanded={menu}
           title="Tüm projeler: ara, sekmeye ekle, yeniden adlandır"
-          className="flex h-10 items-center gap-1 rounded-full px-3 text-[13px]"
-          style={{ border: "1px solid var(--border-strong)", color: "var(--text-muted)" }}
+          className={`flex h-10 items-center gap-1 rounded-full px-3 text-[13px] ${narrow ? "w-full min-w-0" : ""}`}
+          style={{ border: "1px solid var(--border-strong)", color: narrow ? "var(--text)" : "var(--text-muted)", fontWeight: narrow ? 700 : 400 }}
         >
-          Tümü <span className="opacity-70">({all.length})</span> ▾
+          {narrow ? <><Planet seed={project.id + project.title} size={20} spin={false} fit /><span className="min-w-0 flex-1 truncate text-left">{project.title}</span></> : <>Tümü <span className="opacity-70">({all.length})</span></>} ▾
         </button>
         {menu && (
           <div
-            className="absolute right-0 top-12 z-[200] w-[320px] max-w-[90vw] rounded-xl p-2 shadow-2xl"
+            className={`absolute top-12 z-[200] w-[320px] max-w-[calc(100vw-24px)] rounded-xl p-2 shadow-2xl ${narrow ? "left-0" : "right-0"}`}
             style={{ background: "rgba(14,17,40,.97)", border: "1px solid var(--border-strong)", backdropFilter: "blur(8px)" }}
           >
             <input

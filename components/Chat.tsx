@@ -1997,7 +1997,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
                 }
               }}
               title="Ses seç"
-              className="max-w-[130px] truncate rounded-lg border px-2 py-1.5 text-xs outline-none"
+              className="hidden max-w-[130px] truncate rounded-lg border px-2 py-1.5 text-xs outline-none sm:block"
               style={{
                 borderColor: "var(--border)",
                 background: "var(--bg)",
@@ -2027,11 +2027,11 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
               background: speakEnabled ? "#4fd8ff14" : "transparent",
             }}
           >
-            {speakEnabled ? "🔊 Sesli açık" : "🔇 Sesli kapalı"}
+            {speakEnabled ? "🔊" : "🔇"}<span className="hidden sm:inline">{speakEnabled ? " Sesli açık" : " Sesli kapalı"}</span>
           </button>
           {ttsNote && (
             <span
-              className="max-w-[260px] truncate text-[11px]"
+              className="hidden max-w-[260px] truncate text-[11px] sm:inline"
               title={ttsNote}
               style={{ color: "#fbbf24" }}
             >
@@ -2058,7 +2058,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
               className="rounded-lg border px-3 py-1.5 text-sm"
               style={{ borderColor: "var(--border)", color: "var(--text-muted)", background: "transparent" }}
             >
-              ⏹ Sustur
+              ⏹<span className="hidden sm:inline"> Sustur</span>
             </button>
           )}
           <button
@@ -2072,7 +2072,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
               background: "transparent",
             }}
           >
-            🧹 Temizle
+            🧹<span className="hidden sm:inline"> Temizle</span>
           </button>
         </div>
       </header>

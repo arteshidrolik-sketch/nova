@@ -144,18 +144,18 @@ export default function NovaVoice({
   const live = mode !== "off";
   const color = mode === "command" ? "#2ff5b5" : mode === "speaking" ? "#ff7ad9" : mode === "busy" ? "#ffd166" : live ? "#7aa2ff" : "#6b7280";
   return (
-    <div className="fixed bottom-4 left-4 z-[120] flex items-center gap-2">
+    <div className="fixed bottom-[104px] left-3 z-[120] flex items-center gap-2 sm:bottom-4 sm:left-4">
       <button
         onClick={() => toggle()}
         title={live ? "Nova dinliyor — kapatmak için tıkla (ya da “Nova, dinlemeyi kapat” de)" : "Nova'yı aç: “Nova” deyince dinler, tüm arayüzü sesle yönetirsin"}
-        className="flex items-center gap-2 rounded-full py-2 pl-2 pr-4 text-[13px] font-medium shadow-lg"
+        className="flex items-center gap-2 rounded-full p-1.5 text-[13px] font-medium shadow-lg sm:py-2 sm:pl-2 sm:pr-4"
         style={{ background: "rgba(10,12,30,.85)", border: `1px solid ${color}`, color: "#f1f5f9", backdropFilter: "blur(6px)" }}
       >
         <span className="relative flex h-7 w-7 items-center justify-center rounded-full" style={{ background: color }}>
           {live && <span className="absolute inset-0 animate-ping rounded-full opacity-40" style={{ background: color }} />}
           <span className="relative text-[13px] font-bold text-black">N</span>
         </span>
-        {LABEL[mode]}
+        <span className="hidden sm:inline">{LABEL[mode]}</span>
       </button>
       {heard && live && (
         <span className="max-w-[40vw] truncate rounded-full px-3 py-1.5 text-[12px]" style={{ background: "rgba(10,12,30,.75)", color: "#cbd5e1" }}>“{heard}”</span>

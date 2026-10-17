@@ -63,6 +63,13 @@ export default function Universe() {
     } catch { /* yoksay */ }
   }, []);
   useEffect(() => { load(); }, [load]);
+  // telefonda yörünge yerine liste (gezegenler ve adlar üst üste binmesin)
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const f = () => setNarrow(window.innerWidth < 640);
+    f(); window.addEventListener("resize", f);
+    return () => window.removeEventListener("resize", f);
+  }, []);
 
   // Yörünge yerleşimi: en yeni projeler iç yörüngede, daha büyük
   const layout = projects.map((p, i) => {
@@ -151,7 +158,28 @@ export default function Universe() {
       </header>
 
       {/* sahne */}
-      <div ref={stageRef} className="absolute inset-0">
+      {narrow && (
+        <div hidden={!!open} className="absolute inset-x-0 bottom-0 top-[84px] z-[50] overflow-y-auto px-3 pb-36">
+          <div className="grid grid-cols-2 gap-2.5">
+            {projects.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => setOpen(p)}
+                aria-label={`${p.title} projesini aç`}
+                className="flex min-h-[76px] items-center gap-3 rounded-2xl p-3 text-left"
+                style={{ background: "rgba(31,38,96,.62)", border: "1px solid var(--border-strong)", backdropFilter: "blur(6px)" }}
+              >
+                <Planet seed={p.id + p.title} size={40} spin={false} fit />
+                <span className="min-w-0 flex-1">
+                  <span className="line-clamp-2 text-[13px] font-semibold leading-snug" style={{ color: "var(--text)" }}>{p.title}</span>
+                  <span className="block text-[11px]" style={{ color: "var(--text-muted)" }}>{ago(p.updatedAt)}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <div ref={stageRef} className="absolute inset-0" hidden={narrow}>
         {/* yörünge çizgileri */}
         <svg className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden>
           <OrbitRings />
