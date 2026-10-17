@@ -25,12 +25,15 @@ export async function register() {
 
   const { maybeRunDailyReports } = await import("@/lib/team/report");
   const { maybeSnapshotAll } = await import("@/lib/youtube/stats");
+  const { maybeMeasureAll } = await import("@/lib/stores/status");
 
   setInterval(async () => {
     // Gün sonu (18:00 İstanbul) proje ilerleme raporları
     maybeRunDailyReports().catch((e) => console.warn("[rapor] zamanlayıcı:", e));
     // bağlı YouTube kanallarının 6 saatlik ölçümü
     maybeSnapshotAll().catch((e) => console.warn("[youtube] zamanlayıcı:", e));
+    // bağlı uygulamaların mağaza durumu (3 saatte bir, salt okuma)
+    maybeMeasureAll().catch((e) => console.warn("[mağaza] zamanlayıcı:", e));
     const now = new Date();
     for (const loop of LOOPS) {
       try {

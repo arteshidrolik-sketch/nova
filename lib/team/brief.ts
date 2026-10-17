@@ -4,6 +4,7 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { summaryText } from "@/lib/youtube/stats";
+import { storeSummary } from "@/lib/stores/status";
 
 const DIR = path.join(process.cwd(), "data", "briefs");
 const MAX = 14000; // istem şişmesin
@@ -23,8 +24,10 @@ export async function setBrief(projectId: string, text: string): Promise<void> {
 export async function briefBlock(projectId?: string): Promise<string> {
   const b = (await getBrief(projectId)).trim();
   const yt = projectId ? await summaryText(projectId).catch(() => "") : "";
+  const st = projectId ? await storeSummary(projectId).catch(() => "") : "";
   return (
     (b ? `\n\n## PROJE KİMLİĞİ (projeyi buradan tanı; kararlarında ve üretiminde bu kurallara uy)\n${b}\n` : "") +
+    (st ? `\n## MAĞAZA DURUMU (App Store / Google Play API'den salt okuma — bu GÜNCEL ölçümdür; kimlikteki "son bilinen" mağaza bilgisi yerine bunu kullan)\n${st}\n` : "") +
     (yt ? `\n## KANALIN GÜNCEL RAKAMLARI (otomatik ölçüm — gelişmeyi buradan takip et, plan ve önerilerini bu verilere dayandır)\n${yt}\n` : "")
   );
 }
