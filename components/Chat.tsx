@@ -294,6 +294,7 @@ export type ChatHandle = {
 type ChatProps = {
   onAgentActivity?: (a: AgentActivity) => void;
   conversationId?: string | null;
+  speakerGender?: "k" | "e"; // konuşan müdürün cinsiyeti → ses buna göre seçilir
   onConversationUpdated?: () => void;
   onVoiceState?: (s: "idle" | "listening" | "speaking") => void;
   onWakeState?: (enabled: boolean) => void;
@@ -309,6 +310,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   {
     onAgentActivity,
     conversationId,
+    speakerGender,
     onConversationUpdated,
     onVoiceState,
     onWakeState,
@@ -334,6 +336,9 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   >([]);
   const [voiceURI, setVoiceURI] = useState("");
   const voiceURIRef = useRef("");
+  const speakerGenderRef = useRef<"k" | "e">("k");
+  const pitchRef = useRef(1);
+  speakerGenderRef.current = speakerGender ?? "k";
   const scrollRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<Recognition | null>(null);
   const messagesRef = useRef<Message[]>([]);
@@ -395,18 +400,26 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         .map((v) => ({ uri: v.voiceURI, name: v.name, lang: v.lang }));
       if (!list.length) return;
       setVoices(list);
-      const saved = localStorage.getItem("nova_voice") || "";
+      const g = speakerGenderRef.current;
+      const saved = localStorage.getItem(`nova_voice_${g}`) || (g === "k" ? localStorage.getItem("nova_voice") : "") || "";
       if (saved && list.some((v) => v.uri === saved)) {
         setVoiceURI(saved);
+        pitchRef.current = 1;
         return;
       }
       const tr = list.filter((v) => v.lang.toLowerCase().startsWith("tr"));
-      const femaleKw = ["emel", "filiz", "yelda", "seda", "aysel", "zeynep", "female", "kad"];
-      const pick =
-        tr.find((v) => femaleKw.some((k) => v.name.toLowerCase().includes(k))) ||
-        tr.find((v) => v.name.toLowerCase().includes("google")) ||
-        tr[0] ||
-        list.find((v) => femaleKw.some((k) => v.name.toLowerCase().includes(k)));
+      const has = (v: { name: string }, kw: string[]) => kw.some((k) => v.name.toLowerCase().includes(k));
+      const femaleKw = ["emel", "filiz", "yelda", "seda", "aysel", "zeynep", "female", "kad", "google"];
+      const maleKw = ["tolga", "ahmet", "cem", "emre", "male", "erkek"];
+      let pick: { uri: string } | undefined;
+      pitchRef.current = 1;
+      if (g === "e") {
+        pick = tr.find((v) => has(v, maleKw) && /natural|online/i.test(v.name)) || tr.find((v) => has(v, maleKw));
+        // erkek Türkçe ses yoksa: Türkçe sesi daha kalın tonla oku
+        if (!pick) { pick = tr[0]; pitchRef.current = 0.72; }
+      } else {
+        pick = tr.find((v) => has(v, femaleKw) && /natural|online/i.test(v.name)) || tr.find((v) => has(v, femaleKw)) || tr[0];
+      }
       if (pick) setVoiceURI(pick.uri);
     };
     load();
@@ -414,7 +427,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     return () => {
       window.speechSynthesis.onvoiceschanged = null;
     };
-  }, []);
+  }, [speakerGender]); // müdürün cinsiyeti değişince (proje değişince) ses yeniden seçilir
   useEffect(() => {
     voiceURIRef.current = voiceURI;
   }, [voiceURI]);
@@ -882,7 +895,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         u.lang = "tr-TR";
       }
       u.rate = TTS_RATE; // biraz hızlı: doğal Türkçe konuşma temposu
-      u.pitch = 1;
+      u.pitch = pitchRef.current;
       let settled = false;
       let started = false;
       const finish = () => {
@@ -1924,8 +1937,9 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
               onChange={(e) => {
                 const uri = e.target.value;
                 setVoiceURI(uri);
+                pitchRef.current = 1;
                 try {
-                  localStorage.setItem("nova_voice", uri);
+                  localStorage.setItem(`nova_voice_${speakerGenderRef.current}`, uri);
                 } catch {
                   /* yoksay */
                 }

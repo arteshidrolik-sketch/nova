@@ -11,6 +11,7 @@ import Skills from "./Skills";
 import Tasks from "./Tasks";
 import Invoices from "./Invoices";
 import TeamOffice, { prefetchOffices } from "./TeamOffice";
+import { teamCast } from "@/lib/team/roles";
 import AgentMonitor from "./AgentMonitor";
 import SpaceControls from "./SpaceControls";
 import NovaCost from "./NovaCost";
@@ -128,7 +129,7 @@ export default function ProjectView({ project, projects = [], onSwitch, onClose,
                 onDrag={(d) => setLayout((l) => ({ ...l, camH: clamp(l.camH + d, 90, 560) }))}
                 onReset={() => setLayout((l) => ({ ...l, camH: DEFAULT_LAYOUT.camH }))} />
               <div className="surface-dark relative min-h-0 flex-1">
-                <div className="absolute inset-0 flex flex-col"><Chat conversationId={project.id} /></div>
+                <div className="absolute inset-0 flex flex-col"><Chat conversationId={project.id} speakerGender={teamCast(project.id).manager.gender === "k" ? "k" : "e"} /></div>
               </div>
             </div>
             {/* sürükle: sağ panel genişliği */}
