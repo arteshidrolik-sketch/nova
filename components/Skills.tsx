@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import SkillMarket from "./SkillMarket";
 import { AGENT_KEYS, AGENT_META, type AgentKey } from "@/lib/agents/meta";
 
 type Skill = {
@@ -116,8 +117,9 @@ export default function Skills() {
         </button>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-6 py-6">
-        <div className="mx-auto max-w-3xl space-y-4">
+      <div className="flex-1 overflow-y-auto pb-6">
+        <div className="mx-auto max-w-3xl"><SkillMarket onAdded={refresh} /></div>
+        <div className="mx-auto mt-6 max-w-3xl space-y-4 px-6">
           {editing && (
             <div
               className="space-y-2 rounded-xl border p-4"
