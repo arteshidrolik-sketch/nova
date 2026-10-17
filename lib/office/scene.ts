@@ -169,6 +169,8 @@ export async function generateScene(id: string): Promise<void> {
     if (boxes.length !== 4) boxes = SEATS.map((_, i) => ({ x: 4 + i * 24.5, y: 30, w: 18, h: 50 }));
     const scene: Scene = { createdAt: Date.now(), provider, width: w, height: h, boxes: Object.fromEntries(SEATS.map((r, i) => [r, boxes[i]])) };
     await fs.mkdir(DIR, { recursive: true });
+    // eski kare ancak yenisi hazır olunca değişir; eski canlı klipler yeni karede geçersiz
+    for (const st of ["idle", ...SEATS]) await fs.rm(path.join(DIR, `${safe(id)}-v-${st}.mp4`), { force: true });
     await fs.writeFile(imagePath(id), buf);
     await fs.writeFile(metaPath(id), JSON.stringify(scene));
     fails.delete(id);
@@ -182,6 +184,11 @@ export async function generateScene(id: string): Promise<void> {
   } finally {
     pending.delete(id);
   }
+}
+
+// Yeniden üretim öncesi: yalnız hata beklemesini kaldır (eski kare, yenisi başarılı olana dek kalır)
+export function clearSceneFailure(id: string): void {
+  fails.delete(id);
 }
 
 export async function resetScene(id: string): Promise<void> {

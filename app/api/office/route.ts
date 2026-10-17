@@ -6,7 +6,7 @@
 // POST ?scope=<proje>          → yeniden üret
 // POST ?scope=<proje>&clips=1  → canlı sahne videolarını üret (görsel 2× büyütülür); clips=idle,coder → yalnız onlar
 import { promises as fs } from "fs";
-import { fallbackScene, generateScene, getScene, imagePath, resetScene, sceneStatus } from "@/lib/office/scene";
+import { clearSceneFailure, fallbackScene, generateScene, getScene, imagePath, sceneStatus } from "@/lib/office/scene";
 import { generateVideos, STATES, videoPath, videosBusy, type VidState } from "@/lib/office/clips";
 
 export const runtime = "nodejs";
@@ -57,7 +57,8 @@ export async function POST(req: Request) {
     generateVideos(id, only).catch(() => {});
     return Response.json({ status: "clips-pending" });
   }
-  await resetScene(id);
+  // eski kare silinmez: yeni görsel üretilemezse (kredi bitti vb.) ofis boş kalmasın
+  clearSceneFailure(id);
   generateScene(id).catch(() => {});
   return Response.json({ status: "pending" });
 }
