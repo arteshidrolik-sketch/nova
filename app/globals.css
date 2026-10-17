@@ -574,8 +574,9 @@ body {
 @media (max-width: 639px) {
   .cam-tag { font-size: 9px; gap: 3px; padding: 1px 4px; left: 50%; transform: translateX(-50%); }
   .cam-tag .cam-role, .cam-st:not(.on) { display: none; }
-  button.cam-box:first-of-type .cam-tag { left: 0; transform: none; }
-  button.cam-box:last-of-type .cam-tag { left: auto; right: 0; transform: none; }
+  /* kenara yakın kişide etiket görüntünün kenarından taşmasın */
+  .cam-tag.edge-l { left: var(--el); transform: none; }
+  .cam-tag.edge-r { left: auto; right: var(--er); transform: none; }
   .cam-hud { font-size: 9px; padding: 2px 5px; }
   .cam-hud.tl { left: 6px; top: 6px; } .cam-hud.tr { right: 6px; top: 6px; }
   .cam-hud .cam-title, .cam-hud.bl { display: none; }

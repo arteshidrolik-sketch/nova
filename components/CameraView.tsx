@@ -103,6 +103,10 @@ export default function CameraView({
           const st = status[r];
           const active = st !== "idle";
           const c = TEAM_META[r].color;
+          // etiket kutunun ortasında; kişi kenara çok yakınsa görüntü kenarına yaslanır (yüzde = kutu genişliği)
+          const mid = b.x + b.w / 2;
+          const edge = mid < 18 ? "edge-l" : mid > 82 ? "edge-r" : "";
+          const ev = { ["--el" as string]: `calc(${(Math.max(0, -b.x + 1) / b.w) * 100}% * 1)`, ["--er" as string]: `calc(${(Math.max(0, b.x + b.w - 99) / b.w) * 100}% * 1)` };
           return (
             <button
               key={r}
@@ -112,7 +116,7 @@ export default function CameraView({
               aria-label={`${cast[r].name}, ${TEAM_META[r].name} — ${statusTr[st]}. Becerileri aç`}
             >
               <i className="tl" /><i className="tr" /><i className="bl" /><i className="br" />
-              <span className="cam-tag">
+              <span className={`cam-tag ${edge}`} style={ev}>
                 <b>{cast[r].name}</b>
                 <span className="cam-role" style={{ color: c }}>{TEAM_META[r].name}</span>
                 <span className={`cam-st ${active ? "on" : ""}`}>{statusTr[st]}{st === "working" && tier[r] ? ` · ${tier[r]}` : ""}</span>
