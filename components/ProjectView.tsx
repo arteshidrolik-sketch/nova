@@ -36,6 +36,12 @@ export default function ProjectView({ project, projects = [], onSwitch, onClose,
   // tüm projelerin kamera bilgilerini önceden yükle → sekme geçişi anında
   useEffect(() => { prefetchOffices(projects.map((p) => p.id)); }, [projects]);
   const [tab, setTab] = useState<TabKey>("sohbet");
+  // sürüklenebilir yerleşim (kamera yüksekliği, sağ panel genişliği) — tarayıcıda saklanır
+  const [layout, setLayout] = useState<typeof DEFAULT_LAYOUT>(() => {
+    try { const v = JSON.parse(localStorage.getItem("nova:layout") || "null"); if (v && typeof v.camH === "number" && typeof v.panelW === "number") return v; } catch { /* yoksay */ }
+    return DEFAULT_LAYOUT;
+  });
+  useEffect(() => { try { localStorage.setItem("nova:layout", JSON.stringify(layout)); } catch { /* yoksay */ } }, [layout]);
   const [compact, setCompact] = useState(false);
   useEffect(() => {
     const f = () => setCompact(window.innerWidth < 760 || window.innerHeight < 760);
@@ -114,15 +120,25 @@ export default function ProjectView({ project, projects = [], onSwitch, onClose,
           <div className="absolute inset-0 flex" hidden={tab !== "sohbet"}>
             {/* sol: ofis + sohbet */}
             <div className="flex min-w-0 flex-1 flex-col">
-              <div className="shrink-0 border-b" style={{ borderColor: "var(--border-strong)", background: "var(--surface-office)" }}>
-                <TeamOffice convId={project.id} title={project.title} compact={compact} />
+              <div className="shrink-0" style={{ background: "var(--surface-office)" }}>
+                <TeamOffice convId={project.id} title={project.title} compact={compact} height={layout.camH} />
               </div>
+              {/* sürükle: kamera yüksekliği */}
+              <Splitter dir="y" title="Sürükle: kamera yüksekliği · çift tık: varsayılan"
+                onDrag={(d) => setLayout((l) => ({ ...l, camH: clamp(l.camH + d, 90, 560) }))}
+                onReset={() => setLayout((l) => ({ ...l, camH: DEFAULT_LAYOUT.camH }))} />
               <div className="surface-dark relative min-h-0 flex-1">
                 <div className="absolute inset-0 flex flex-col"><Chat conversationId={project.id} /></div>
               </div>
             </div>
+            {/* sürükle: sağ panel genişliği */}
+            <div className="hidden lg:flex">
+              <Splitter dir="x" title="Sürükle: panel genişliği · çift tık: varsayılan"
+                onDrag={(d) => setLayout((l) => ({ ...l, panelW: clamp(l.panelW - d, 240, 760) }))}
+                onReset={() => setLayout((l) => ({ ...l, panelW: DEFAULT_LAYOUT.panelW }))} />
+            </div>
             {/* sağ: ajan performansı (geniş ekranda) */}
-            <div className="hidden w-[360px] shrink-0 lg:block xl:w-[400px]">
+            <div className="hidden shrink-0 lg:block" style={{ width: layout.panelW }}>
               <AgentMonitor convId={project.id} />
             </div>
           </div>
@@ -444,6 +460,32 @@ function YouTubeCard({ id }: { id: string }) {
         </>
       )}
       {err && <div className="mt-2 text-[12px]" style={{ color: "#ff6b7a" }}>{err}</div>}
+    </div>
+  );
+}
+
+const DEFAULT_LAYOUT = { camH: 220, panelW: 380 };
+const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+
+// Sürükleme çubuğu: dir="y" yatay çubuk (yükseklik), dir="x" dikey çubuk (genişlik)
+function Splitter({ dir, onDrag, onReset, title }: { dir: "x" | "y"; onDrag: (delta: number) => void; onReset: () => void; title: string }) {
+  const last = useRef<number | null>(null);
+  const [active, setActive] = useState(false);
+  return (
+    <div
+      role="separator" aria-orientation={dir === "y" ? "horizontal" : "vertical"} title={title}
+      onPointerDown={(e) => { (e.target as HTMLElement).setPointerCapture(e.pointerId); last.current = dir === "y" ? e.clientY : e.clientX; setActive(true); document.body.style.userSelect = "none"; }}
+      onPointerMove={(e) => { if (last.current === null) return; const p = dir === "y" ? e.clientY : e.clientX; const d = p - last.current; if (d) { onDrag(d); last.current = p; } }}
+      onPointerUp={() => { last.current = null; setActive(false); document.body.style.userSelect = ""; }}
+      onPointerCancel={() => { last.current = null; setActive(false); document.body.style.userSelect = ""; }}
+      onDoubleClick={onReset}
+      className={`group relative z-[6] shrink-0 touch-none ${dir === "y" ? "h-2 w-full cursor-row-resize" : "h-full w-2 cursor-col-resize"}`}
+      style={{ background: active ? "rgba(62,232,255,.35)" : "var(--border-strong)" }}
+    >
+      <span
+        className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full transition-opacity ${dir === "y" ? "h-1 w-10" : "h-10 w-1"} ${active ? "opacity-100" : "opacity-50 group-hover:opacity-100"}`}
+        style={{ background: "#e5e7eb" }}
+      />
     </div>
   );
 }

@@ -59,7 +59,7 @@ export function prefetchOffices(ids: string[]) {
   }
 }
 
-export default function TeamOffice({ convId, title = "", compact = false }: { convId: string; title?: string; compact?: boolean }) {
+export default function TeamOffice({ convId, title = "", compact = false, height }: { convId: string; title?: string; compact?: boolean; height?: number }) {
   const [running, setRunning] = useState(false);
   const [camSize, setCamSize] = useState<CamSize>("orta");
   useEffect(() => { try { const v = localStorage.getItem("nova:camSize"); if (v && v in CAM_SIZES) setCamSize(v as CamSize); } catch { /* yoksay */ } }, []);
@@ -108,8 +108,8 @@ export default function TeamOffice({ convId, title = "", compact = false }: { co
   if (speaking && !running) st.manager = "speaking";
 
   // kamera şeridi yüksekliği (küçük/orta/büyük) — sohbete yer kalsın; seçim tarayıcıda saklanır
-  const H = CAM_SIZES[camSize].h;
-  const camBox = { height: compact ? Math.min(H, 180) : H } as const;
+  const H = height ?? CAM_SIZES[camSize].h; // dışarıdan sürüklenen yükseklik öncelikli
+  const camBox = { height: compact && height === undefined ? Math.min(H, 180) : H } as const;
   const sizeBtn = (
     <button
       onClick={cycleCamSize}
@@ -125,7 +125,7 @@ export default function TeamOffice({ convId, title = "", compact = false }: { co
     return (
       <div className="relative w-full" style={camBox}>
         <CameraView convId={convId} title={title} scene={cam.scene} cast={cast} status={st} statusTr={STATUS_TR} tier={tier} onOpen={setOpen} />
-        {sizeBtn}
+        {height === undefined && sizeBtn}
         {open && <AgentPanel role={open} person={cast[open].name} onClose={() => setOpen(null)} />}
       </div>
     );
@@ -135,7 +135,7 @@ export default function TeamOffice({ convId, title = "", compact = false }: { co
     return (
       <div className="relative w-full" style={camBox}>
         <CameraView convId={cam.fallback.scope} title={title} scene={cam.fallback.scene} cast={cast} status={IDLE} statusTr={STATUS_TR} tier={{}} onOpen={setOpen} labels={false} />
-        {sizeBtn}
+        {height === undefined && sizeBtn}
         <div className="absolute bottom-3 left-1/2 z-[4] -translate-x-1/2 rounded-full px-3 py-1.5 text-[12px]" style={{ background: "rgba(0,0,0,.6)", color: "#f1f5f9" }} title={cam.error || ""}>
           {cam.status === "pending" ? "📷 Ekibinizin ofisi hazırlanıyor… (1–3 dk)" : "📷 Ofis görüntüsü için görsel kredisi gerekli"}
         </div>
