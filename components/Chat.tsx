@@ -418,7 +418,9 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         // erkek Türkçe ses yoksa: Türkçe sesi daha kalın tonla oku
         if (!pick) { pick = tr[0]; pitchRef.current = 0.72; }
       } else {
-        pick = tr.find((v) => has(v, femaleKw) && /natural|online/i.test(v.name)) || tr.find((v) => has(v, femaleKw)) || tr[0];
+        pick = tr.find((v) => has(v, femaleKw) && /natural|online/i.test(v.name)) || tr.find((v) => has(v, femaleKw));
+        // kadın Türkçe ses yoksa (ör. Chrome yalnız Tolga): Türkçe sesi daha ince tonla oku
+        if (!pick) { pick = tr[0]; pitchRef.current = 1.35; }
       }
       if (pick) setVoiceURI(pick.uri);
     };
