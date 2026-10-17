@@ -5,6 +5,7 @@
 // proje kimliğinin altına eklenir → müdür ve uzmanlar gelişmeyi her görevde görür.
 import { promises as fs } from "fs";
 import path from "path";
+import { analyticsConfigured, fetchAnalytics, TRAFFIC_TR, type YtAnalytics } from "./analytics";
 
 const DIR = path.join(process.cwd(), "data", "youtube");
 const LINKS = path.join(DIR, "links.json");
@@ -15,7 +16,7 @@ const snapFile = (projectId: string) => path.join(DIR, `${safe(projectId)}.jsonl
 
 export type YtLink = { channelId: string; title: string; handle?: string; linkedAt: number };
 export type YtVideo = { id: string; title: string; publishedAt: string; views: number; likes: number; sec: number };
-export type YtSnap = { ts: number; subs: number; views: number; videoCount: number; videos: YtVideo[] };
+export type YtSnap = { ts: number; subs: number; views: number; videoCount: number; videos: YtVideo[]; analytics?: YtAnalytics };
 
 function key(): string {
   const k = process.env.YOUTUBE_API_KEY;
@@ -102,6 +103,11 @@ export async function snapshot(projectId: string): Promise<YtSnap> {
     }
   }
   const snap: YtSnap = { ts: Date.now(), subs: +(ch.statistics.subscriberCount ?? 0), views: +(ch.statistics.viewCount ?? 0), videoCount: +(ch.statistics.videoCount ?? 0), videos };
+  // kanal sahibinin izni varsa: izleme süresi/oranı, abone kazanımı, trafik kaynakları
+  if (analyticsConfigured() && videos.length) {
+    const first = videos.reduce((a, v) => (v.publishedAt < a ? v.publishedAt : a), videos[0].publishedAt).slice(0, 10);
+    try { snap.analytics = await fetchAnalytics(first); } catch (e) { console.warn("[youtube] analytics:", e instanceof Error ? e.message : e); }
+  }
   await fs.mkdir(DIR, { recursive: true });
   await fs.appendFile(snapFile(projectId), JSON.stringify(snap) + "\n");
   return snap;
@@ -164,7 +170,32 @@ export async function summaryText(projectId: string): Promise<string> {
     "Son yayınlananlar:",
     ...recent.map((v) => `  • ${ds(v.publishedAt)} · ${v.title} — ${n(v.views)} izlenme`),
     ...(movers.length && week ? ["Son 7 günde en çok izlenme kazananlar:", ...movers.map((x) => `  • ${x.v.title} — ${d(x.g)}`)] : []),
-    "Not: İzlenme süresi, izleme oranı ve trafik kaynakları bu bağlantıda YOK (YouTube Analytics izni gerekir); bunları rakam uydurarak yorumlama.",
+    ...analyticsLines(last),
   ];
   return lines.join("\n");
+}
+
+// Analytics bölümü: izleme oranı en yüksek/en düşük videolar, abone getirenler, trafik kaynakları
+function analyticsLines(last: YtSnap): string[] {
+  const a = last.analytics;
+  if (!a) return ["Not: İzlenme süresi, izleme oranı ve trafik kaynakları henüz yok (YouTube Analytics bağlı değil ya da veri gelmedi); bunları rakam uydurarak yorumlama."];
+  const title = new Map(last.videos.map((v) => [v.id, v.title]));
+  const rows = Object.entries(a.byVideo).filter(([, m]) => m.views >= 3).map(([id, m]) => ({ id, t: title.get(id) ?? id, ...m }));
+  const pct = (x: number) => "%" + Math.round(x);
+  const byPct = [...rows].sort((x, y) => y.avgPct - x.avgPct);
+  const totalTraffic = a.traffic.reduce((sum, t) => sum + t.views, 0) || 1;
+  const gained = rows.filter((r) => r.subsGained > 0).sort((x, y) => y.subsGained - x.subsGained).slice(0, 5);
+  const viewsSum = rows.reduce((sum, r) => sum + r.views, 0);
+  const avgAll = viewsSum ? rows.reduce((sum, r) => sum + r.avgPct * r.views, 0) / viewsSum : 0;
+  return [
+    "İzleme verisi (YouTube Analytics, " + a.from + " – " + a.to + "; YouTube bu veriyi ~2-3 gün gecikmeyle işler; en az 3 izlenmeli videolar):",
+    "- Kanal geneli ağırlıklı ortalama izleme oranı: " + pct(avgAll) + " (Shorts'ta döngüler yüzünden %100'ü geçebilir)",
+    "İzleme oranı en yüksek videolar (seri ağırlığına esas al):",
+    ...byPct.slice(0, 5).map((r) => "  • " + r.t + " — " + pct(r.avgPct) + " izlenmiş, ort. " + Math.round(r.avgSec) + " sn, " + n(r.views) + " izlenme"),
+    "İzleme oranı en düşük videolar:",
+    ...byPct.slice(-3).reverse().map((r) => "  • " + r.t + " — " + pct(r.avgPct) + ", ort. " + Math.round(r.avgSec) + " sn"),
+    ...(gained.length ? ["Abone getiren videolar:", ...gained.map((r) => "  • " + r.t + " — +" + r.subsGained + (r.subsLost ? " / -" + r.subsLost : ""))] : []),
+    ...(a.traffic.length ? ["İzleyicinin geldiği yer:", ...a.traffic.slice(0, 6).map((t) => "  • " + (TRAFFIC_TR[t.source] ?? t.source) + ": %" + Math.round((t.views / totalTraffic) * 100) + " (" + n(t.views) + ")")] : []),
+    "Not: Shorts'taki 'izlemeye devam etti / kaydırıp geçti' oranı API'de yok; gerekirse Yücel'den iste.",
+  ];
 }
