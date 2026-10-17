@@ -29,8 +29,9 @@ const TABS: { key: TabKey; label: string; color: string; Icon: ComponentType<SVG
   { key: "gorevler", label: "Onaylar", color: "#ff9f6b", Icon: IconTasks },
 ];
 
-export default function ProjectView({ project, projects = [], onSwitch, onClose, instant = false }: {
+export default function ProjectView({ project, projects = [], onSwitch, onRenamed, onClose, instant = false }: {
   project: ProjectMeta; projects?: ProjectMeta[]; onSwitch?: (p: ProjectMeta) => void; onClose: () => void;
+  onRenamed?: (id: string, title: string) => void;
   instant?: boolean; // sekmeyle geçişte giriş animasyonu yok (görüntü bir an kaybolmasın)
 }) {
   // tüm projelerin kamera bilgilerini önceden yükle → sekme geçişi anında
@@ -83,7 +84,7 @@ export default function ProjectView({ project, projects = [], onSwitch, onClose,
           <IconBack width={18} height={18} /> Evren
         </button>
         {/* proje sekmeleri: evrene dönmeden projeler arasında geçiş */}
-        <ProjectTabs project={project} projects={projects} onSwitch={onSwitch} />
+        <ProjectTabs project={project} projects={projects} onSwitch={onSwitch} onRenamed={onRenamed} />
         <NovaCost />
         <SpaceControls />
       </header>
@@ -296,36 +297,174 @@ function PageAnim() {
   );
 }
 
-// Üst çubukta proje sekmeleri (aktif olan vurgulu); dar ekranda yatay kayar
-function ProjectTabs({ project, projects, onSwitch }: { project: ProjectMeta; projects: ProjectMeta[]; onSwitch?: (p: ProjectMeta) => void }) {
-  const list = projects.some((p) => p.id === project.id) ? projects : [project, ...projects];
-  const activeRef = useRef<HTMLButtonElement>(null);
+// Proje adını değiştir (sunucuda kalıcı; sesli komutlar da yeni adı tanır)
+async function renameProject(id: string, title: string): Promise<boolean> {
+  try {
+    const r = await fetch(`/api/conversations/${encodeURIComponent(id)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }) });
+    return r.ok;
+  } catch { return false; }
+}
+
+// Sekme çubuğundaki projeler (sıra = kullanıcının seçtiği sıra) — tarayıcıda saklanır.
+// Kayıt yoksa son çalışılan 6 proje. Açık proje çubukta yoksa geçici olarak sona eklenir.
+const TABS_KEY = "nova:tabs";
+const DEFAULT_TABS = 6;
+function loadTabIds(): string[] | null {
+  try { const v = JSON.parse(localStorage.getItem(TABS_KEY) || "null"); return Array.isArray(v) ? v.filter((x) => typeof x === "string") : null; } catch { return null; }
+}
+
+// Üst çubukta proje sekmeleri: çift tıkla yeniden adlandır, × ile çubuktan kaldır,
+// "Tümü" menüsünden ara / sekmeye ekle / adlandır. Çubuk taşarsa fare tekerleğiyle yatay kayar.
+function ProjectTabs({ project, projects, onSwitch, onRenamed }: { project: ProjectMeta; projects: ProjectMeta[]; onSwitch?: (p: ProjectMeta) => void; onRenamed?: (id: string, title: string) => void }) {
+  const all = projects.some((p) => p.id === project.id) ? projects : [project, ...projects];
+  const [ids, setIds] = useState<string[] | null>(null);
+  useEffect(() => { setIds(loadTabIds()); }, []);
+  const saveIds = (next: string[]) => { setIds(next); try { localStorage.setItem(TABS_KEY, JSON.stringify(next)); } catch { /* yoksay */ } };
+  const byId = new Map(all.map((p) => [p.id, p]));
+  const base = ids ? ids.filter((id) => byId.has(id)) : all.slice(0, DEFAULT_TABS).map((p) => p.id);
+  const onBar = (id: string) => base.includes(id);
+  const shown = [...base, ...(onBar(project.id) ? [] : [project.id])].map((id) => byId.get(id)!).filter(Boolean);
+  const toggleBar = (id: string) => saveIds(onBar(id) ? base.filter((x) => x !== id) : [...base, id]);
+
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const doneRef = useRef(false); // Enter + blur aynı düzenlemeyi iki kez kaydetmesin
+  const startEdit = (p: ProjectMeta) => { doneRef.current = false; setEditing(p.id); setDraft(p.title); };
+  const commit = async () => {
+    if (doneRef.current) return;
+    doneRef.current = true;
+    const id = editing; const t = draft.trim();
+    setEditing(null);
+    if (!id || !t || t === byId.get(id)?.title) return;
+    onRenamed?.(id, t); // anında göster
+    if (!(await renameProject(id, t))) alert("Ad kaydedilemedi, tekrar dene.");
+  };
+  const editBox = (
+    <input
+      autoFocus value={draft} maxLength={60}
+      onChange={(e) => setDraft(e.target.value)}
+      onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(null); }}
+      onBlur={commit}
+      onClick={(e) => e.stopPropagation()}
+      className="w-[150px] rounded-md bg-black/40 px-1.5 py-0.5 text-[13px] outline-none"
+      style={{ border: "1px solid rgba(255,255,255,.35)", color: "var(--text)" }}
+    />
+  );
+
+  const barRef = useRef<HTMLElement>(null);
+  const activeRef = useRef<HTMLDivElement>(null);
   useEffect(() => { activeRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" }); }, [project.id]);
+  useEffect(() => {
+    const el = barRef.current; if (!el) return;
+    const w = (e: WheelEvent) => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && el.scrollWidth > el.clientWidth) { el.scrollLeft += e.deltaY; e.preventDefault(); } };
+    el.addEventListener("wheel", w, { passive: false });
+    return () => el.removeEventListener("wheel", w);
+  }, []);
+
+  // Tümü menüsü
+  const [menu, setMenu] = useState(false);
+  const [q, setQ] = useState("");
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const d = (e: MouseEvent) => { if (!menuRef.current?.contains(e.target as Node)) { setMenu(false); setEditing(null); } };
+    const k = (e: KeyboardEvent) => { if (e.key === "Escape") setMenu(false); };
+    document.addEventListener("mousedown", d); window.addEventListener("keydown", k);
+    return () => { document.removeEventListener("mousedown", d); window.removeEventListener("keydown", k); };
+  }, [menu]);
+  const nq = q.toLocaleLowerCase("tr-TR").trim();
+  const found = nq ? all.filter((p) => p.title.toLocaleLowerCase("tr-TR").includes(nq)) : all;
+
   return (
-    <nav className="no-scrollbar flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto" aria-label="Projeler">
-      {list.map((p) => {
-        const active = p.id === project.id;
-        return (
-          <button
-            key={p.id}
-            ref={active ? activeRef : undefined}
-            onClick={() => !active && onSwitch?.(p)}
-            aria-current={active ? "page" : undefined}
-            title={p.title}
-            className="flex h-10 shrink-0 items-center gap-2 rounded-full pl-1.5 pr-3.5 text-[13px] transition-colors duration-150"
-            style={{
-              background: active ? "rgba(255,255,255,.14)" : "transparent",
-              border: `1px solid ${active ? "rgba(255,255,255,.35)" : "transparent"}`,
-              color: active ? "var(--text)" : "var(--text-muted)",
-              fontWeight: active ? 700 : 500,
-            }}
+    <div className="flex min-w-0 flex-1 items-center gap-1.5">
+      <nav ref={barRef} className="no-scrollbar flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto" aria-label="Projeler">
+        {shown.map((p) => {
+          const active = p.id === project.id;
+          return (
+            <div
+              key={p.id}
+              ref={active ? activeRef : undefined}
+              role="button" tabIndex={0}
+              onClick={() => !active && editing !== p.id && onSwitch?.(p)}
+              onDoubleClick={() => startEdit(p)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !active && editing !== p.id) onSwitch?.(p); if (e.key === "F2") startEdit(p); }}
+              aria-current={active ? "page" : undefined}
+              title={`${p.title} — çift tıkla: yeniden adlandır`}
+              className="group flex h-10 shrink-0 cursor-pointer items-center gap-2 rounded-full pl-1.5 pr-2 text-[13px] transition-colors duration-150"
+              style={{
+                background: active ? "rgba(255,255,255,.14)" : "transparent",
+                border: `1px solid ${active ? "rgba(255,255,255,.35)" : "transparent"}`,
+                color: active ? "var(--text)" : "var(--text-muted)",
+                fontWeight: active ? 700 : 500,
+              }}
+            >
+              <Planet seed={p.id + p.title} size={24} spin={false} />
+              {editing === p.id ? editBox : <span className="max-w-[160px] truncate">{p.title}</span>}
+              {editing !== p.id && onBar(p.id) && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); toggleBar(p.id); }}
+                  title="Sekme çubuğundan kaldır (proje silinmez)"
+                  aria-label={`${p.title} sekmesini kaldır`}
+                  className="flex h-5 w-5 items-center justify-center rounded-full text-[12px] opacity-0 hover:bg-white/15 group-hover:opacity-70"
+                >×</button>
+              )}
+              {editing !== p.id && !onBar(p.id) && <span className="w-1" />}
+            </div>
+          );
+        })}
+      </nav>
+      <div ref={menuRef} className="relative shrink-0">
+        <button
+          onClick={() => { setMenu((m) => !m); setQ(""); }}
+          aria-expanded={menu}
+          title="Tüm projeler: ara, sekmeye ekle, yeniden adlandır"
+          className="flex h-10 items-center gap-1 rounded-full px-3 text-[13px]"
+          style={{ border: "1px solid var(--border-strong)", color: "var(--text-muted)" }}
+        >
+          Tümü <span className="opacity-70">({all.length})</span> ▾
+        </button>
+        {menu && (
+          <div
+            className="absolute right-0 top-12 z-[200] w-[320px] max-w-[90vw] rounded-xl p-2 shadow-2xl"
+            style={{ background: "rgba(14,17,40,.97)", border: "1px solid var(--border-strong)", backdropFilter: "blur(8px)" }}
           >
-            <Planet seed={p.id + p.title} size={24} spin={false} />
-            <span className="max-w-[160px] truncate">{p.title}</span>
-          </button>
-        );
-      })}
-    </nav>
+            <input
+              autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Proje ara…"
+              onKeyDown={(e) => { if (e.key === "Enter" && found[0]) { onSwitch?.(found[0]); setMenu(false); } }}
+              className="mb-2 w-full rounded-lg bg-black/40 px-3 py-2 text-[13px] outline-none"
+              style={{ border: "1px solid var(--border)", color: "var(--text)" }}
+            />
+            <div className="max-h-[60vh] overflow-y-auto">
+              {found.map((p) => (
+                <div key={p.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/5">
+                  <button
+                    onClick={() => toggleBar(p.id)}
+                    title={onBar(p.id) ? "Sekme çubuğundan kaldır" : "Sekme çubuğuna ekle"}
+                    className="w-5 text-[15px]"
+                    style={{ color: onBar(p.id) ? "#ffd166" : "var(--text-muted)" }}
+                  >{onBar(p.id) ? "★" : "☆"}</button>
+                  <Planet seed={p.id + p.title} size={20} spin={false} />
+                  {editing === p.id ? editBox : (
+                    <button
+                      onClick={() => { if (p.id !== project.id) onSwitch?.(p); setMenu(false); }}
+                      className="min-w-0 flex-1 truncate text-left text-[13px]"
+                      style={{ color: p.id === project.id ? "var(--text)" : "var(--text-muted)", fontWeight: p.id === project.id ? 700 : 500 }}
+                    >{p.title}</button>
+                  )}
+                  {editing !== p.id && (
+                    <button onClick={() => startEdit(p)} title="Yeniden adlandır" aria-label={`${p.title} adını değiştir`} className="rounded px-1 text-[13px] opacity-60 hover:opacity-100">✏️</button>
+                  )}
+                </div>
+              ))}
+              {found.length === 0 && <div className="px-2 py-3 text-[13px]" style={{ color: "var(--text-muted)" }}>Eşleşen proje yok.</div>}
+            </div>
+            <div className="mt-2 border-t px-2 pt-2 text-[11px]" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
+              ★ sekme çubuğunda · çubukta çift tıkla = yeniden adlandır
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

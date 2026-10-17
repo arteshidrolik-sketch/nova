@@ -227,7 +227,9 @@ export default function Universe() {
 
       {/* proje sayfası */}
       {open && (
-        <ProjectView key={open.id} instant={switched} project={open} projects={projects} onSwitch={(p) => { setSwitched(true); setOpen(p); }} onClose={() => { setSwitched(false); setOpen(null); load(); }} />
+        <ProjectView key={open.id} instant={switched} project={open} projects={projects} onSwitch={(p) => { setSwitched(true); setOpen(p); }}
+          onRenamed={(id, title) => { setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, title } : p))); setOpen((o) => (o && o.id === id ? { ...o, title } : o)); }}
+          onClose={() => { setSwitched(false); setOpen(null); load(); }} />
       )}
       {/* Nova: her sayfada sesli asistan ("Nova" deyince dinler, arayüzü sesle yönetir) */}
       <NovaVoice
