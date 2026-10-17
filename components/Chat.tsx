@@ -1675,6 +1675,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       let status = "running";
       let stopped = false;
       const startedAt = Date.now();
+      let lastGrowth = startedAt; // son yeni çıktının geldiği an
 
       // Streaming TTS: cevap akarken tamamlanan cümleleri anında oku (bitişi bekleme)
       const willSpeak = speakRef.current || voiceReplyRef.current;
@@ -1718,8 +1719,9 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
           stopped = true;
           break;
         }
-        if (Date.now() - startedAt > 20 * 60 * 1000) {
-          acc += "\n\n⚠️ Zaman aşımı (20 dk).";
+        // ilerleme oldukça bekle: 20 dk hiç yeni çıktı yoksa ya da toplam 90 dk dolduysa durdur
+        if (Date.now() - lastGrowth > 20 * 60 * 1000 || Date.now() - startedAt > 90 * 60 * 1000) {
+          acc += Date.now() - startedAt > 90 * 60 * 1000 ? "\n\n⚠️ Zaman aşımı (90 dk)." : "\n\n⚠️ 20 dakikadır hiç ilerleme yok, iş durduruldu.";
           // Sunucudaki işi de iptal et → arka planda token yakmaya devam etmesin
           fetch(`/api/chat?id=${encodeURIComponent(runId)}`, {
             method: "DELETE",
@@ -1742,6 +1744,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         }
         if (typeof p.chunk === "string" && p.chunk.length > 0) {
           acc += p.chunk;
+          if (p.chunk) lastGrowth = Date.now();
           offset = p.len ?? offset;
           // Ofis sahnesi (ekip ajanlarının durumu) akışı izler
           window.dispatchEvent(new CustomEvent("nova:stream", { detail: { convId: myConvId, text: acc, running: true } }));

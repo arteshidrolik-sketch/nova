@@ -17,12 +17,15 @@ export type Run = {
 };
 
 const runs = new Map<string, Run>();
-const MAX_AGE = 30 * 60 * 1000; // 30 dk sonra temizle
+const MAX_AGE = 30 * 60 * 1000; // biten iş 30 dk sonra temizlenir
+const STUCK_AGE = 3 * 60 * 60 * 1000; // 3 saati aşan "running" kayıt takılmış sayılır
 
+// Süren işe dokunma: model uzun süre çıktı vermeden çalışabilir (ör. Opus uzun metin yazarken).
+// Yalnız bitmiş işleri ve 3 saati aşmış takılı kayıtları temizle.
 function sweep() {
   const now = Date.now();
   for (const [id, r] of runs) {
-    if (now - r.updatedAt > MAX_AGE) runs.delete(id);
+    if (r.status !== "running" ? now - r.updatedAt > MAX_AGE : now - r.createdAt > STUCK_AGE) runs.delete(id);
   }
 }
 
@@ -78,10 +81,10 @@ export function isCanceled(id: string): boolean {
 }
 
 // Şu an süren işler (canlıya alma bunları bekler; yarıda kesilmesin).
-// 10 dakikadır hiç çıktı üretmeyen "running" kayıt takılmış sayılır, beklenmez.
+// Bitene kadar sayılır (sessiz çalışsa bile); yalnız 3 saati aşan kayıt takılmış kabul edilir.
 export function activeRuns(): { id: string; agent: string; ageSec: number }[] {
   const now = Date.now();
   return [...runs.values()]
-    .filter((r) => r.status === "running" && now - r.updatedAt < 10 * 60 * 1000)
+    .filter((r) => r.status === "running" && now - r.createdAt < STUCK_AGE)
     .map((r) => ({ id: r.id, agent: r.agent, ageSec: Math.round((now - r.createdAt) / 1000) }));
 }
