@@ -23,17 +23,22 @@ const slug = (s: string) =>
   s.toLocaleLowerCase("tr-TR").replace(/ı/g, "i").replace(/ğ/g, "g").replace(/ü/g, "u").replace(/ş/g, "s").replace(/ö/g, "o").replace(/ç/g, "c")
     .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "senaryo";
 
-// .docx → düz metin (paragraflar ayrı satır, tablo hücreleri sekmeyle)
+// .docx → düz metin: paragraflar ayrı satır; tablo satırları tek satır "hücre | hücre | …"
+// (replik tablosu "1 | Selma | [warmly] | metin" biçiminde gelir → bot kolayca replikler.tsv'ye çevirir)
 async function docxText(buf: Buffer): Promise<string> {
   const zip = await JSZip.loadAsync(buf);
-  const xml = (await zip.file("word/document.xml")?.async("string")) ?? "";
+  let xml = (await zip.file("word/document.xml")?.async("string")) ?? "";
+  const cellText = (x: string) => x.replace(/<w:tab\/>/g, " ").replace(/<\/w:p>/g, " ").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+  xml = xml.replace(/<w:tr[\s>][\s\S]*?<\/w:tr>/g, (row) => {
+    const cells = [...row.matchAll(/<w:tc[\s>][\s\S]*?<\/w:tc>/g)].map((m) => cellText(m[0]));
+    return `<w:p>${cells.join(" | ")}</w:p>`;
+  });
   return xml
     .replace(/<w:tab\/>/g, "\t")
-    .replace(/<\/w:tc>/g, "\t")
     .replace(/<\/w:p>/g, "\n")
     .replace(/<[^>]+>/g, "")
     .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&apos;/g, "'")
-    .replace(/\t+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+    .replace(/\n{3,}/g, "\n\n").trim();
 }
 
 async function readScriptFile(fullPath: string): Promise<string> {
