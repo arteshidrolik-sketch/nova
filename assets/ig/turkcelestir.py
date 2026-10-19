@@ -308,13 +308,19 @@ def duzen(cizim, tr, en, punto):
             "tr_adim": tr_adim, "en_adim": en_adim, "yuk": yuk}
 
 
+def genislige_sigar(cizim, d):
+    """Hiçbir satır sağdan taşmıyor mu? (sar() uzun kelimeyi bölemez, bu yüzden şart.)"""
+    return (all(cizim.textlength(s, font=d["tr_f"]) <= W - YAN_PAY for s in d["tr"]) and
+            all(cizim.textlength(s, font=d["en_f"]) <= W - YAN_PAY for s in d["en"]))
+
+
 def en_buyuk_punto(cizim, tr, en, bant_h, bas=58):
-    """Metnin banda sığdığı en büyük puntoyu bulur."""
-    for punto in range(bas, 25, -2):
+    """Metnin banda sığdığı en büyük puntoyu bulur — hem yükseklik hem GENİŞLİK."""
+    for punto in range(bas, 19, -2):
         d = duzen(cizim, tr, en, punto)
-        if d["yuk"] <= bant_h - 18:
+        if d["yuk"] <= bant_h - 18 and genislige_sigar(cizim, d):
             return d
-    return duzen(cizim, tr, en, 26)
+    return duzen(cizim, tr, en, 20)
 
 
 def gereken_yukseklik(altyazi, bas=58):
@@ -355,26 +361,38 @@ def cmd_kur(is_json, cikti):
     if not altyazi:
         sys.exit("altyazı listesi boş")
 
+    # Kaynak her ölçüde gelebiliyor (720x1280 çok yaygın). Önce 1080x1920'ye ölçekle:
+    # Instagram'ın istediği ölçü bu, ve altyazı katmanı 1080 genişliğe göre çiziliyor —
+    # 720'lik kareye 1080'lik yazı bindirilirse sağdan taşar (2026-10-20'de böyle oldu).
+    oran = min(W / gw, H / gh)
+    yw, yh = round(gw * oran), round(gh * oran)      # ölçeklenmiş görüntü
+    px, py = (W - yw) // 2, (H - yh) // 2            # 9:16 değilse kenar dolgusu
+
     # Gömülü altyazı yoksa yazıyı ekranın altına, Reels arayüzünün üstüne koy.
+    # Bant koordinatları kaynak çözünürlüğünde geldi → çıktı koordinatlarına çevir.
     if bant:
-        by, bh = int(bant["y"]), int(bant["h"])
+        by, bh = round(int(bant["y"]) * oran) + py, round(int(bant["h"]) * oran)
     else:
         bh = 300
-        by = gh - 620
+        by = H - 620
 
     # İki dil tek satıra sığmaz; gereken yer bandı aşıyorsa bandı ortasından büyüt.
     gerek = gereken_yukseklik(altyazi)
     if gerek > bh:
         orta = by + bh // 2
-        bh = min(gerek, gh - 80)
-        by = max(20, min(orta - bh // 2, gh - bh - 20))
+        bh = min(gerek, H - 80)
+        by = max(20, min(orta - bh // 2, H - bh - 20))
 
     png_dir = os.path.join(kok, "yazi")
     os.makedirs(png_dir, exist_ok=True)
-    girisler, filtre, onceki = [tool("ffmpeg"), "-v", "error", "-y", "-i", video], "", "[0:v]"
+    girisler, filtre, onceki = [tool("ffmpeg"), "-v", "error", "-y", "-i", video], "", "[v]"
+
+    olcek = (f"[0:v]scale={yw}:{yh}:flags=lanczos,"
+             f"pad={W}:{H}:{px}:{py}:black,setsar=1[v];")
+    filtre += olcek
 
     if kapat:
-        filtre += (f"[0:v]split[t0][t1];[t1]crop={gw}:{bh}:0:{by},boxblur=24:4,"
+        filtre += (f"[v]split[t0][t1];[t1]crop={W}:{bh}:0:{by},boxblur=24:4,"
                    f"eq=brightness=-0.42:saturation=0.15[bl];")
         enable = "+".join("between(t,%.2f,%.2f)" % (a, b) for a, b in kapat)
         filtre += f"[t0][bl]overlay=0:{by}:enable='{enable}'[v0];"
@@ -393,6 +411,7 @@ def cmd_kur(is_json, cikti):
                     *IG_VIDEO, *IG_AUDIO, cikti])
     w2, h2, s2 = probe(cikti)
     print(json.dumps({"cikti": cikti, "sure": round(s2, 2), "olcu": f"{w2}x{h2}",
+                      "kaynak_olcu": f"{gw}x{gh}", "bant": {"y": by, "h": bh},
                       "altyazi": len(altyazi), "kapatma": len(kapat)}, ensure_ascii=False))
 
 
