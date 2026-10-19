@@ -8,7 +8,10 @@ Akış: `analiz` videoyu ölçer, sesini ElevenLabs Scribe ile yazıya döker ve
 (Claude ızgaraya bakıp videoda gömülü yabancı altyazı var mı, varsa hangi yükseklikte diye karar verir).
 `bant` o bandın ekranda dolu olduğu aralıkları piksel taramasıyla bulur ve her aralıktan bir kare
 keser (Claude yabancı altyazıyı buradan okur). `kur` gömülü altyazı bandını koyu bulanık şeritle
-kapatır, üstüne Türkçe altyazıyı bindirir ve Instagram ölçülerinde çıkarır.
+kapatır, üstüne altyazıyı bindirir ve Instagram ölçülerinde çıkarır.
+
+Altyazı iki dillidir (Yücel, 2026-10-20): üstte Türkçe (beyaz), altta İngilizce (sarı). İki dil
+bandın yüksekliğine sığmazsa bant ortasından büyütülür.
 
 Ses ASLA değiştirilmez: orijinal konuşma, efekt ve kahkaha olduğu gibi kalır (Yücel'in kararı,
 2026-10-20: dublaj denendi, beğenilmedi).
@@ -256,16 +259,11 @@ def cmd_bant(video, klasor, y, h):
 
 # ---------- kur ----------
 
-def sigdir(cizim, satirlar, en_genis, yukseklik):
-    """Yazının banda sığacağı en büyük punto ve satır adımını bulur."""
-    for punto in range(64, 25, -2):
-        f = ImageFont.truetype(FONT, punto)
-        adim = int(punto * 1.28)
-        if len(satirlar) * adim > yukseklik - 16:
-            continue
-        if all(cizim.textlength(s, font=f) <= en_genis for s in satirlar):
-            return f, adim
-    return ImageFont.truetype(FONT, 26), 34
+TR_RENK = (255, 255, 255, 255)      # Türkçe: beyaz
+EN_RENK = (255, 212, 74, 255)       # İngilizce: sıcak sarı (iki dil karışmasın)
+EN_ORAN = 0.76                      # İngilizce punto, Türkçenin oranı
+YAN_PAY = 90                        # sağ/sol boşluk
+ARA = 10                            # iki dil arasındaki boşluk
 
 
 def sar(cizim, metin, punto, en_genis):
@@ -297,19 +295,51 @@ def sar(cizim, metin, punto, en_genis):
     return satirlar[:3]
 
 
-def yazi_png(metin, yol, bant_h):
-    """Saydam zemine, siyah konturlu beyaz altyazı çizer."""
+def duzen(cizim, tr, en, punto):
+    """Verilen puntoda iki dilin satırlarını, fontlarını ve kapladığı yüksekliği verir."""
+    en_punto = max(22, int(punto * EN_ORAN))
+    tr_f = ImageFont.truetype(FONT, punto)
+    en_f = ImageFont.truetype(FONT, en_punto)
+    tr_s = sar(cizim, tr, punto, W - YAN_PAY) if tr else []
+    en_s = sar(cizim, en, en_punto, W - YAN_PAY) if en else []
+    tr_adim, en_adim = int(punto * 1.22), int(en_punto * 1.22)
+    yuk = len(tr_s) * tr_adim + (ARA if tr_s and en_s else 0) + len(en_s) * en_adim
+    return {"tr": tr_s, "en": en_s, "tr_f": tr_f, "en_f": en_f,
+            "tr_adim": tr_adim, "en_adim": en_adim, "yuk": yuk}
+
+
+def en_buyuk_punto(cizim, tr, en, bant_h, bas=58):
+    """Metnin banda sığdığı en büyük puntoyu bulur."""
+    for punto in range(bas, 25, -2):
+        d = duzen(cizim, tr, en, punto)
+        if d["yuk"] <= bant_h - 18:
+            return d
+    return duzen(cizim, tr, en, 26)
+
+
+def gereken_yukseklik(altyazi, bas=58):
+    """Tüm altyazılar tercih edilen puntoda çizilse bandın ne kadar olması gerekirdi."""
+    d = ImageDraw.Draw(Image.new("RGB", (W, 10)))
+    return max((duzen(d, a.get("metin", ""), a.get("en", ""), bas)["yuk"] for a in altyazi), default=0) + 28
+
+
+def yazi_png(metin, en, yol, bant_h):
+    """Saydam zemine iki dilli altyazı çizer: üstte Türkçe (beyaz), altta İngilizce (sarı)."""
     img = Image.new("RGBA", (W, bant_h), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    satirlar = [s for s in metin.split("\n") if s.strip()]
-    if len(satirlar) == 1:
-        satirlar = sar(d, satirlar[0], 56, W - 90)
-    f, adim = sigdir(d, satirlar, W - 90, bant_h)
-    ust = (bant_h - len(satirlar) * adim) // 2
-    for i, s in enumerate(satirlar):
-        gen = d.textlength(s, font=f)
-        d.text(((W - gen) / 2, ust + i * adim), s, font=f, fill=(255, 255, 255, 255),
-               stroke_width=max(4, f.size // 11), stroke_fill=(0, 0, 0, 255))
+    y = en_buyuk_punto(d, metin, en, bant_h)
+    ust = (bant_h - y["yuk"]) // 2
+
+    def ciz(satirlar, f, adim, renk, ust):
+        for i, s in enumerate(satirlar):
+            gen = d.textlength(s, font=f)
+            d.text(((W - gen) / 2, ust + i * adim), s, font=f, fill=renk,
+                   stroke_width=max(4, f.size // 11), stroke_fill=(0, 0, 0, 255))
+        return ust + len(satirlar) * adim
+
+    alt = ciz(y["tr"], y["tr_f"], y["tr_adim"], TR_RENK, ust)
+    if y["en"]:
+        ciz(y["en"], y["en_f"], y["en_adim"], EN_RENK, alt + (ARA if y["tr"] else 0))
     img.save(yol)
 
 
@@ -321,7 +351,7 @@ def cmd_kur(is_json, cikti):
 
     bant = j.get("bant")                      # {"y":…, "h":…} ya da None (gömülü altyazı yok)
     kapat = j.get("kapat") or []              # bandın kapatılacağı [bas, bit] aralıkları
-    altyazi = j.get("altyazi") or []          # [{"bas":…, "bit":…, "metin":"…"}]
+    altyazi = j.get("altyazi") or []          # [{"bas":…, "bit":…, "metin":"Türkçe", "en":"English"}]
     if not altyazi:
         sys.exit("altyazı listesi boş")
 
@@ -331,6 +361,13 @@ def cmd_kur(is_json, cikti):
     else:
         bh = 300
         by = gh - 620
+
+    # İki dil tek satıra sığmaz; gereken yer bandı aşıyorsa bandı ortasından büyüt.
+    gerek = gereken_yukseklik(altyazi)
+    if gerek > bh:
+        orta = by + bh // 2
+        bh = min(gerek, gh - 80)
+        by = max(20, min(orta - bh // 2, gh - bh - 20))
 
     png_dir = os.path.join(kok, "yazi")
     os.makedirs(png_dir, exist_ok=True)
@@ -345,7 +382,7 @@ def cmd_kur(is_json, cikti):
 
     for i, a in enumerate(altyazi, start=1):
         png = os.path.join(png_dir, "y%02d.png" % i)
-        yazi_png(a["metin"], png, bh)
+        yazi_png(a.get("metin", ""), a.get("en", ""), png, bh)
         girisler += ["-i", png]
         etiket = "[v%d]" % (i + 100)
         filtre += (f"{onceki}[{i}:v]overlay=0:{by}:enable='between(t,%.2f,%.2f)'{etiket};"

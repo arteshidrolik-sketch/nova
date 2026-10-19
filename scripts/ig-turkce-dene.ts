@@ -17,9 +17,10 @@ async function main() {
   const c = await cozumle(dir);
   console.log(`süre: ${c.sure} sn · dil: ${c.dil} · uygun: ${c.uygun}${c.neden ? ` (${c.neden})` : ""}`);
   console.log(`bant: ${c.bant ? `y=${c.bant.y} h=${c.bant.h}, ${c.kapat.length} aralık` : "yok"}`);
-  console.log(`açıklama: ${c.aciklama}  ${c.hashtag}\n`);
+  console.log(`açıklama: ${c.aciklama}\n          ${c.aciklamaEn || "-"}\nhashtag: ${c.hashtag}\n`);
   for (const [i, l] of c.altyazi.entries()) {
     console.log(`${String(i + 1).padStart(2)}) [${l.bas.toFixed(2)}-${l.bit.toFixed(2)}] ${l.metin}`);
+    if (l.en) console.log(`    EN:   ${l.en}`);
     if (l.asli) console.log(`    aslı: ${l.asli}`);
   }
   if (!kur) return;
@@ -27,7 +28,7 @@ async function main() {
   await fs.writeFile(
     path.join(dir, "is.json"),
     JSON.stringify({ video: "kaynak.mp4", bant: c.bant, kapat: c.kapat,
-      altyazi: c.altyazi.map((l) => ({ bas: l.bas, bit: l.bit, metin: l.metin })) }, null, 1),
+      altyazi: c.altyazi.map((l) => ({ bas: l.bas, bit: l.bit, metin: l.metin, en: l.en || "" })) }, null, 1),
     "utf8",
   );
   const out = await run(

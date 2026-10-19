@@ -59,7 +59,8 @@ export type ViralJob = {
 
 // Türkçeleştirme işi (IG_MODE=turkce): yabancı bir viral video → Türkçe altyazılı Reels.
 // Ses her zaman orijinal kalır; yalnız altyazı bindirilir (Yücel, 2026-10-20).
-export type TrLine = { bas: number; bit: number; metin: string; asli?: string };
+// metin: Türkçe (üstte, beyaz) · en: İngilizce (altta, sarı) · asli: orijinal dildeki hâli
+export type TrLine = { bas: number; bit: number; metin: string; en?: string; asli?: string };
 export type TurkceJob = {
   id: string;
   createdTs: number;
@@ -72,8 +73,9 @@ export type TurkceJob = {
   bant?: { y: number; h: number } | null; // gömülü yabancı altyazının yeri; yoksa null
   kapat?: [number, number][]; // bandın kapatılacağı aralıklar
   altyazi?: TrLine[]; // Türkçe altyazılar
-  aciklama?: string; // Reels açıklamasının komik cümlesi
-  hashtag?: string; // konuya özel hashtag(ler)
+  aciklama?: string; // Reels açıklamasının komik cümlesi (Türkçe)
+  aciklamaEn?: string; // aynı cümlenin İngilizcesi
+  hashtag?: string; // konuya özel hashtag(ler), iki dilde
   file?: string; // workspace/ig/<id>.mp4 (yayın için)
   previewMsgId?: number;
   permalink?: string;
