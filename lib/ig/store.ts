@@ -57,6 +57,29 @@ export type ViralJob = {
   error?: string;
 };
 
+// Türkçeleştirme işi (IG_MODE=turkce): yabancı bir viral video → Türkçe altyazılı Reels.
+// Ses her zaman orijinal kalır; yalnız altyazı bindirilir (Yücel, 2026-10-20).
+export type TrLine = { bas: number; bit: number; metin: string; asli?: string };
+export type TurkceJob = {
+  id: string;
+  createdTs: number;
+  url: string;
+  dir: string; // workspace/ig/turkce/<id>
+  kaynak?: string; // "@hesap"
+  status: "downloading" | "analiz" | "review" | "building" | "preview" | "publishing" | "published" | "cancelled" | "failed";
+  sure?: number; // kaynak videonun süresi (sn)
+  dil?: string; // konuşmanın dili (STT)
+  bant?: { y: number; h: number } | null; // gömülü yabancı altyazının yeri; yoksa null
+  kapat?: [number, number][]; // bandın kapatılacağı aralıklar
+  altyazi?: TrLine[]; // Türkçe altyazılar
+  aciklama?: string; // Reels açıklamasının komik cümlesi
+  hashtag?: string; // konuya özel hashtag(ler)
+  file?: string; // workspace/ig/<id>.mp4 (yayın için)
+  previewMsgId?: number;
+  permalink?: string;
+  error?: string;
+};
+
 export type IgState = {
   chatId?: number; // onay veren tek kullanıcı (Yücel)
   tgOffset?: number;
@@ -69,6 +92,8 @@ export type IgState = {
   viral?: ViralJob[];
   viralActive?: string; // Yücel'den cevap bekleyen iş
   viralVoice?: string; // seslendirme sesi (ElevenLabs voice id); yoksa VIRAL_VOICE_ID
+  turkce?: TurkceJob[];
+  turkceActive?: string; // Yücel'den cevap bekleyen Türkçeleştirme işi
 };
 
 const DIR = path.join(process.cwd(), "data");
@@ -96,6 +121,7 @@ export function updateIg<T>(fn: (s: IgState) => T | Promise<T>): Promise<T> {
     const out = await fn(s);
     s.items = s.items.slice(-400); // dosya şişmesin
     if (s.viral) s.viral = s.viral.slice(-200);
+    if (s.turkce) s.turkce = s.turkce.slice(-200);
     await fs.mkdir(DIR, { recursive: true });
     await fs.writeFile(FILE, JSON.stringify(s, null, 2), "utf8");
     return out;
@@ -107,6 +133,14 @@ export function updateIg<T>(fn: (s: IgState) => T | Promise<T>): Promise<T> {
 export async function patchViral(id: string, patch: Partial<ViralJob>): Promise<ViralJob | undefined> {
   return updateIg((s) => {
     const j = (s.viral || []).find((x) => x.id === id);
+    if (j) Object.assign(j, patch);
+    return j;
+  });
+}
+
+export async function patchTurkce(id: string, patch: Partial<TurkceJob>): Promise<TurkceJob | undefined> {
+  return updateIg((s) => {
+    const j = (s.turkce || []).find((x) => x.id === id);
     if (j) Object.assign(j, patch);
     return j;
   });
