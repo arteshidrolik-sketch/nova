@@ -1,8 +1,10 @@
 """Türkçeleştirme — yabancı bir viral videoyu Türkçe altyazıyla Reels'e çevirir.
 
   python turkcelestir.py analiz <video> <klasor>           → meta.json, ses.mp3, dokum.json, ornek.jpg
+  python turkcelestir.py bant-bul <video> <klasor>         → gömülü altyazı şeridinin yeri (piksel ölçümü)
   python turkcelestir.py bant  <video> <klasor> <y> <h>    → bant.json + bant/aNN.jpg (okunacak kareler)
   python turkcelestir.py kur   <is.json> <cikti.mp4>       → altyazılı, yayına hazır video
+  python turkcelestir.py onizleme <girdi.mp4> <cikti.mp4>  → Telegram'a sığacak küçük kopya
 
 Akış: `analiz` videoyu ölçer, sesini ElevenLabs Scribe ile yazıya döker ve kare ızgarası çıkarır
 (Claude ızgaraya bakıp videoda gömülü yabancı altyazı var mı, varsa hangi yükseklikte diye karar verir).
@@ -415,16 +417,110 @@ def cmd_kur(is_json, cikti):
                       "altyazi": len(altyazi), "kapatma": len(kapat)}, ensure_ascii=False))
 
 
+def cmd_bant_bul(video, klasor):
+    """Gömülü altyazı şeridinin yerini piksel ölçerek bulur.
+
+    Claude'a "şerit hangi yükseklikte" diye sormak güvenilmez çıktı (2026-10-21: bandı
+    gerçek yerinden 300 piksel aşağı gösterdi, Çince altyazı kapanmadan yayına gidiyordu).
+    Altyazı, aynı satırlarda tekrar tekrar beliren konturlu yazıdır: kareler boyunca
+    satır satır "beyaz piksel + yanında koyu" sayılırsa şerit profilde tepe olarak çıkar.
+    """
+    gw, gh, sure = probe(video)
+    kw = 270
+    kh = max(16, int(gh * kw / gw))
+    adet = 30
+    fps = max(adet / sure, 0.05)
+    p = subprocess.Popen(
+        [tool("ffmpeg"), "-v", "error", "-i", video,
+         "-vf", f"fps={fps:.4f},scale={kw}:{kh}", "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+        stdout=subprocess.PIPE)
+    profil = [0] * kh
+    kare = 0
+    while kare < adet * 2:
+        b = p.stdout.read(kw * kh)
+        if len(b) < kw * kh:
+            break
+        for row in range(kh):
+            o = row * kw
+            s = 0
+            for x in range(2, kw - 2):
+                if b[o + x] > 215 and (b[o + x - 2] < 110 or b[o + x + 2] < 110):
+                    s += 1
+            profil[row] += s
+        kare += 1
+    p.stdout.close()
+    p.wait()
+
+    tepe = max(profil) if profil else 0
+    sonuc = {"gomulu": False, "y": 0, "h": 0, "kare": kare}
+    if tepe >= kare * 2:                       # kare başına ortalama 2 piksel: yazı var say
+        esik = tepe * 0.30
+        # Altyazı iki dilli olabiliyor (ör. Çince üstte, İngilizce kutuda altta); iki satırın
+        # arasındaki boşluk kümeyi bölmesin diye tolerans geniş tutulur.
+        bosluk = max(6, int(kh * 0.045))   # ölçüldü: Çince satır ile İngilizce kutu arası ~%3,3
+        # Üst %20'yi ele: başlık/logo altyazı değildir
+        dolu = [i for i in range(int(kh * 0.20), kh) if profil[i] >= esik]
+        kume, o = [], None
+        for i in dolu:
+            if o is not None and i - o <= bosluk:
+                kume[-1][1] = i
+            else:
+                kume.append([i, i])
+            o = i
+        if kume:
+            y0, y1 = max(kume, key=lambda k: sum(profil[k[0]:k[1] + 1]))
+            # Kümeyi, zayıf da olsa yazı taşıyan komşu satırlara doğru genişlet
+            zayif = tepe * 0.12
+            while y0 > int(kh * 0.20) and profil[y0 - 1] >= zayif:
+                y0 -= 1
+            while y1 < kh - 1 and profil[y1 + 1] >= zayif:
+                y1 += 1
+            yuk = (y1 - y0 + 1) / kh
+            if 0.02 <= yuk <= 0.40:
+                pay = max(3, int(kh * 0.02))   # cömert ol: fazla kapatmak zararsız, eksik kapatmak yayına gider
+                y0, y1 = max(0, y0 - pay), min(kh - 1, y1 + pay)
+                sonuc = {"gomulu": True, "y": round(y0 * gh / kh), "h": round((y1 - y0 + 1) * gh / kh),
+                         "kare": kare}
+    json.dump(sonuc, open(os.path.join(klasor, "bantyeri.json"), "w", encoding="utf-8"))
+    print(json.dumps(sonuc, ensure_ascii=False))
+
+
+TG_SINIR_MB = 45  # Telegram bot API sendVideo sınırı 50 MB; pay bırak
+
+
+def cmd_onizleme(girdi, cikti):
+    """Yayın dosyası Telegram'a sığmıyorsa onay için küçük bir kopya üretir.
+
+    Yayınlanan dosya her zaman tam kalitede olan; bu yalnız önizleme.
+    """
+    if os.path.getsize(girdi) <= TG_SINIR_MB * 1024 * 1024:
+        print(json.dumps({"cikti": girdi, "kucultuldu": False,
+                          "mb": round(os.path.getsize(girdi) / 1048576, 1)}))
+        return
+    for crf in (28, 32, 36):
+        run([tool("ffmpeg"), "-v", "error", "-y", "-i", girdi,
+             "-vf", "scale=720:-2", "-c:v", "libx264", "-preset", "veryfast", "-crf", str(crf),
+             "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", cikti])
+        mb = os.path.getsize(cikti) / 1048576
+        if mb <= TG_SINIR_MB:
+            break
+    print(json.dumps({"cikti": cikti, "kucultuldu": True, "crf": crf, "mb": round(mb, 1)}))
+
+
 def main():
     if len(sys.argv) < 2:
         sys.exit(__doc__)
     k = sys.argv[1]
     if k == "analiz" and len(sys.argv) == 4:
         cmd_analiz(sys.argv[2], sys.argv[3])
+    elif k == "bant-bul" and len(sys.argv) == 4:
+        cmd_bant_bul(sys.argv[2], sys.argv[3])
     elif k == "bant" and len(sys.argv) == 6:
         cmd_bant(sys.argv[2], sys.argv[3], int(sys.argv[4]), int(sys.argv[5]))
     elif k == "kur" and len(sys.argv) == 4:
         cmd_kur(sys.argv[2], sys.argv[3])
+    elif k == "onizleme" and len(sys.argv) == 4:
+        cmd_onizleme(sys.argv[2], sys.argv[3])
     else:
         sys.exit(__doc__)
 

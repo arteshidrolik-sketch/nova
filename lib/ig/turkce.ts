@@ -52,6 +52,43 @@ function textOf(res: Anthropic.Message): string {
   return res.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("\n").trim();
 }
 
+// Claude'a sorup JSON cevabı çözer.
+// İki ders (2026-10-21, üç iş üst üste patladıktan sonra):
+//  1. Sonnet 5.5'te düşünme VARSAYILAN AÇIK ve max_tokens bütçesinden yiyor. Dar bütçede
+//     düşünme bütçeyi bitiriyor, geriye metin kalmıyor → "Unexpected end of JSON input",
+//     ya da JSON'un ortasında kesiliyor → "Unterminated string". Bu işler (yazı okuma,
+//     çeviri) düşünme istemiyor: {"type":"between_tools"} ile kapatılır — bu modelde
+//     {"type":"disabled"} API tarafından reddediliyor.
+//  2. Bütçe bol tutulur ve yarıda kesilme açıkça yakalanır.
+async function sorJson<T>(icerik: string | Anthropic.ContentBlockParam[], azami: number): Promise<T> {
+  const client = new Anthropic();
+  let son = "";
+  for (let deneme = 0; deneme < 2; deneme++) {
+    const uyari = "\n\nÖNEMLİ: Cevabın SADECE geçerli JSON olsun; açıklama, başlık ya da kod bloğu yazma. Metinleri kısa tut.";
+    const girdi: Anthropic.ContentBlockParam[] =
+      typeof icerik === "string"
+        ? [{ type: "text", text: icerik + (deneme ? uyari : "") }]
+        : deneme
+          ? [...icerik, { type: "text", text: uyari }]
+          : icerik;
+    const res = await client.messages.create({
+      model: MODEL,
+      max_tokens: azami,
+      thinking: { type: "between_tools" } as unknown as Anthropic.ThinkingConfigParam,
+      messages: [{ role: "user", content: girdi }],
+    });
+    son = textOf(res);
+    try {
+      if (res.stop_reason === "max_tokens") throw new Error("cevap yarıda kesildi (max_tokens)");
+      if (!son) throw new Error("boş cevap");
+      return parseJson<T>(son);
+    } catch (e) {
+      if (deneme) throw new Error(`Claude'un cevabı okunamadı (${(e as Error).message}). Başka bir video dene.`);
+    }
+  }
+  throw new Error(`Claude'un cevabı okunamadı: ${son.slice(0, 120)}`);
+}
+
 async function imageBlock(file: string): Promise<Anthropic.ImageBlockParam> {
   return {
     type: "image",
@@ -165,17 +202,12 @@ function araci(args: string[], cwd: string, ms = 600_000) {
 
 // Kare ızgarasına bakıp videoda gömülü (yakılmış) yabancı altyazı var mı, varsa nerede?
 async function bandBul(ornek: string, meta: Meta): Promise<{ y: number; h: number } | null> {
-  const client = new Anthropic();
-  const res = await client.messages.create({
-    model: MODEL,
-    max_tokens: 500,
-    messages: [{
-      role: "user",
-      content: [
-        await imageBlock(ornek),
-        {
-          type: "text",
-          text: `Bu görsel bir videodan alınmış 12 karenin 3x4 ızgarası (soldan sağa, yukarıdan aşağıya sırayla). Video ${meta.genislik}x${meta.yukseklik} piksel.
+  const o = await sorJson<{ gomulu?: boolean; ust_yuzde?: number; alt_yuzde?: number }>(
+    [
+      await imageBlock(ornek),
+      {
+        type: "text",
+        text: `Bu görsel bir videodan alınmış 12 karenin 3x4 ızgarası (soldan sağa, yukarıdan aşağıya sırayla). Video ${meta.genislik}x${meta.yukseklik} piksel.
 
 Sorum: bu videonun GÖRÜNTÜSÜNE gömülü (yakılmış) altyazı var mı? Yani karelerin üstünde, videonun parçası olan sabit konumlu yazı şeridi.
 - Logo, kanal adı, hashtag, ürün etiketi, sahnedeki tabela/yazı ALTYAZI DEĞİLDİR.
@@ -184,11 +216,10 @@ Sorum: bu videonun GÖRÜNTÜSÜNE gömülü (yakılmış) altyazı var mı? Yan
 Varsa şeridin dikey yerini kare YÜKSEKLİĞİNİN YÜZDESİ olarak ver (0 = en üst, 100 = en alt), biraz pay bırak.
 SADECE JSON:
 {"gomulu": true, "ust_yuzde": 58.0, "alt_yuzde": 72.0}   ya da   {"gomulu": false}`,
-        },
-      ],
-    }],
-  });
-  const o = parseJson<{ gomulu?: boolean; ust_yuzde?: number; alt_yuzde?: number }>(textOf(res));
+      },
+    ],
+    1500,
+  );
   if (!o.gomulu || o.ust_yuzde == null || o.alt_yuzde == null) return null;
   const pay = 0.015; // %1,5 pay: yazının kenarları dışarı taşmasın
   const y = Math.max(0, Math.round((o.ust_yuzde / 100 - pay) * meta.yukseklik));
@@ -201,7 +232,6 @@ type Ceviri = { altyazi: TrLine[]; aciklama: string; aciklamaEn?: string; hashta
 
 // STT dökümü + gömülü altyazı kareleri → zamanlı Türkçe altyazı.
 async function ceviriYaz(sure: number, dokum: Dokum, bant: Bant | null, dir: string): Promise<Ceviri> {
-  const client = new Anthropic();
   const gorseller: Anthropic.ContentBlockParam[] = [];
   for (const g of bant?.gruplar || []) {
     gorseller.push(await imageBlock(path.join(dir, "bant", g)));
@@ -210,16 +240,12 @@ async function ceviriYaz(sure: number, dokum: Dokum, bant: Bant | null, dir: str
     ? `Ekteki ${bant.gruplar.length} görselde videoya gömülü altyazı şeridinin kesitleri var; her kesidin üstünde SARI ile saniyesi yazılı. Aynı yazı art arda birkaç kesitte görünebilir — o zaman tek bir altyazıdır, süresi ilk ve son görüldüğü anlara göre belirlenir.`
     : `Videoda gömülü altyazı yok; zamanlamayı yalnız ses dökümünden çıkar.`;
 
-  const res = await client.messages.create({
-    model: MODEL,
-    max_tokens: 4000,
-    messages: [{
-      role: "user",
-      content: [
-        ...gorseller,
-        {
-          type: "text",
-          text: `Yabancı bir viral videoyu İKİ DİLLİ altyazıyla paylaşacağız: üstte Türkçe, altta İngilizce. Görüntüye ve sese dokunmuyoruz; yalnız altyazı bindiriyoruz.
+  const o = await sorJson<Ceviri>(
+    [
+      ...gorseller,
+      {
+        type: "text",
+        text: `Yabancı bir viral videoyu İKİ DİLLİ altyazıyla paylaşacağız: üstte Türkçe, altta İngilizce. Görüntüye ve sese dokunmuyoruz; yalnız altyazı bindiriyoruz.
 
 Video süresi: ${sure.toFixed(1)} sn. Konuşmanın dili: ${dokum.dil || "bilinmiyor"}.
 
@@ -244,11 +270,10 @@ Yapman gereken:
 
 SADECE JSON:
 {"altyazi":[{"bas":0.2,"bit":4.2,"metin":"Türkçe","en":"English","asli":"orijinal"}],"aciklama":"…","aciklamaEn":"…","hashtag":"#… #…","uygun":true}`,
-        },
-      ],
-    }],
-  });
-  const o = parseJson<Ceviri>(textOf(res));
+      },
+    ],
+    16000,
+  );
   return {
     altyazi: (o.altyazi || []).filter((l) => l?.metin && l.bit > l.bas),
     aciklama: o.aciklama || "",
@@ -260,13 +285,8 @@ SADECE JSON:
 }
 
 async function altyaziDuzenle(current: TrLine[], talimat: string): Promise<{ altyazi: TrLine[]; hazir: boolean }> {
-  const client = new Anthropic();
-  const res = await client.messages.create({
-    model: MODEL,
-    max_tokens: 3000,
-    messages: [{
-      role: "user",
-      content: `Bir Reels'in iki dilli altyazı listesini ("metin" Türkçe, "en" İngilizce) Yücel'in talimatına göre düzenle.
+  const o = await sorJson<{ altyazi?: TrLine[]; hazir?: boolean }>(
+    `Bir Reels'in iki dilli altyazı listesini ("metin" Türkçe, "en" İngilizce) Yücel'in talimatına göre düzenle.
 
 Şu anki liste:
 ${JSON.stringify(current, null, 1)}
@@ -280,9 +300,8 @@ Kurallar:
 - Altyazı silinirse kalanların zamanı değişmez.
 - "hazir": mesaj videoyu kurmayı/paylaşmayı da istiyorsa ("tamam", "kur", "hazırla", "paylaş") true.
 SADECE JSON: {"altyazi":[{"bas":0.2,"bit":4.2,"metin":"…","en":"…","asli":"…"}],"hazir":false}`,
-    }],
-  });
-  const o = parseJson<{ altyazi?: TrLine[]; hazir?: boolean }>(textOf(res));
+    16000,
+  );
   const altyazi = (o.altyazi || []).filter((l) => l?.metin && l.bit > l.bas);
   return { altyazi: altyazi.length ? altyazi : current, hazir: !!o.hazir };
 }
@@ -299,7 +318,15 @@ export async function cozumle(dir: string): Promise<Cozum> {
   const dokum = JSON.parse(await fs.readFile(path.join(dir, "dokum.json"), "utf8")) as Dokum;
   if (meta.sure > EN_UZUN) throw new Error(`Video ${Math.round(meta.sure)} sn; bu iş için fazla uzun (en çok ${EN_UZUN} sn).`);
 
-  const bantYeri = await bandBul(path.join(dir, "ornek.jpg"), meta);
+  // Şeridin yeri önce PİKSEL ÖLÇÜMÜYLE bulunur; Claude'a sormak güvenilmez çıktı
+  // (2026-10-21: bandı 300 piksel aşağı gösterdi, Çince altyazı kapanmadan yayına gitti).
+  // Ölçüm bir şey bulamazsa ikinci görüş olarak Claude'a sorulur.
+  const olcum = JSON.parse(
+    (await araci(["bant-bul", "kaynak.mp4", "."], dir)).stdout.toString(),
+  ) as { gomulu: boolean; y: number; h: number };
+  const bantYeri = olcum.gomulu
+    ? { y: olcum.y, h: olcum.h }
+    : await bandBul(path.join(dir, "ornek.jpg"), meta);
   let bant: Bant | null = null;
   if (bantYeri) {
     const out = await araci(["bant", "kaynak.mp4", ".", String(bantYeri.y), String(bantYeri.h)], dir);
@@ -368,8 +395,21 @@ async function build(id: string, chat: number): Promise<void> {
 
   const file = `${id}.mp4`;
   await fs.copyFile(path.join(j.dir, "cikti.mp4"), path.join(WS, file));
+
+  // Telegram'ın sendVideo sınırı 50 MB; uzun videolar yayın kalitesinde bunu aşıyor
+  // (105 sn'lik iş "Request Entity Too Large" ile düşmüştü, 2026-10-21). Onay için
+  // küçük bir kopya gönderilir; Instagram'a giden dosya her zaman tam kalitede olan.
+  let gonderilecek = path.join(WS, file);
+  try {
+    const out = await araci(["onizleme", "cikti.mp4", "onizleme.mp4"], j.dir, 900_000);
+    const o = JSON.parse(out.stdout.toString()) as { cikti: string; kucultuldu: boolean };
+    if (o.kucultuldu) gonderilecek = path.join(j.dir, "onizleme.mp4");
+  } catch {
+    /* küçültme olmazsa tam dosyayı denemeye devam et */
+  }
+
   const caption = fullCaption((await job(id))!);
-  const msg = await tg.sendVideo(chat, path.join(WS, file), `👀 Önizleme\n\n${caption}`, [
+  const msg = await tg.sendVideo(chat, gonderilecek, `👀 Önizleme\n\n${caption}`, [
     [{ text: "✅ Paylaş", callback_data: `tr_ok:${id}` }, { text: "❌ İptal", callback_data: `tr_no:${id}` }],
   ]);
   await patchTurkce(id, { status: "preview", file, previewMsgId: msg.message_id });
