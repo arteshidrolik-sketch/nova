@@ -1348,6 +1348,7 @@ export async function GET(req: Request) {
   if (!run) {
     return Response.json({
       status: "error",
+      gone: true, // iş kaydı yok: istemci önce sohbetteki kayıtlı cevaba bakar
       error: "İş yarıda kesildi: Nova bu sırada yeniden başladı. Buraya kadar yapılanlar yukarıda duruyor; \"devam et\" yazarak kaldığı yerden sürdürebilirsin.",
       chunk: "",
       len: from,
@@ -1360,6 +1361,7 @@ export async function GET(req: Request) {
     agent: run.agent,
     model: run.model,
     error: run.error ?? null,
+    idleMs: Date.now() - run.updatedAt, // sunucuda son çıktıdan bu yana geçen süre (istemci uyku/arka plan saatine güvenme)
   });
 }
 

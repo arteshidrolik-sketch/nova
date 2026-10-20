@@ -1797,7 +1797,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       let status = "running";
       let stopped = false;
       const startedAt = Date.now();
-      let lastGrowth = startedAt; // son yeni çıktının geldiği an
+      let lastOk = startedAt; // sunucudan son başarılı yanıt (ağ kopukluğunu ayırt etmek için)
       runActiveRef.current = true;
 
       // Streaming TTS: cevap akarken tamamlanan cümleleri anında oku (bitişi bekleme)
@@ -1830,13 +1830,9 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
           stopped = true;
           break;
         }
-        // ilerleme oldukça bekle: 20 dk hiç yeni çıktı yoksa ya da toplam 90 dk dolduysa durdur
-        if (Date.now() - lastGrowth > 20 * 60 * 1000 || Date.now() - startedAt > 90 * 60 * 1000) {
-          acc += Date.now() - startedAt > 90 * 60 * 1000 ? "\n\n⚠️ Zaman aşımı (90 dk)." : "\n\n⚠️ 20 dakikadır hiç ilerleme yok, iş durduruldu.";
-          // Sunucudaki işi de iptal et → arka planda token yakmaya devam etmesin
-          fetch(`/api/chat?id=${encodeURIComponent(runId)}`, {
-            method: "DELETE",
-          }).catch(() => {});
+        // Sunucuya 20 dk ulaşılamıyorsa beklemeyi bırak ama işi İPTAL ETME (sunucuda sürüyor olabilir)
+        if (Date.now() - lastOk > 20 * 60 * 1000) {
+          acc += "\n\n⚠️ 20 dakikadır sunucuya ulaşılamıyor. İş sunucuda sürüyor olabilir; sayfayı yenileyip \"devam et\" yazabilirsin.";
           break;
         }
         let p: {
@@ -1845,17 +1841,48 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
           len?: number;
           model?: string;
           error?: string;
+          idleMs?: number;
         };
         try {
+          // takılan istek döngüyü kilitlemesin (telefon uykusu, ağ geçişi)
           p = await fetch(
             `/api/chat?id=${encodeURIComponent(runId)}&from=${offset}`,
+            { signal: AbortSignal.timeout(30_000) },
           ).then((r) => r.json());
+          lastOk = Date.now();
         } catch {
           continue; // geçici ağ hatası → tekrar dene, takılma
         }
+        // İş kaydı sunucuda yok (bitmiş ve temizlenmiş olabilir — ör. telefon uzun süre uykudaydı):
+        // sunucu bitince tam cevabı sohbete kaydeder → onu al, yarım metinle ezme.
+        if (p.status === "error" && (p as { gone?: boolean }).gone) {
+          try {
+            const d = await fetch(`/api/conversations/${encodeURIComponent(myConvId)}`).then((r) => r.json());
+            const msgs = d?.conversation?.messages as { role?: string; content?: string }[] | undefined;
+            const last = msgs?.[msgs.length - 1];
+            if (last?.role === "assistant" && typeof last.content === "string" && last.content.length >= acc.length && msgs!.length > next.length) {
+              acc = last.content;
+              status = "done";
+              if (active()) setMessages([...next, mkA(acc)]);
+              break;
+            }
+          } catch { /* aşağıdaki hata yoluna düş */ }
+        }
+        // Takılma kararı SUNUCU saatine göre verilir: telefon kilitliyken / sekme arka plandayken
+        // geçen süre "ilerleme yok" sayılmaz, önce birikmiş çıktı alınır. Sunucuda 20 dk hiç çıktı
+        // yoksa ya da toplam 90 dk dolduysa durdur.
+        const serverIdle = typeof p.idleMs === "number" && p.idleMs > 20 * 60 * 1000;
+        const tooLong = Date.now() - startedAt > 90 * 60 * 1000;
+        if ((p.status ?? "running") === "running" && !p.chunk && (serverIdle || tooLong)) {
+          acc += tooLong ? "\n\n⚠️ Zaman aşımı (90 dk)." : "\n\n⚠️ 20 dakikadır hiç ilerleme yok, iş durduruldu.";
+          // Sunucudaki işi de iptal et → arka planda token yakmaya devam etmesin
+          fetch(`/api/chat?id=${encodeURIComponent(runId)}`, {
+            method: "DELETE",
+          }).catch(() => {});
+          break;
+        }
         if (typeof p.chunk === "string" && p.chunk.length > 0) {
           acc += p.chunk;
-          if (p.chunk) lastGrowth = Date.now();
           offset = p.len ?? offset;
           // Ofis sahnesi (ekip ajanlarının durumu) akışı izler
           window.dispatchEvent(new CustomEvent("nova:stream", { detail: { convId: myConvId, text: acc, running: true } }));
