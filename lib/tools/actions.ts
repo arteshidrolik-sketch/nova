@@ -396,6 +396,80 @@ export const ACTIONS: Record<string, ActionDef> = {
     },
   },
 
+  github_read_issue: {
+    dangerous: false,
+    project: false,
+    description:
+      "Bir GitHub issue'sunu numarasıyla okur: başlık, durum (açık/kapalı), gövde ve TÜM yorumlar. Claude Code'un üretim raporları issue YORUMLARINDA durur; bir işin sonucunu, neyin yapıldığını veya neden durdurulduğunu öğrenmek için bunu kullan. github_lookup yalnız açık issue başlıklarını listeler, ayrıntı için bu araç gerekir.",
+    input_schema: {
+      type: "object",
+      properties: {
+        owner: { type: "string", description: "Depo sahibi, örn. arteshidrolik-sketch" },
+        repo: { type: "string", description: "Depo adı, örn. projelerim-vault" },
+        number: { type: "integer", description: "Issue numarası, örn. 8" },
+      },
+      required: ["owner", "repo", "number"],
+    },
+    makeTitle: (p) => `GitHub issue oku: ${String(p.owner)}/${String(p.repo)}#${String(p.number)}`,
+    makeSummary: (p) =>
+      `"${String(p.owner)}/${String(p.repo)}" deposundaki #${String(p.number)} numaralı issue'nun gövdesi ve yorumları okunacak.`,
+    execute: async (p) => {
+      const owner = String(p.owner ?? "").trim();
+      const repo = String(p.repo ?? "").trim();
+      const num = Number(p.number);
+      if (!owner || !repo || !Number.isFinite(num)) return "Hata: 'owner', 'repo' ve 'number' gerekli.";
+
+      const headers: Record<string, string> = {
+        Accept: "application/vnd.github+json",
+        "User-Agent": "nova-assistant",
+        "X-GitHub-Api-Version": "2022-11-28",
+      };
+      if (process.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+
+      const base = `https://api.github.com/repos/${owner}/${repo}/issues/${num}`;
+      let issue: { title?: string; state?: string; body?: string; html_url?: string; comments?: number };
+      try {
+        const r = await fetch(base, { headers });
+        if (!r.ok) {
+          if (r.status === 404) return `Issue bulunamadı: ${owner}/${repo}#${num} (özel depo ise GITHUB_TOKEN gerekir).`;
+          if (r.status === 401 || r.status === 403) return `GitHub erişim hatası (${r.status}). GITHUB_TOKEN eksik/geçersiz olabilir.`;
+          return `GitHub hatası: HTTP ${r.status}`;
+        }
+        issue = (await r.json()) as typeof issue;
+      } catch (e) {
+        return `Ağ hatası: ${e instanceof Error ? e.message : "bilinmeyen"}`;
+      }
+
+      let yorumlar: Array<{ user?: { login?: string }; created_at?: string; body?: string }> = [];
+      try {
+        const r = await fetch(`${base}/comments?per_page=100`, { headers });
+        if (r.ok) yorumlar = (await r.json()) as typeof yorumlar;
+      } catch { /* yorumlar alınamadıysa en azından gövdeyi döndür */ }
+
+      const kes = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}\n…(kısaltıldı, tamamı: ${issue.html_url ?? base})` : s);
+      const parcalar = [
+        `# #${num} ${issue.title ?? "(başlıksız)"} — ${issue.state === "closed" ? "KAPALI" : "AÇIK"}`,
+        issue.html_url ?? "",
+        "",
+        "## Gövde",
+        kes(String(issue.body ?? "(boş)"), 6000),
+      ];
+      if (yorumlar.length) {
+        parcalar.push("", `## Yorumlar (${yorumlar.length})`);
+        for (const y of yorumlar) {
+          parcalar.push(
+            "",
+            `### @${y.user?.login ?? "?"} — ${y.created_at ?? ""}`,
+            kes(String(y.body ?? ""), 6000),
+          );
+        }
+      } else {
+        parcalar.push("", "## Yorumlar", "(yorum yok)");
+      }
+      return kes(parcalar.join("\n"), 24000);
+    },
+  },
+
   github_create_repo: {
     dangerous: true,
     approval: true, // hesapta yeni depo yaratır → dış dünyaya gider, insan onayı ister

@@ -443,7 +443,15 @@ export async function POST(req: Request) {
   // "max_uses_exceeded" alıp özür dileyip pes ediyordu; asıl sınır döngüde.
   const webSearchMaxUses = Number(process.env.NOVA_WEB_SEARCH_MAX_USES) || 8;
   const tools = (teamMode
-    ? [ASSIGN_TOOL, ...(project ? READ_TOOLS : [])]
+    ? [
+        ASSIGN_TOOL,
+        // Ekip modunda da GitHub OKUMA açık: müdür, Claude Code'un issue'lara
+        // yazdığı üretim raporlarını kendisi okuyabilmeli (uzmana devredince
+        // araç onların setinde olmadığı için NameError alınıyordu).
+        GITHUB_TOOL,
+        ...GENERAL_ACTION_TOOLS.filter((t) => (t as { name: string }).name === "github_read_issue"),
+        ...(project ? READ_TOOLS : []),
+      ]
     : [
     GITHUB_TOOL,
     { type: "web_search_20260209", name: "web_search", max_uses: webSearchMaxUses },
