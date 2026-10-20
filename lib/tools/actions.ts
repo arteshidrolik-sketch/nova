@@ -134,6 +134,67 @@ async function saveRemoteToWorkspace(
   }
 }
 
+// Bir Buffer'ı workspace'e kaydedip yerel inline URL döndürür (Gemini gibi
+// doğrudan bayt dönen sağlayıcılar için; fal'ın URL'i saveRemoteToWorkspace'ten geçer).
+async function saveBufferToWorkspace(buf: Buffer, prefix: string, ext: string): Promise<string | null> {
+  try {
+    if (!buf?.length) return null;
+    const name = `${prefix}-${Date.now()}-${__seq++}.${ext}`;
+    await fs.mkdir(WORKSPACE, { recursive: true });
+    await fs.writeFile(safeWorkspacePath(name), buf);
+    return `/api/files?name=${encodeURIComponent(wsRel(name))}&inline=1`;
+  } catch {
+    return null;
+  }
+}
+
+// ---- Görsel: Gemini (Nano Banana) -------------------------------------------
+// GEMINI_API_KEY zaten kurulu olduğu için görsel üretiminin VARSAYILAN yolu budur;
+// fal.ai yalnızca yedek (ayrı hesap + ayrı kredi gerektiriyor, bakiyesi biterse
+// "TOP_UP" hatası verir). NOVA_IMAGE_PROVIDER=fal ile sıra tersine çevrilir.
+async function imageViaGemini(prompt: string, aspect: string, refUrl: string): Promise<Buffer> {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error("GEMINI_API_KEY yok");
+  const model = process.env.NOVA_GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image";
+  const ratio: Record<string, string> = { square: "1:1", portrait: "9:16", landscape: "16:9" };
+  const parts: Record<string, unknown>[] = [];
+  if (refUrl) {
+    try {
+      const r = await fetch(refUrl);
+      if (r.ok) {
+        const b64 = Buffer.from(await r.arrayBuffer()).toString("base64");
+        const ct = (r.headers.get("content-type") || "image/jpeg").split(";")[0];
+        parts.push({ inline_data: { mime_type: ct, data: b64 } });
+      }
+    } catch {
+      /* referans alınamazsa metinle devam */
+    }
+  }
+  parts.push({ text: prompt });
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify({
+        contents: [{ parts }],
+        generationConfig: {
+          responseModalities: ["IMAGE"],
+          imageConfig: { aspectRatio: ratio[aspect] || "1:1" },
+        },
+      }),
+    },
+  );
+  const j = (await res.json()) as {
+    candidates?: { content?: { parts?: { inlineData?: { data?: string } }[] } }[];
+    error?: { message?: string };
+  };
+  if (!res.ok) throw new Error(`gemini ${res.status}: ${(j.error?.message || "").slice(0, 160)}`);
+  const b64 = j.candidates?.[0]?.content?.parts?.find((x) => x.inlineData?.data)?.inlineData?.data;
+  if (!b64) throw new Error("gemini: görsel dönmedi");
+  return Buffer.from(b64, "base64");
+}
+
 // ---- Higgsfield (video) -----------------------------------------------------
 // Görsel varsa: Higgsfield CDN'ine yükle → DoP (image-to-video). Görsel yoksa:
 // önce Soul ile metinden kare üret → DoP. Kimlik: HF_CREDENTIALS="kimlik:gizli".
@@ -661,7 +722,7 @@ export const ACTIONS: Record<string, ActionDef> = {
     dangerous: true,
     project: false,
     description:
-      "Metinden görsel/resim üretir (fal.ai). Kullanıcı bir görsel, resim, avatar, logo, illüstrasyon vb. istediğinde BU ARACI DOĞRUDAN ÇAĞIR. Kullanıcı SON mesajında bir FOTOĞRAF yüklediyse o yüz otomatik referans alınır → kişiye BENZEYEN görsel üretilir. Çağrılınca hemen çalışır.",
+      "Metinden görsel/resim üretir (Higgsfield; Gemini ve fal.ai yedek). Kullanıcı bir görsel, resim, avatar, logo, illüstrasyon vb. istediğinde BU ARACI DOĞRUDAN ÇAĞIR. Kullanıcı SON mesajında bir FOTOĞRAF yüklediyse o yüz otomatik referans alınır → kişiye BENZEYEN görsel üretilir. Çağrılınca hemen çalışır.",
     input_schema: {
       type: "object",
       properties: {
@@ -681,13 +742,53 @@ export const ACTIONS: Record<string, ActionDef> = {
       `"${shorten(String(p.prompt), 140)}" için bir görsel üretilecek${p.reference_image_url ? " (yüklenen fotoğraf yüz referansı olarak kullanılacak)" : ""}.`,
     execute: async (p) => {
       const key = process.env.FAL_KEY;
-      if (!key) return "Hata: FAL_KEY tanımlı değil (fal.ai anahtarı).";
       const prompt = String(p.prompt ?? "").trim();
       if (!prompt) return "Hata: görsel tarifi (prompt) boş.";
       const ref =
         typeof p.reference_image_url === "string" && p.reference_image_url
           ? p.reference_image_url
           : "";
+      // Sağlayıcı sırası: Higgsfield (kredi oradaki havuzdan) → Gemini → fal.
+      // NOVA_IMAGE_PROVIDER ile ilk sıradaki değiştirilebilir (higgsfield|gemini|fal).
+      const tercih = process.env.NOVA_IMAGE_PROVIDER || "higgsfield";
+      if (process.env.HF_CREDENTIALS && tercih === "higgsfield") {
+        try {
+          const boyut: Record<string, string> = {
+            square: "1536x1536",
+            portrait: "1152x2048",
+            landscape: "2048x1152",
+          };
+          const url = await hfRun("/v1/text2image/soul", {
+            prompt,
+            width_and_height: boyut[String(p.aspect || "square")] || "1536x1536",
+            quality: "1080p",
+            batch_size: 1,
+            ...(ref ? { input_images: [{ type: "image_url", image_url: await hfUploadImage(ref) }] } : {}),
+          });
+          const yerel = await saveRemoteToWorkspace(url, "gorsel", ["jpg", "jpeg", "png", "webp"]);
+          if (yerel || url) return `![üretilen görsel](${yerel || url})`;
+        } catch {
+          // Higgsfield patlarsa sıradaki sağlayıcıya düş
+        }
+      }
+      // Gemini (anahtar kuruluysa); bakiyesi bittiyse fal yedek.
+      const geminiFirst =
+        !!process.env.GEMINI_API_KEY && process.env.NOVA_IMAGE_PROVIDER !== "fal";
+      if (geminiFirst) {
+        try {
+          const buf = await imageViaGemini(prompt, String(p.aspect || "square"), ref);
+          const local = await saveBufferToWorkspace(buf, "gorsel", "png");
+          if (local) return `![üretilen görsel](${local})`;
+        } catch (e) {
+          if (!key)
+            return `Görsel üretilemedi (Gemini): ${
+              e instanceof Error ? e.message : "bilinmeyen"
+            }. Yedek sağlayıcı için FAL_KEY tanımlı değil.`.slice(0, 400);
+          // Gemini patlarsa sessizce fal'a düş
+        }
+      }
+      if (!key)
+        return "Hata: görsel üretilemedi — Higgsfield, Gemini ve fal sağlayıcılarının hiçbiri kullanılabilir değil (anahtar yok ya da bakiye bitmiş).";
       const sizeMap: Record<string, string> = {
         square: "square_hd",
         portrait: "portrait_4_3",

@@ -104,6 +104,50 @@ export async function GET(req: Request) {
   return Response.json({ files });
 }
 
+// Yükleme: workspace'e dosya koyar → "Dosyalar" sekmesinde görünür.
+// Claude Code gibi dış araçlar bitmiş videoyu buraya gönderir.
+//   POST /api/files?name=<ad.mp4>   gövde: ham bayt
+// Güvenlik: uç zaten Traefik basic-auth arkasında. FILES_UPLOAD_TOKEN tanımlıysa
+// ayrıca x-upload-token başlığı istenir (basic-auth kalkarsa ikinci kilit).
+const MAX_UPLOAD = 300 * 1024 * 1024; // 300 MB
+
+export async function POST(req: Request) {
+  const beklenen = process.env.FILES_UPLOAD_TOKEN;
+  if (beklenen && req.headers.get("x-upload-token") !== beklenen) {
+    return new Response("Yetkisiz", { status: 401 });
+  }
+
+  const name = new URL(req.url).searchParams.get("name");
+  if (!name) return new Response("Ad gerekli (?name=...)", { status: 400 });
+  const target = resolveSafe(name);
+  if (!target) return new Response("Geçersiz yol", { status: 400 });
+
+  const uzunluk = Number(req.headers.get("content-length") || 0);
+  if (uzunluk > MAX_UPLOAD) {
+    return new Response(`Dosya çok büyük (en fazla ${MAX_UPLOAD} bayt)`, { status: 413 });
+  }
+
+  try {
+    const buf = Buffer.from(await req.arrayBuffer());
+    if (!buf.length) return new Response("Boş gövde", { status: 400 });
+    if (buf.length > MAX_UPLOAD) {
+      return new Response(`Dosya çok büyük (en fazla ${MAX_UPLOAD} bayt)`, { status: 413 });
+    }
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, buf);
+    return Response.json({
+      ok: true,
+      name: path.relative(WORKSPACE, target).replace(/\\/g, "/"),
+      size: buf.length,
+    });
+  } catch (e) {
+    return new Response(
+      `Yazılamadı: ${e instanceof Error ? e.message : "bilinmeyen"}`,
+      { status: 500 },
+    );
+  }
+}
+
 export async function DELETE(req: Request) {
   const name = new URL(req.url).searchParams.get("name");
   if (!name) return new Response("Ad gerekli", { status: 400 });
