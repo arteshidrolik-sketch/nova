@@ -44,6 +44,17 @@ const MEDIA_TOOLS = new Set([
   "generate_video", "edit_video", "images_to_video",
 ]);
 
+// Beceri kütüphanesinden tam metni açar (istemde yalnız ad + açıklama durur)
+const SKILL_TOOL = {
+  name: "beceri_oku",
+  description: "Beceri kütüphanendeki bir becerinin tam talimatını açar. Görev bir beceriyle örtüşüyorsa işe başlamadan önce çağır.",
+  input_schema: {
+    type: "object",
+    properties: { ad: { type: "string", description: "Becerinin adı (kütüphane listesindeki gibi)" } },
+    required: ["ad"],
+  },
+} as const;
+
 export async function runSpecialist(opts: {
   client: Anthropic;
   model: string;
@@ -64,7 +75,13 @@ export async function runSpecialist(opts: {
   const { client, model, role, project, scope, emit, canceled } = opts;
   await ensureTeamSkills();
   const meta = TEAM_META[role];
-  const skills = await getSkillsForTeamRole(role);
+  const allSkills = await getSkillsForTeamRole(role);
+  // Ekibin kendi becerileri her zaman istemde; dışarıdan eklenenler (GitHub) KÜTÜPHANE:
+  // istemde yalnız adı + açıklaması durur, ajan konuya göre beceri_oku ile kendisi açar
+  // (her görevde onlarca KB metin taşınmasın — maliyet/hız).
+  const isLibrary = (s: { source?: string }) => String(s.source || "").startsWith("github:");
+  const skills = allSkills.filter((s) => !isLibrary(s));
+  const library = allSkills.filter(isLibrary);
   const allowed = new Set(ROLE_ACTIONS[role]);
   const actionTools = [...GENERAL_ACTION_TOOLS, ...PROJECT_ACTION_TOOLS].filter(
     (t) => allowed.has((t as { name: string }).name) && (project || !isProjectAction((t as { name: string }).name)) &&
@@ -78,6 +95,7 @@ export async function runSpecialist(opts: {
     // kaynağı gerçekten açıp okuyabilsin (yalnız aramada çıkan linkler açılabilir)
     ...(role !== "coder" ? [{ type: legacy ? "web_fetch_20250910" : "web_fetch_20260209", name: "web_fetch", max_uses: 4 }] : []),
     ...(project ? READ_TOOLS : []),
+    ...(library.length ? [SKILL_TOOL] : []),
     ...actionTools,
   ] as unknown as Anthropic.Tool[];
 
@@ -89,6 +107,13 @@ export async function runSpecialist(opts: {
     `Araç sonuçlarını taklit etme; bir iş ancak aracı gerçekten çağırdıysan yapılmıştır.` +
     (project ? `\n\nProje: ${project.name} (yerel yol: ${project.path}).` : "") +
     (skills.length ? `\n\n## Becerilerin\n` + skills.map((s) => `### ${s.name}\n${s.content}`).join("\n\n") : "") +
+    (library.length
+      ? `\n\n## Beceri kütüphanen (TEMEL KURAL)\n` +
+        `Görev aşağıdaki becerilerden biriyle örtüşüyorsa — kullanıcı ya da müdür adını anmasa bile — işe başlamadan önce ` +
+        `\`beceri_oku\` ile o beceriyi aç ve talimatlarına uy (birden fazlası uyuyorsa hepsini). Hiçbiri uymuyorsa açmak zorunda değilsin. ` +
+        `Teslimde hangi beceri(leri) kullandığını yaz. Becerideki araç/komut sende yoksa varmış gibi davranma.\n` +
+        library.map((s) => `- **${s.name}** — ${String(s.description || "").replace(/\s+/g, " ").slice(0, 240)}`).join("\n")
+      : "") +
     brief +
     UNTRUSTED_RULE;
 
@@ -178,6 +203,17 @@ ${opts.history}
     }
     for (const b of uses) {
       const input = (b.input ?? {}) as Record<string, unknown>;
+      if (b.name === SKILL_TOOL.name) {
+        const want = String(input.ad || "").trim().toLowerCase();
+        const s = library.find((x) => x.name.toLowerCase() === want) ?? library.find((x) => x.name.toLowerCase().includes(want) && want.length >= 3);
+        if (!s) {
+          results.push({ type: "tool_result", tool_use_id: b.id, is_error: true, content: `Böyle bir beceri yok: "${want}". Kütüphanedekiler: ${library.map((x) => x.name).join(", ")}` });
+        } else {
+          emit(`\n📘 ${meta.name}: "${s.name}" becerisini açtı\n`);
+          results.push({ type: "tool_result", tool_use_id: b.id, content: `# Beceri: ${s.name}\n\n${s.content}`.slice(0, 60000) });
+        }
+        continue;
+      }
       if (project && READ_TOOL_NAMES.has(b.name)) {
         const r = await runReadTool(b.name, input, project.path);
         if (detectInjection(r).length) emit(`\n🛡️ ${meta.name}: okunan içerikte talimat-taklidi algılandı — veri sayıldı.\n`);

@@ -2,7 +2,7 @@
 // aracıyla uzmana verir, teslimi kabul kriterlerine göre denetler, yetersizse
 // revizyon notuyla aynı uzmana geri verir (döngü), sonunda kullanıcıya sunar.
 import type Anthropic from "@anthropic-ai/sdk";
-import { getSkillsForTeamRole } from "@/lib/skills/store";
+import { getSkillsForTeamRole, loadSkills } from "@/lib/skills/store";
 import { ensureTeamSkills } from "./skills";
 import { runSpecialist } from "./runner";
 import { appendTeamLog } from "./log";
@@ -73,7 +73,20 @@ export async function buildManagerSystem(project: { name: string; path: string }
     "Kullanıcı 'yükledim/yeniledim/düzelttim' derse önce coder'a doğrulat.\n" +
     (project ? `\nBu sohbet "${project.name}" proje klasörüne bağlı (${project.path}); kodu denetlemek için okuma araçlarını (list_files/read_file/search_files) kullanabilirsin.\n` : "") +
     (skills.length ? "\n## Becerilerin\n" + skills.map((s) => `### ${s.name}\n${s.content}`).join("\n\n") : "") +
+    (await libraryBlock()) +
     brief
+  );
+}
+
+// Uzmanların beceri kütüphanesi (dışarıdan eklenenler): müdür işi doğru uzmana versin ve görevde ilgili beceriyi ansın
+async function libraryBlock(): Promise<string> {
+  const lib = (await loadSkills()).filter((s) => String(s.source || "").startsWith("github:") && s.teamRoles?.length);
+  if (!lib.length) return "";
+  return (
+    "\n\n## Ekibin beceri kütüphanesi (TEMEL KURAL)\n" +
+    "Uzmanlar bu becerileri konuya göre KENDİLERİ açıp uygular; kullanıcı adını anmasa bile. Görev bir beceriyle örtüşüyorsa işi o beceriye sahip uzmana ver " +
+    "ve görevde beceriyi adıyla an (ör. 'humanizer becerisiyle düzelt').\n" +
+    lib.map((s) => `- ${s.name} [${(s.teamRoles ?? []).join(", ")}] — ${String(s.description || "").replace(/\s+/g, " ").slice(0, 140)}`).join("\n")
   );
 }
 
