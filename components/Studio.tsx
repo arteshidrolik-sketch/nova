@@ -48,7 +48,13 @@ export default function Studio({ onClose }: { onClose: () => void }) {
   const [err, setErr] = useState("");
 
   const refresh = async () => {
-    try { const d = await fetch("/api/studio/connect").then((r) => r.json()); setSt(d); if (d.comfyUrl) setComfyUrl(d.comfyUrl); return d as Status; } catch { return null; }
+    try {
+      const d = await fetch("/api/studio/connect").then((r) => r.json());
+      setSt(d); if (d.comfyUrl) setComfyUrl(d.comfyUrl);
+      // son kullanılan pod adresini kutuya doldur (boşsa) — her açılışta yeniden yapıştırma
+      if (d.host && d.port) setSshText((cur) => cur || `ssh root@${d.host} -p ${d.port}`);
+      return d as Status;
+    } catch { return null; }
   };
   // açılışta pod durumunu al ama otomatik sekme değiştirme — kullanıcı sohbet/görsel seçsin
   // ayrıca diskteki sohbet hafızasını yükle (önceki konuşmayı hatırla)
