@@ -31,6 +31,17 @@ export default function Studio({ onClose }: { onClose: () => void }) {
   const [chatInput, setChatInput] = useState("");
   const [chatModel, setChatModel] = useState("huihui_ai/qwen2.5-coder-abliterate:32b");
   const [chatSkills, setChatSkills] = useState<string[]>(["hatasiz-kod", "debug", "dogrulama"]);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [isFs, setIsFs] = useState(false);
+  useEffect(() => {
+    const on = () => setIsFs(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", on);
+    return () => document.removeEventListener("fullscreenchange", on);
+  }, []);
+  const toggleFs = () => {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    else rootRef.current?.requestFullscreen().catch(() => {});
+  };
   const [sshText, setSshText] = useState("");
   const [comfyUrl, setComfyUrl] = useState("http://127.0.0.1:8188");
   const [busy, setBusy] = useState(false);
@@ -96,7 +107,7 @@ export default function Studio({ onClose }: { onClose: () => void }) {
   const connected = !!st?.ollama;
 
   return (
-    <div className="absolute inset-0 z-[80] flex flex-col" style={{ background: "linear-gradient(160deg,#0b0f20,#12152e 60%,#190f2b)" }}>
+    <div ref={rootRef} className="absolute inset-0 z-[80] flex flex-col" style={{ background: "linear-gradient(160deg,#0b0f20,#12152e 60%,#190f2b)" }}>
       {/* başlık */}
       <header className="flex items-center gap-3 border-b px-4 py-3 sm:px-6" style={{ borderColor: "var(--border-strong)", background: "var(--surface-header)" }}>
         <button onClick={onClose} className="flex h-11 items-center gap-1 rounded-full pl-2 pr-4 text-[14px]" style={{ border: "1px solid var(--border-strong)", color: "var(--text-muted)" }}>
@@ -107,7 +118,10 @@ export default function Studio({ onClose }: { onClose: () => void }) {
           <span className="h-2 w-2 rounded-full" style={{ background: connected ? "#2ff5b5" : "#ff7a7a" }} />
           {connected ? "pod bağlı" : "pod bağlı değil"}
         </span>
-        <div className="ml-auto flex gap-1.5">
+        <div className="ml-auto flex items-center gap-1.5">
+          <button onClick={toggleFs} title={isFs ? "Tam ekrandan çık" : "Tam ekran"} className="mr-1 h-9 w-9 rounded-lg text-[16px]" style={{ border: "1px solid var(--border-strong)", color: "var(--text-muted)" }}>
+            {isFs ? "🗗" : "⛶"}
+          </button>
           {([["baglan", "Bağlan"], ["sohbet", "💬 Sohbet"], ["gorsel", "🎨 Görsel"], ["mufettis", "🕵️ Müfettiş"]] as const).map(([t, label]) => (
             <button key={t} onClick={() => setTab(t)} className="rounded-lg px-3 py-1.5 text-[13px]" style={{ background: tab === t ? "var(--grad)" : "transparent", color: tab === t ? "#0b1030" : "var(--text-muted)", fontWeight: tab === t ? 700 : 500 }}>
               {label}
