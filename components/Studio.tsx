@@ -5,6 +5,7 @@
 // Nova sunucusu pod'a SSH köprüsüyle bağlanır; kullanıcı pod SSH bilgisini bir kez yapıştırır.
 import { useEffect, useRef, useState } from "react";
 import { IconBack } from "./UniverseIcons";
+import { SKILLS } from "@/lib/studio/skills";
 
 type Status = { configured: boolean; host: string; port: number; comfyUrl: string; tunnel: string; ollama: boolean; models: string[]; comfy: boolean };
 type Msg = { role: "user" | "assistant"; content: string };
@@ -25,6 +26,11 @@ export default function Studio({ onClose }: { onClose: () => void }) {
 
   const [st, setSt] = useState<Status | null>(null);
   const [tab, setTab] = useState<"baglan" | "sohbet" | "gorsel">("baglan");
+  // Sohbet durumu üst bileşende tutulur → sekme değişince (StudioChat unmount) yazışma kaybolmaz
+  const [chatMsgs, setChatMsgs] = useState<Msg[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatModel, setChatModel] = useState("huihui_ai/qwen2.5-coder-abliterate:32b");
+  const [chatSkills, setChatSkills] = useState<string[]>(["hatasiz-kod", "debug", "dogrulama"]);
   const [sshText, setSshText] = useState("");
   const [comfyUrl, setComfyUrl] = useState("http://127.0.0.1:8188");
   const [busy, setBusy] = useState(false);
@@ -34,7 +40,15 @@ export default function Studio({ onClose }: { onClose: () => void }) {
     try { const d = await fetch("/api/studio/connect").then((r) => r.json()); setSt(d); if (d.comfyUrl) setComfyUrl(d.comfyUrl); return d as Status; } catch { return null; }
   };
   // açılışta pod durumunu al ama otomatik sekme değiştirme — kullanıcı sohbet/görsel seçsin
-  useEffect(() => { if (unlocked) refresh(); }, [unlocked]);
+  // ayrıca diskteki sohbet hafızasını yükle (önceki konuşmayı hatırla)
+  useEffect(() => {
+    if (!unlocked) return;
+    refresh();
+    fetch("/api/studio/chat-history").then((r) => r.json()).then((d) => {
+      if (Array.isArray(d?.msgs) && d.msgs.length) setChatMsgs(d.msgs);
+      if (Array.isArray(d?.skills) && d.skills.length) setChatSkills(d.skills);
+    }).catch(() => { /* yoksay */ });
+  }, [unlocked]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Şifre ekranı
   if (!unlocked) {
@@ -162,7 +176,7 @@ export default function Studio({ onClose }: { onClose: () => void }) {
             </div>
           </div>
         )}
-        {tab === "sohbet" && <StudioChat models={st?.models ?? []} connected={connected} />}
+        {tab === "sohbet" && <StudioChat models={st?.models ?? []} connected={connected} msgs={chatMsgs} setMsgs={setChatMsgs} input={chatInput} setInput={setChatInput} model={chatModel} setModel={setChatModel} skills={chatSkills} setSkills={setChatSkills} />}
         {tab === "gorsel" && <StudioImage connected={!!st?.comfy} />}
       </main>
     </div>
@@ -225,14 +239,27 @@ function StudioImage({ connected }: { connected: boolean }) {
   );
 }
 
-function StudioChat({ models, connected }: { models: string[]; connected: boolean }) {
-  const [model, setModel] = useState(models[0] || "huihui_ai/qwen2.5-coder-abliterate:32b");
-  const [msgs, setMsgs] = useState<Msg[]>([]);
-  const [input, setInput] = useState("");
+function StudioChat({ models, connected, msgs, setMsgs, input, setInput, model, setModel, skills, setSkills }: {
+  models: string[]; connected: boolean;
+  msgs: Msg[]; setMsgs: React.Dispatch<React.SetStateAction<Msg[]>>;
+  input: string; setInput: (v: string) => void;
+  model: string; setModel: (v: string) => void;
+  skills: string[]; setSkills: (v: string[]) => void;
+}) {
   const [busy, setBusy] = useState(false);
+  const [showSkills, setShowSkills] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => { if (models[0] && !models.includes(model)) setModel(models[0]); }, [models]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { scrollRef.current?.scrollTo({ top: 1e9 }); }, [msgs]);
+
+  // Hafızaya yaz (yazışma + seçili beceriler) — sunucuda diskte tutulur
+  const save = (m: Msg[], sk: string[]) => {
+    fetch("/api/studio/chat-history", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ msgs: m, skills: sk }) }).catch(() => { /* yoksay */ });
+  };
+  const toggleSkill = (id: string) => {
+    const next = skills.includes(id) ? skills.filter((s) => s !== id) : [...skills, id];
+    setSkills(next); save(msgs, next);
+  };
 
   const send = async () => {
     const text = input.trim();
@@ -241,13 +268,16 @@ function StudioChat({ models, connected }: { models: string[]; connected: boolea
     const next: Msg[] = [...msgs, { role: "user", content: text }];
     setMsgs([...next, { role: "assistant", content: "" }]);
     try {
-      const r = await fetch("/api/studio/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model, messages: next }) });
-      if (!r.ok || !r.body) { const e = await r.json().catch(() => ({})); setMsgs([...next, { role: "assistant", content: `⚠️ ${e.error || "hata"}` }]); setBusy(false); return; }
+      const r = await fetch("/api/studio/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model, messages: next, skills }) });
+      if (!r.ok || !r.body) { const e = await r.json().catch(() => ({})); const done: Msg[] = [...next, { role: "assistant", content: `⚠️ ${e.error || "hata"}` }]; setMsgs(done); save(done, skills); setBusy(false); return; }
       const reader = r.body.getReader(); const dec = new TextDecoder(); let acc = "";
       for (;;) { const { done, value } = await reader.read(); if (done) break; acc += dec.decode(value, { stream: true }); setMsgs([...next, { role: "assistant", content: acc }]); }
-    } catch { setMsgs([...next, { role: "assistant", content: "⚠️ bağlantı hatası" }]); }
+      save([...next, { role: "assistant", content: acc }], skills);
+    } catch { const done: Msg[] = [...next, { role: "assistant", content: "⚠️ bağlantı hatası" }]; setMsgs(done); save(done, skills); }
     setBusy(false);
   };
+
+  const clear = () => { setMsgs([]); save([], skills); };
 
   return (
     <div className="absolute inset-0 flex flex-col">
@@ -256,8 +286,26 @@ function StudioChat({ models, connected }: { models: string[]; connected: boolea
         <select value={model} onChange={(e) => setModel(e.target.value)} className="rounded-lg px-2 py-1 text-[13px] outline-none" style={{ background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)" }}>
           {(models.length ? models : ["huihui_ai/qwen2.5-coder-abliterate:32b"]).map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
-        {msgs.length > 0 && <button onClick={() => setMsgs([])} className="ml-auto rounded-lg border px-2 py-1 text-[12px]" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>Temizle</button>}
+        <button onClick={() => setShowSkills((v) => !v)} className="rounded-lg border px-2 py-1 text-[12px]" style={{ borderColor: showSkills ? "var(--accent)" : "var(--border)", color: "var(--text-muted)" }}>
+          ⚙️ Beceriler{skills.length ? ` (${skills.length})` : ""}
+        </button>
+        {msgs.length > 0 && <button onClick={clear} className="ml-auto rounded-lg border px-2 py-1 text-[12px]" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>Temizle</button>}
       </div>
+      {showSkills && (
+        <div className="border-b px-4 py-3" style={{ borderColor: "var(--border-strong)", background: "var(--bg-panel)" }}>
+          <div className="mb-2 text-[11px]" style={{ color: "var(--text-muted)" }}>Seçili beceriler sistem talimatı olarak modele yüklenir (kodlama tarzını belirler):</div>
+          <div className="flex flex-wrap gap-2">
+            {SKILLS.map((s) => {
+              const on = skills.includes(s.id);
+              return (
+                <button key={s.id} onClick={() => toggleSkill(s.id)} title={s.desc} className="rounded-lg px-2.5 py-1.5 text-left text-[12px]" style={{ border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, background: on ? "var(--grad)" : "transparent", color: on ? "#0b1030" : "var(--text-muted)" }}>
+                  {on ? "✓ " : ""}{s.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-8">
         <div className="mx-auto flex max-w-3xl flex-col gap-4">
           {!connected && <div className="rounded-xl p-4 text-[13px]" style={{ background: "var(--bg-panel)", border: "1px dashed var(--border-strong)", color: "var(--text-muted)" }}>Pod bağlı değil — önce &quot;Bağlan&quot; sekmesinden bağlan.</div>}
