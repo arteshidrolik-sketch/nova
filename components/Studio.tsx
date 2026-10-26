@@ -25,7 +25,7 @@ export default function Studio({ onClose }: { onClose: () => void }) {
   };
 
   const [st, setSt] = useState<Status | null>(null);
-  const [tab, setTab] = useState<"baglan" | "sohbet" | "gorsel">("baglan");
+  const [tab, setTab] = useState<"baglan" | "sohbet" | "gorsel" | "mufettis">("baglan");
   // Sohbet durumu üst bileşende tutulur → sekme değişince (StudioChat unmount) yazışma kaybolmaz
   const [chatMsgs, setChatMsgs] = useState<Msg[]>([]);
   const [chatInput, setChatInput] = useState("");
@@ -108,7 +108,7 @@ export default function Studio({ onClose }: { onClose: () => void }) {
           {connected ? "pod bağlı" : "pod bağlı değil"}
         </span>
         <div className="ml-auto flex gap-1.5">
-          {([["baglan", "Bağlan"], ["sohbet", "💬 Sohbet"], ["gorsel", "🎨 Görsel"]] as const).map(([t, label]) => (
+          {([["baglan", "Bağlan"], ["sohbet", "💬 Sohbet"], ["gorsel", "🎨 Görsel"], ["mufettis", "🕵️ Müfettiş"]] as const).map(([t, label]) => (
             <button key={t} onClick={() => setTab(t)} className="rounded-lg px-3 py-1.5 text-[13px]" style={{ background: tab === t ? "var(--grad)" : "transparent", color: tab === t ? "#0b1030" : "var(--text-muted)", fontWeight: tab === t ? 700 : 500 }}>
               {label}
             </button>
@@ -178,6 +178,7 @@ export default function Studio({ onClose }: { onClose: () => void }) {
         )}
         {tab === "sohbet" && <StudioChat models={st?.models ?? []} connected={connected} msgs={chatMsgs} setMsgs={setChatMsgs} input={chatInput} setInput={setChatInput} model={chatModel} setModel={setChatModel} skills={chatSkills} setSkills={setChatSkills} />}
         {tab === "gorsel" && <StudioImage connected={!!st?.comfy} />}
+        {tab === "mufettis" && <StudioInspector />}
       </main>
     </div>
   );
@@ -234,6 +235,104 @@ function StudioImage({ connected }: { connected: boolean }) {
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Müfettiş paneli: ekip ajanlarının OPERASYON performans skorları + sert verdiktler.
+type IDims = { hiz: number; teslim: number; verim: number; disiplin: number; ilgililik: number | null };
+type IScore = { role: string; person: string; runs: number; avg: number; dims: IDims; pending: number };
+type IVerdict = { id: string; ts: number; role: string; person: string; tier: string; task: string; metrics: { sec: number; output: number; errors: number; artifacts: number; failed: boolean }; dims: IDims; total: number; judged: boolean; verdikt?: string };
+
+const scoreColor = (n: number) => (n >= 80 ? "#2ff5b5" : n >= 50 ? "#ffcf5c" : "#ff7a7a");
+const ROLE_TR: Record<string, string> = { research: "Araştırma", coder: "Yazılım", marketing: "Pazarlama" };
+
+function StudioInspector() {
+  const [sb, setSb] = useState<IScore[]>([]);
+  const [recent, setRecent] = useState<IVerdict[]>([]);
+  const [pending, setPending] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const load = async () => {
+    try {
+      const d = await fetch("/api/inspector").then((r) => r.json());
+      setSb(d.scoreboard ?? []); setRecent(d.recent ?? []); setPending(d.pending ?? 0);
+    } catch { /* yoksay */ }
+  };
+  useEffect(() => { load(); }, []);
+
+  const run = async () => {
+    setBusy(true); setMsg("Müfettiş çalışıyor… (pod kapalıysa önce ~3 dk uyanır)");
+    try {
+      const d = await fetch("/api/inspector", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "run" }) }).then((r) => r.json());
+      setMsg(d.reason ? `⚠ ${d.reason}` : `${d.processed} koşum denetlendi${d.pending ? `, ${d.pending} bekliyor` : ""}.`);
+      await load();
+    } catch { setMsg("⚠ bağlantı hatası"); }
+    setBusy(false);
+  };
+
+  const bar = (label: string, n: number | null) => (
+    <div className="flex items-center gap-1.5" title={label}>
+      <span className="w-[52px] text-[10px]" style={{ color: "var(--text-muted)" }}>{label}</span>
+      {n === null ? <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>—</span> : (
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full" style={{ background: "var(--bg)" }}>
+          <div className="h-full rounded-full" style={{ width: `${n}%`, background: scoreColor(n) }} />
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="absolute inset-0 overflow-y-auto">
+      <div className="mx-auto max-w-3xl p-4 sm:p-8">
+        <div className="mb-4 flex items-center gap-3">
+          <div className="text-[18px] font-bold">🕵️ Müfettiş</div>
+          <span className="text-[12px]" style={{ color: "var(--text-muted)" }}>ekip ajanlarının operasyon performansı</span>
+          <button onClick={run} disabled={busy} className="ml-auto rounded-lg px-3 py-1.5 text-[13px] font-bold disabled:opacity-40" style={{ background: "var(--grad)", color: "#0b1030" }}>
+            {busy ? "Çalışıyor…" : `Müfettişi çalıştır${pending ? ` (${pending})` : ""}`}
+          </button>
+        </div>
+        {msg && <div className="mb-3 text-[12px]" style={{ color: "var(--text-muted)" }}>{msg}</div>}
+        <p className="mb-4 text-[11px]" style={{ color: "var(--text-muted)" }}>
+          Sert metrikler (hız, teslim, verim, disiplin) her koşumda otomatik. İlgililik + sert verdikt yerel sansürsüz modelden — &quot;Müfettişi çalıştır&quot; ile işlenir. İş doğruluğunu müdür denetler, müfettiş yalnız performansa bakar.
+        </p>
+
+        {!sb.length && <div className="rounded-xl p-5 text-center text-[13px]" style={{ background: "var(--bg-panel)", border: "1px dashed var(--border-strong)", color: "var(--text-muted)" }}>Henüz denetlenecek koşum yok. Ekip bir görev çalıştırınca burada belirir.</div>}
+
+        {/* skor tablosu */}
+        <div className="mb-6 flex flex-col gap-2">
+          {sb.map((a) => (
+            <div key={a.role} className="rounded-xl p-3" style={{ background: "var(--bg-panel)", border: "1px solid var(--border)" }}>
+              <div className="mb-2 flex items-center gap-3">
+                <span className="text-[15px] font-bold">{a.person}</span>
+                <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>{ROLE_TR[a.role] ?? a.role} · {a.runs} koşum{a.pending ? ` · ${a.pending} denetlenmedi` : ""}</span>
+                <span className="ml-auto text-[22px] font-bold" style={{ color: scoreColor(a.avg) }}>{a.avg}</span>
+              </div>
+              <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+                {bar("Hız", a.dims.hiz)}{bar("Teslim", a.dims.teslim)}{bar("İlgililik", a.dims.ilgililik)}{bar("Verim", a.dims.verim)}{bar("Disiplin", a.dims.disiplin)}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* son verdiktler */}
+        {recent.length > 0 && <div className="mb-2 text-[13px] font-bold">Son denetimler</div>}
+        <div className="flex flex-col gap-2">
+          {recent.map((v) => (
+            <div key={v.id} className="rounded-xl p-3" style={{ background: "var(--bg-panel)", border: "1px solid var(--border)" }}>
+              <div className="flex items-center gap-2 text-[12px]">
+                <span className="font-bold">{v.person}</span>
+                <span style={{ color: "var(--text-muted)" }}>{v.metrics.sec}sn · {v.metrics.output} tk{v.metrics.errors ? ` · ${v.metrics.errors} hata` : ""}{v.metrics.failed ? " · BOŞ" : ""}</span>
+                <span className="ml-auto text-[16px] font-bold" style={{ color: scoreColor(v.total) }}>{v.total}</span>
+              </div>
+              <div className="mt-1 text-[12px]" style={{ color: "var(--text-muted)" }}>{v.task}</div>
+              {v.verdikt ? <div className="mt-1.5 text-[13px]" style={{ color: "var(--text)" }}>💢 {v.verdikt}</div>
+                : <div className="mt-1 text-[11px]" style={{ color: "var(--text-muted)" }}>⏳ model denetimi bekliyor (sert metrik hazır)</div>}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

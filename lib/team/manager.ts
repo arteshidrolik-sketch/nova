@@ -6,6 +6,7 @@ import { getSkillsForTeamRole, loadSkills } from "@/lib/skills/store";
 import { ensureTeamSkills } from "./skills";
 import { runSpecialist } from "./runner";
 import { appendTeamLog } from "./log";
+import { captureRun } from "@/lib/inspector/inspect";
 import { istanbulNow } from "./report";
 import { costOf } from "@/lib/budget/store";
 import { briefBlock } from "./brief";
@@ -157,6 +158,12 @@ export async function handleAssign(
     errors: res.errors.length ? res.errors : undefined, failed: res.failed || undefined,
     note: isRevision ? String(input.revizyon_notu).replace(/\s+/g, " ").trim().slice(0, 240) : undefined,
   }).catch(() => {});
+  // Müfettiş: ajanın OPERASYON performansını denetler (bloklamaz; sert metrik hemen, LLM yargısı kuyruğa)
+  captureRun({
+    ts: Date.now(), projectId: ctx.projectId || "", role: r, person, tier, model: T.model,
+    metrics: { sec, input: res.input, output: res.output, actions: res.actions, artifacts: res.artifacts.length, failed: res.failed, errors: res.errors.length },
+    task, criteria: String(input.kabul_kriterleri || ""), delivery: res.text,
+  }).catch(() => { /* denetim yazılamazsa iş yine sürer */ });
   ctx.emit(`\n👥 ${meta.name} teslim etti (${person}, ${T.label}, ${sec} sn) — 👔 Müdür denetliyor…\n`);
   return {
     content:
