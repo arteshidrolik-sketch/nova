@@ -11,7 +11,7 @@ type Msg = { role: "user" | "assistant"; content: string };
 
 export default function Studio({ onClose }: { onClose: () => void }) {
   const [st, setSt] = useState<Status | null>(null);
-  const [tab, setTab] = useState<"baglan" | "sohbet">("baglan");
+  const [tab, setTab] = useState<"baglan" | "sohbet" | "gorsel">("baglan");
   const [sshText, setSshText] = useState("");
   const [comfyUrl, setComfyUrl] = useState("http://127.0.0.1:8188");
   const [busy, setBusy] = useState(false);
@@ -55,21 +55,11 @@ export default function Studio({ onClose }: { onClose: () => void }) {
           {connected ? "pod bağlı" : "pod bağlı değil"}
         </span>
         <div className="ml-auto flex gap-1.5">
-          {(["baglan", "sohbet"] as const).map((t) => (
+          {([["baglan", "Bağlan"], ["sohbet", "💬 Sohbet"], ["gorsel", "🎨 Görsel"]] as const).map(([t, label]) => (
             <button key={t} onClick={() => setTab(t)} className="rounded-lg px-3 py-1.5 text-[13px]" style={{ background: tab === t ? "var(--grad)" : "transparent", color: tab === t ? "#0b1030" : "var(--text-muted)", fontWeight: tab === t ? 700 : 500 }}>
-              {t === "baglan" ? "Bağlan" : "💬 Sohbet"}
+              {label}
             </button>
           ))}
-          {/* Görsel: her zaman görünür — ComfyUI'yi yeni sekmede açar */}
-          <button
-            onClick={() => { const u = (st?.comfyUrl || comfyUrl || "http://127.0.0.1:8188"); window.open(u, "_blank", "noopener"); }}
-            disabled={!st?.comfy}
-            title={st?.comfy ? "ComfyUI'yi aç" : "ComfyUI bağlı değil"}
-            className="rounded-lg px-3 py-1.5 text-[13px] disabled:opacity-40"
-            style={{ background: "transparent", color: "var(--text-muted)", fontWeight: 500, border: "1px solid var(--border-strong)" }}
-          >
-            🎨 Görsel ↗
-          </button>
         </div>
       </header>
 
@@ -87,17 +77,15 @@ export default function Studio({ onClose }: { onClose: () => void }) {
                 <span className="text-[15px] font-bold">Sohbet</span>
                 <span className="text-[12px]" style={{ color: "var(--text-muted)" }}>Qwen Coder · sansürsüz</span>
               </button>
-              <a
-                href={connected && st?.comfy ? (st.comfyUrl || comfyUrl) : undefined}
-                target="_blank" rel="noreferrer"
-                onClick={(e) => { if (!(connected && st?.comfy)) e.preventDefault(); }}
+              <button
+                onClick={() => st?.comfy ? setTab("gorsel") : null}
                 className="flex flex-col items-center gap-2 rounded-2xl p-6 transition-colors"
                 style={{ background: "var(--bg-panel)", border: `1px solid ${st?.comfy ? "var(--accent)" : "var(--border)"}`, opacity: st?.comfy ? 1 : 0.6 }}
               >
                 <span className="text-[34px]">🎨</span>
                 <span className="text-[15px] font-bold">Görsel</span>
-                <span className="text-[12px]" style={{ color: "var(--text-muted)" }}>Qwen-Image · ComfyUI</span>
-              </a>
+                <span className="text-[12px]" style={{ color: "var(--text-muted)" }}>Qwen-Image · sansürsüz</span>
+              </button>
             </div>
 
             {/* bağlantı ayarı */}
@@ -136,7 +124,64 @@ export default function Studio({ onClose }: { onClose: () => void }) {
           </div>
         )}
         {tab === "sohbet" && <StudioChat models={st?.models ?? []} connected={connected} />}
+        {tab === "gorsel" && <StudioImage connected={!!st?.comfy} />}
       </main>
+    </div>
+  );
+}
+
+// Görsel üretimi: prompt → Nova sunucusu ComfyUI'yi çalıştırır → görseli gösterir (tarayıcı pod'a bağlanmaz)
+function StudioImage({ connected }: { connected: boolean }) {
+  const [prompt, setPrompt] = useState("");
+  const [size, setSize] = useState<[number, number]>([1024, 1024]);
+  const [busy, setBusy] = useState(false);
+  const [img, setImg] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+
+  const run = async () => {
+    const p = prompt.trim();
+    if (!p || busy) return;
+    setBusy(true); setErr(""); setImg(null);
+    try {
+      const d = await fetch("/api/studio/image", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: p, width: size[0], height: size[1] }) }).then((r) => r.json());
+      if (d.image) setImg(d.image); else setErr(d.error || "üretilemedi");
+    } catch { setErr("bağlantı hatası"); }
+    setBusy(false);
+  };
+
+  const sizes: [string, number, number][] = [["Kare 1024", 1024, 1024], ["Dikey 896×1152", 896, 1152], ["Yatay 1152×896", 1152, 896], ["Büyük 1328", 1328, 1328]];
+  return (
+    <div className="absolute inset-0 overflow-y-auto">
+      <div className="mx-auto max-w-3xl p-4 sm:p-8">
+        {!connected && <div className="mb-4 rounded-xl p-4 text-[13px]" style={{ background: "var(--bg-panel)", border: "1px dashed var(--border-strong)", color: "var(--text-muted)" }}>Pod bağlı değil — önce &quot;Bağlan&quot; sekmesinden bağlan.</div>}
+        <label className="mb-1 block text-[14px] font-bold">Görsel tarifi (İngilizce daha iyi)</label>
+        <textarea
+          value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={3}
+          onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) run(); }}
+          placeholder="an old Turkish fisherman at golden hour on an Istanbul pier, cinematic, ultra detailed"
+          className="mb-3 w-full resize-none rounded-xl p-3 text-[14px] outline-none"
+          style={{ background: "var(--bg)", border: "1px solid var(--border-strong)", color: "var(--text)" }}
+        />
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          {sizes.map(([lbl, w, h]) => (
+            <button key={lbl} onClick={() => setSize([w, h])} className="rounded-lg px-2.5 py-1.5 text-[12px]" style={{ border: `1px solid ${size[0] === w && size[1] === h ? "var(--accent)" : "var(--border)"}`, color: size[0] === w && size[1] === h ? "var(--text)" : "var(--text-muted)" }}>{lbl}</button>
+          ))}
+          <button onClick={run} disabled={busy || !prompt.trim() || !connected} className="ml-auto rounded-xl px-5 py-2 text-[14px] font-bold disabled:opacity-40" style={{ background: "var(--grad)", color: "#0b1030" }}>
+            {busy ? "Üretiliyor… (~30 sn)" : "Üret"}
+          </button>
+        </div>
+        {err && <div className="mb-3 text-[13px]" style={{ color: "#ff6b7a" }}>⚠ {err}</div>}
+        {busy && <div className="flex h-80 items-center justify-center rounded-2xl text-[13px]" style={{ background: "var(--bg-panel)", border: "1px solid var(--border)", color: "var(--text-muted)" }}>Model çalışıyor, görsel hazırlanıyor…</div>}
+        {img && !busy && (
+          <div className="rounded-2xl p-2" style={{ background: "var(--bg-panel)", border: "1px solid var(--border)" }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={img} alt="üretilen görsel" className="w-full rounded-xl" />
+            <div className="mt-2 flex justify-end">
+              <a href={img} download="nova-gorsel.png" className="rounded-lg px-3 py-1.5 text-[13px]" style={{ border: "1px solid var(--border-strong)", color: "var(--text)" }}>İndir</a>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
