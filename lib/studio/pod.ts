@@ -13,7 +13,7 @@ async function api(path: string, method: "GET" | "POST" = "GET"): Promise<Record
   if (!key()) return null;
   try {
     const r = await fetch(`${BASE}${path}`, { method, headers: { Authorization: `Bearer ${key()}` }, signal: AbortSignal.timeout(20000) });
-    if (!r.ok) return { _status: r.status };
+    if (!r.ok) { const t = await r.json().catch(() => ({})); return { _status: r.status, error: (t as { error?: string }).error ?? "" }; }
     return (await r.json()) as Record<string, unknown>;
   } catch { return null; }
 }
@@ -26,7 +26,17 @@ export async function podStatus(): Promise<PodInfo | null> {
   return { status: String(j.desiredStatus ?? ""), host: String(j.publicIp ?? ""), sshPort: Number(pm["22"]) || 0 };
 }
 
-async function startPod(): Promise<void> { await api(`/pods/${POD_ID}/start`, "POST"); }
+// Başlatmayı dene; kapasite yoksa anlaşılır hata döndür (null = başarılı).
+async function startPod(): Promise<string | null> {
+  const j = await api(`/pods/${POD_ID}/start`, "POST");
+  if (!j) return "RunPod'a ulaşılamadı";
+  if (j._status) {
+    const msg = String((j.error as string) || "");
+    if (/not enough free GPUs|capacity/i.test(msg)) return "Şu an boş GPU yok (RunPod kapasite). Birkaç dakika sonra tekrar dene.";
+    return `Pod başlatılamadı (${j._status})`;
+  }
+  return null;
+}
 export async function stopPod(): Promise<void> { await api(`/pods/${POD_ID}/stop`, "POST"); }
 
 // Son kullanım anı — boşta durdurma için.
@@ -56,7 +66,8 @@ export async function ensurePodReady(onLog?: (s: string) => void): Promise<void>
 
   if (st.status !== "RUNNING") {
     log("Pod başlatılıyor…");
-    await startPod();
+    const e = await startPod();
+    if (e) throw new Error(e);
     // RUNNING + SSH portu gelene kadar bekle (~2 dk)
     for (let i = 0; i < 40; i++) {
       await new Promise((r) => setTimeout(r, 4000));
