@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import SpaceBackground from "./SpaceBackground";
 import ProjectView from "./ProjectView";
+import Studio from "./Studio";
 import { Planet } from "./planet";
 import { IconPlus, IconClose } from "./UniverseIcons";
 import SpaceControls from "./SpaceControls";
@@ -43,6 +44,7 @@ export default function Universe() {
   const [switched, setSwitched] = useState(false); // sekmeyle proje değişti mi (animasyonsuz açılış)
   const [hover, setHover] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [studio, setStudio] = useState(false);
   const [newName, setNewName] = useState("");
   const stageRef = useRef<HTMLDivElement | null>(null);
   const nodeRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
@@ -148,6 +150,14 @@ export default function Universe() {
         <NovaCost />
         <SpaceControls />
         <button
+          onClick={() => setStudio(true)}
+          title="Stüdyo: pod'daki sansürsüz modeller (sohbet + görsel)"
+          className="flex h-11 items-center gap-2 rounded-full px-4 text-[14px] font-medium transition-transform duration-200 hover:scale-[1.03]"
+          style={{ border: "1px solid var(--border-strong)", color: "var(--text)" }}
+        >
+          🎛️ <span className="hidden sm:inline">Stüdyo</span>
+        </button>
+        <button
           onClick={() => setCreating(true)}
           className="flex h-11 items-center gap-2 rounded-full px-4 text-[14px] font-medium transition-transform duration-200 hover:scale-[1.03]"
           style={{ background: "var(--grad)", color: "#0b1030", fontWeight: 700, boxShadow: "0 6px 24px rgba(139,92,255,.45)" }}
@@ -252,6 +262,9 @@ export default function Universe() {
           </form>
         </div>
       )}
+
+      {/* Stüdyo: pod'daki sansürsüz modeller */}
+      {studio && <Studio onClose={() => setStudio(false)} />}
 
       {/* proje sayfası */}
       {open && (
