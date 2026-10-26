@@ -412,9 +412,85 @@ function StudioChat({ models, connected, msgs, setMsgs, input, setInput, model, 
 }) {
   const [busy, setBusy] = useState(false);
   const [showSkills, setShowSkills] = useState(false);
+  const [atts, setAtts] = useState<string[]>([]); // ekli görseller (resim ya da video kareleri, dataURL)
+  const [attLabel, setAttLabel] = useState(""); // "2 resim" / "video: 5 kare"
+  const [listening, setListening] = useState(false); // mikrofon açık mı
+  const [speak, setSpeak] = useState(false); // cevabı sesli oku
   const scrollRef = useRef<HTMLDivElement>(null);
+  const recRef = useRef<{ stop: () => void } | null>(null);
+  const imgRef = useRef<HTMLInputElement>(null);
+  const vidRef = useRef<HTMLInputElement>(null);
   useEffect(() => { if (models[0] && !models.includes(model)) setModel(models[0]); }, [models]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { scrollRef.current?.scrollTo({ top: 1e9 }); }, [msgs]);
+  useEffect(() => () => { try { window.speechSynthesis?.cancel(); } catch { /* yoksay */ } }, []);
+
+  // Sesli giriş (tarayıcı SpeechRecognition — Chrome/Edge). DOM tipinde garanti olmadığı için yerel arayüz.
+  const toggleMic = () => {
+    type Rec = {
+      lang: string; interimResults: boolean; continuous: boolean; start(): void; stop(): void;
+      onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+      onend: (() => void) | null; onerror: (() => void) | null;
+    };
+    const win = window as unknown as { webkitSpeechRecognition?: new () => Rec; SpeechRecognition?: new () => Rec };
+    const Ctor = win.webkitSpeechRecognition || win.SpeechRecognition;
+    if (!Ctor) { alert("Tarayıcın sesli girişi desteklemiyor (Chrome/Edge kullan)."); return; }
+    if (listening) { recRef.current?.stop(); return; }
+    const r = new Ctor();
+    r.lang = "tr-TR"; r.interimResults = true; r.continuous = true;
+    const base = input ? input + " " : "";
+    r.onresult = (e) => {
+      let t = ""; for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
+      setInput((base + t).trimStart());
+    };
+    r.onend = () => setListening(false);
+    r.onerror = () => setListening(false);
+    recRef.current = r; setListening(true); r.start();
+  };
+
+  // Cevabı sesli oku
+  const sayOut = (text: string) => {
+    try {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text.replace(/[*_`#>]/g, "").slice(0, 4000));
+      u.lang = "tr-TR"; window.speechSynthesis.speak(u);
+    } catch { /* yoksay */ }
+  };
+
+  // Resim ekle (dataURL)
+  const addImages = (files: FileList | null) => {
+    if (!files) return;
+    Array.from(files).slice(0, 8).forEach((f) => {
+      const rd = new FileReader();
+      rd.onload = () => { setAtts((p) => [...p, String(rd.result)].slice(0, 8)); setAttLabel(""); };
+      rd.readAsDataURL(f);
+    });
+  };
+
+  // Video → birkaç kare örnekle (tarayıcıda; küçült → JPEG). Kareler resim gibi modele gider.
+  const addVideo = async (file: File | null) => {
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    try {
+      const v = document.createElement("video");
+      v.src = url; v.muted = true; v.preload = "auto";
+      await new Promise<void>((res, rej) => { v.onloadedmetadata = () => res(); v.onerror = () => rej(new Error("video okunamadı")); });
+      const dur = v.duration || 0;
+      const N = Math.min(6, Math.max(3, Math.floor(dur / 3) || 3));
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      const frames: string[] = [];
+      for (let i = 0; i < N; i++) {
+        const t = dur * (i + 0.5) / N;
+        await new Promise<void>((res) => { v.onseeked = () => res(); v.currentTime = t; });
+        const scale = Math.min(1, 768 / Math.max(1, v.videoWidth));
+        canvas.width = Math.round(v.videoWidth * scale); canvas.height = Math.round(v.videoHeight * scale);
+        ctx?.drawImage(v, 0, 0, canvas.width, canvas.height);
+        frames.push(canvas.toDataURL("image/jpeg", 0.7));
+      }
+      setAtts(frames.slice(0, 8)); setAttLabel(`video: ${frames.length} kare`);
+    } catch { alert("Video karelere ayrılamadı."); }
+    finally { URL.revokeObjectURL(url); }
+  };
 
   // Hafızaya yaz (yazışma + seçili beceriler) — sunucuda diskte tutulur
   const save = (m: Msg[], sk: string[]) => {
@@ -427,17 +503,22 @@ function StudioChat({ models, connected, msgs, setMsgs, input, setInput, model, 
 
   const send = async () => {
     const text = input.trim();
-    if (!text || busy) return;
-    setInput(""); setBusy(true);
-    const next: Msg[] = [...msgs, { role: "user", content: text }];
-    setMsgs([...next, { role: "assistant", content: "" }]);
+    if ((!text && !atts.length) || busy) return;
+    if (listening) recRef.current?.stop();
+    const images = atts;
+    const shown = text + (images.length ? ` [${attLabel || `${images.length} görsel`}]` : "");
+    setInput(""); setAtts([]); setAttLabel(""); setBusy(true);
+    const next: Msg[] = [...msgs, { role: "user", content: text || "Bu görseli ayrıntılı anlat." }];
+    const shownMsgs: Msg[] = [...msgs, { role: "user", content: shown || "Bu görseli ayrıntılı anlat." }];
+    setMsgs([...shownMsgs, { role: "assistant", content: "" }]);
     try {
-      const r = await fetch("/api/studio/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model, messages: next, skills }) });
-      if (!r.ok || !r.body) { const e = await r.json().catch(() => ({})); const done: Msg[] = [...next, { role: "assistant", content: `⚠️ ${e.error || "hata"}` }]; setMsgs(done); save(done, skills); setBusy(false); return; }
+      const r = await fetch("/api/studio/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model, messages: next, skills, images }) });
+      if (!r.ok || !r.body) { const e = await r.json().catch(() => ({})); const done: Msg[] = [...shownMsgs, { role: "assistant", content: `⚠️ ${e.error || "hata"}` }]; setMsgs(done); save(done, skills); setBusy(false); return; }
       const reader = r.body.getReader(); const dec = new TextDecoder(); let acc = "";
-      for (;;) { const { done, value } = await reader.read(); if (done) break; acc += dec.decode(value, { stream: true }); setMsgs([...next, { role: "assistant", content: acc }]); }
-      save([...next, { role: "assistant", content: acc }], skills);
-    } catch { const done: Msg[] = [...next, { role: "assistant", content: "⚠️ bağlantı hatası" }]; setMsgs(done); save(done, skills); }
+      for (;;) { const { done, value } = await reader.read(); if (done) break; acc += dec.decode(value, { stream: true }); setMsgs([...shownMsgs, { role: "assistant", content: acc }]); }
+      save([...shownMsgs, { role: "assistant", content: acc }], skills);
+      if (speak && acc.trim()) sayOut(acc);
+    } catch { const done: Msg[] = [...shownMsgs, { role: "assistant", content: "⚠️ bağlantı hatası" }]; setMsgs(done); save(done, skills); }
     setBusy(false);
   };
 
@@ -484,17 +565,39 @@ function StudioChat({ models, connected, msgs, setMsgs, input, setInput, model, 
         </div>
       </div>
       <div className="relative z-10 border-t p-3 sm:p-4" style={{ borderColor: "var(--border-strong)", background: "rgba(8,12,22,0.55)", backdropFilter: "blur(2px)" }}>
-        <div className="mx-auto flex max-w-3xl items-end gap-2">
-          <textarea
-            value={input} onChange={(e) => setInput(e.target.value)} rows={1}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-            placeholder="Mesajını yaz… (sansürsüz, yerel model)"
-            className="max-h-40 flex-1 resize-none rounded-xl px-3 py-2.5 text-[14px] outline-none"
-            style={{ background: "var(--bg)", border: "1px solid var(--border-strong)", color: "var(--text)" }}
-          />
-          <button onClick={send} disabled={busy || !input.trim()} className="rounded-xl px-4 py-2.5 text-[14px] font-bold disabled:opacity-40" style={{ background: "var(--grad)", color: "#0b1030" }}>
-            {busy ? "…" : "Gönder"}
-          </button>
+        <div className="mx-auto max-w-3xl">
+          {/* ekli görsel önizleme */}
+          {atts.length > 0 && (
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>{attLabel || `${atts.length} görsel`} eklendi</span>
+              {atts.slice(0, 8).map((src, i) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img key={i} src={src} alt="" className="h-10 w-10 rounded-md object-cover" style={{ border: "1px solid var(--border)" }} />
+              ))}
+              <button onClick={() => { setAtts([]); setAttLabel(""); }} className="text-[12px]" style={{ color: "#ff8a8a" }}>kaldır</button>
+            </div>
+          )}
+          <div className="flex items-end gap-2">
+            {/* araç ikonları */}
+            <div className="flex gap-1">
+              <button onClick={toggleMic} title="Sesli giriş" className="h-10 w-10 rounded-xl text-[17px]" style={{ border: `1px solid ${listening ? "#ff6b7a" : "var(--border-strong)"}`, background: listening ? "rgba(255,107,122,0.15)" : "transparent", color: "var(--text)" }}>🎤</button>
+              <button onClick={() => { setSpeak((s) => { if (s) try { window.speechSynthesis.cancel(); } catch { /* yoksay */ } return !s; }); }} title="Cevabı sesli oku" className="h-10 w-10 rounded-xl text-[17px]" style={{ border: `1px solid ${speak ? "var(--accent)" : "var(--border-strong)"}`, background: speak ? "rgba(79,209,197,0.15)" : "transparent", color: "var(--text)" }}>🔊</button>
+              <button onClick={() => imgRef.current?.click()} title="Resim ekle" className="h-10 w-10 rounded-xl text-[17px]" style={{ border: "1px solid var(--border-strong)", color: "var(--text)" }}>🖼️</button>
+              <button onClick={() => vidRef.current?.click()} title="Video ekle (kareler modele gider)" className="h-10 w-10 rounded-xl text-[17px]" style={{ border: "1px solid var(--border-strong)", color: "var(--text)" }}>🎬</button>
+              <input ref={imgRef} type="file" accept="image/*" multiple hidden onChange={(e) => { addImages(e.target.files); e.target.value = ""; }} />
+              <input ref={vidRef} type="file" accept="video/*" hidden onChange={(e) => { addVideo(e.target.files?.[0] ?? null); e.target.value = ""; }} />
+            </div>
+            <textarea
+              value={input} onChange={(e) => setInput(e.target.value)} rows={1}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+              placeholder={listening ? "Dinliyorum…" : "Mesajını yaz ya da 🎤 ile konuş…"}
+              className="max-h-40 flex-1 resize-none rounded-xl px-3 py-2.5 text-[14px] outline-none"
+              style={{ background: "var(--bg)", border: "1px solid var(--border-strong)", color: "var(--text)" }}
+            />
+            <button onClick={send} disabled={busy || (!input.trim() && !atts.length)} className="rounded-xl px-4 py-2.5 text-[14px] font-bold disabled:opacity-40" style={{ background: "var(--grad)", color: "#0b1030" }}>
+              {busy ? "…" : "Gönder"}
+            </button>
+          </div>
         </div>
       </div>
     </div>

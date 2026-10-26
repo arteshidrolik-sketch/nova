@@ -20,7 +20,30 @@ export async function claudeReachable(timeoutMs = 3500): Promise<boolean> {
   }
 }
 
-type OllamaMsg = { role: "system" | "user" | "assistant"; content: string };
+type OllamaMsg = { role: "system" | "user" | "assistant"; content: string; images?: string[] };
+
+// Model pod'da kurulu mu? (görü modeli ilk kullanımda indirilecek)
+export async function ollamaHasModel(baseUrl: string, model: string): Promise<boolean> {
+  try {
+    const r = await fetch(`${baseUrl.replace(/\/$/, "")}/api/tags`, { signal: AbortSignal.timeout(5000) });
+    if (!r.ok) return false;
+    const j = (await r.json()) as { models?: { name: string }[] };
+    const want = model.includes(":") ? model : `${model}:latest`;
+    return (j.models ?? []).some((m) => m.name === model || m.name === want);
+  } catch { return false; }
+}
+
+// Modeli indir (akışı sonuna kadar oku; ilk görsel isteğinde bir kez, /workspace'e kalıcı iner).
+export async function ollamaPull(baseUrl: string, model: string): Promise<void> {
+  const res = await fetch(`${baseUrl.replace(/\/$/, "")}/api/pull`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model, stream: true }),
+    signal: AbortSignal.timeout(540000), // büyük model: cömert süre
+  });
+  if (!res.ok || !res.body) throw new Error(`Görü modeli indirilemedi (HTTP ${res.status})`);
+  const reader = res.body.getReader();
+  for (;;) { const { done } = await reader.read(); if (done) break; } // bitene kadar bekle
+}
 
 // Anthropic içerik bloklarından düz metni çıkar (Ollama sadece metin ister).
 function blockText(content: unknown): string {
