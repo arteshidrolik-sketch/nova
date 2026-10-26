@@ -66,6 +66,23 @@ export async function comfyUp(): Promise<boolean> {
   catch { return false; }
 }
 
+// Pod'da tek seferlik bir komut çalıştır (SSH, köprüden bağımsız). Dosya silme vb. için.
+export async function execOnPod(cmd: string): Promise<void> {
+  const c = await readCfg();
+  if (!c?.host || !c?.port) return;
+  await fs.chmod(KEY, 0o600).catch(() => {});
+  await new Promise<void>((resolve) => {
+    const ssh = spawn("ssh", [
+      "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+      "-o", "BatchMode=yes", "-o", "ConnectTimeout=8",
+      "-i", KEY, "-p", String(c.port), `root@${c.host}`, cmd,
+    ], { stdio: "ignore" });
+    ssh.on("exit", () => resolve());
+    ssh.on("error", () => resolve());
+    setTimeout(() => { try { ssh.kill("SIGKILL"); } catch { /* yoksay */ } resolve(); }, 12000);
+  });
+}
+
 // Pod bilgisi kayıtlıysa köprüyü kendiliğinden kur (sunucu yeniden başladığında).
 export async function ensureFromCfg(): Promise<void> {
   if (tunnelTarget()) return;

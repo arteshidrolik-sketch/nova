@@ -1,6 +1,6 @@
 // Stüdyo görsel üretimi: Nova sunucusu pod'daki ComfyUI'yi (SSH köprüsü üzerinden) çalıştırır,
 // üretilen görseli döndürür. Tarayıcı pod'a HİÇ bağlanmaz → PC tüneli / WARP sorunu yok.
-import { ensureFromCfg, tunnelTarget } from "@/lib/studio/tunnel";
+import { ensureFromCfg, execOnPod, tunnelTarget } from "@/lib/studio/tunnel";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -50,6 +50,9 @@ export async function POST(req: Request) {
         const url = `${COMFY}/view?filename=${encodeURIComponent(im.filename)}&subfolder=${encodeURIComponent(im.subfolder)}&type=${encodeURIComponent(im.type)}`;
         const r = await fetch(url, { signal: AbortSignal.timeout(20000) });
         const buf = Buffer.from(await r.arrayBuffer());
+        // Görsel tarayıcıya base64 olarak gönderildi; diskte birikmesin diye pod'daki dosyayı sil.
+        const safe = im.filename.replace(/[^A-Za-z0-9._-]/g, "");
+        if (safe) execOnPod(`rm -f /workspace/ComfyUI/output/${safe}`).catch(() => {});
         return Response.json({ image: `data:image/png;base64,${buf.toString("base64")}`, seed, filename: im.filename });
       }
       if (entry.status?.status_str === "error") return Response.json({ error: "ComfyUI üretim hatası" }, { status: 502 });
