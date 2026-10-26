@@ -2,6 +2,7 @@
 // üretilen görseli döndürür. Tarayıcı pod'a HİÇ bağlanmaz → PC tüneli / WARP sorunu yok.
 import { ensureFromCfg, execOnPod, tunnelTarget } from "@/lib/studio/tunnel";
 import { ensurePodReady, podAutomationReady, touchPod } from "@/lib/studio/pod";
+import { enhanceImagePrompt, DEFAULT_NEGATIVE } from "@/lib/studio/prompt";
 
 export const runtime = "nodejs";
 export const maxDuration = 600;
@@ -23,9 +24,9 @@ function workflow(prompt: string, negative: string, w: number, h: number, seed: 
 }
 
 export async function POST(req: Request) {
-  const b = (await req.json().catch(() => ({}))) as { prompt?: string; negative?: string; width?: number; height?: number; seed?: number };
-  const prompt = String(b.prompt ?? "").trim();
-  if (!prompt) return Response.json({ error: "prompt gerekli" }, { status: 400 });
+  const b = (await req.json().catch(() => ({}))) as { prompt?: string; negative?: string; width?: number; height?: number; seed?: number; enhance?: boolean };
+  const raw = String(b.prompt ?? "").trim();
+  if (!raw) return Response.json({ error: "prompt gerekli" }, { status: 400 });
   const w = Math.min(2048, Math.max(512, Number(b.width) || 1024));
   const h = Math.min(2048, Math.max(512, Number(b.height) || 1024));
   const seed = Number.isFinite(b.seed) ? Number(b.seed) : Math.floor(Math.random() * 1e9);
@@ -38,8 +39,17 @@ export async function POST(req: Request) {
   if (!tunnelTarget()) await ensureFromCfg();
   if (!tunnelTarget()) return Response.json({ error: "Pod bağlı değil. Önce Admin'de bağlan." }, { status: 409 });
 
+  // Prompt ajanı: Türkçe isteği detaylı İngilizce prompt + negative'e çevir (model daha iyi izlesin).
+  // Varsayılan açık; kullanıcı kapatabilir. Başarısız olursa ham prompt kullanılır.
+  let prompt = raw;
+  let negative = String(b.negative ?? "").trim() || DEFAULT_NEGATIVE;
+  if (b.enhance !== false) {
+    const e = await enhanceImagePrompt(raw);
+    if (e) { prompt = e.prompt; if (!b.negative) negative = e.negative; }
+  }
+
   try {
-    const q = await fetch(`${COMFY}/prompt`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: workflow(prompt, String(b.negative ?? ""), w, h, seed) }), signal: AbortSignal.timeout(15000) });
+    const q = await fetch(`${COMFY}/prompt`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: workflow(prompt, negative, w, h, seed) }), signal: AbortSignal.timeout(15000) });
     if (!q.ok) return Response.json({ error: `ComfyUI kuyruk hatası (${q.status})` }, { status: 502 });
     const pid = ((await q.json()) as { prompt_id?: string }).prompt_id;
     if (!pid) return Response.json({ error: "prompt_id alınamadı" }, { status: 502 });
@@ -59,7 +69,7 @@ export async function POST(req: Request) {
         // Görsel tarayıcıya base64 olarak gönderildi; diskte birikmesin diye pod'daki dosyayı sil.
         const safe = im.filename.replace(/[^A-Za-z0-9._-]/g, "");
         if (safe) execOnPod(`rm -f /workspace/ComfyUI/output/${safe}`).catch(() => {});
-        return Response.json({ image: `data:image/png;base64,${buf.toString("base64")}`, seed, filename: im.filename });
+        return Response.json({ image: `data:image/png;base64,${buf.toString("base64")}`, seed, filename: im.filename, usedPrompt: prompt });
       }
       if (entry.status?.status_str === "error") return Response.json({ error: "ComfyUI üretim hatası" }, { status: 502 });
     }

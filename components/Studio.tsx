@@ -211,14 +211,16 @@ function StudioImage({ connected }: { connected: boolean }) {
   const [busy, setBusy] = useState(false);
   const [img, setImg] = useState<string | null>(null);
   const [err, setErr] = useState("");
+  const [enhance, setEnhance] = useState(true); // prompt ajanı (Türkçe→detaylı İngilizce)
+  const [used, setUsed] = useState(""); // ajanın ürettiği, modele giden prompt
 
   const run = async () => {
     const p = prompt.trim();
     if (!p || busy) return;
-    setBusy(true); setErr(""); setImg(null);
+    setBusy(true); setErr(""); setImg(null); setUsed("");
     try {
-      const d = await fetch("/api/studio/image", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: p, width: size[0], height: size[1] }) }).then((r) => r.json());
-      if (d.image) setImg(d.image); else setErr(d.error || "üretilemedi");
+      const d = await fetch("/api/studio/image", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: p, width: size[0], height: size[1], enhance }) }).then((r) => r.json());
+      if (d.image) { setImg(d.image); if (d.usedPrompt) setUsed(d.usedPrompt); } else setErr(d.error || "üretilemedi");
     } catch { setErr("bağlantı hatası"); }
     setBusy(false);
   };
@@ -228,7 +230,12 @@ function StudioImage({ connected }: { connected: boolean }) {
     <div className="absolute inset-0 overflow-y-auto">
       <div className="mx-auto max-w-3xl p-4 sm:p-8">
         {!connected && <div className="mb-4 rounded-xl p-4 text-[13px]" style={{ background: "var(--bg-panel)", border: "1px dashed var(--border-strong)", color: "var(--text-muted)" }}>Pod bağlı değil — önce &quot;Bağlan&quot; sekmesinden bağlan.</div>}
-        <label className="mb-1 block text-[14px] font-bold">Görsel tarifi (İngilizce daha iyi)</label>
+        <div className="mb-1 flex items-center gap-2">
+          <label className="text-[14px] font-bold">Görsel tarifi (Türkçe yazabilirsin)</label>
+          <button onClick={() => setEnhance((v) => !v)} title="Prompt ajanı: isteğini detaylı İngilizce prompt'a çevirir, model daha iyi izler" className="ml-auto rounded-lg px-2.5 py-1 text-[12px]" style={{ border: `1px solid ${enhance ? "var(--accent)" : "var(--border)"}`, background: enhance ? "var(--grad)" : "transparent", color: enhance ? "#0b1030" : "var(--text-muted)", fontWeight: enhance ? 700 : 500 }}>
+            {enhance ? "✨ Prompt ajanı açık" : "Prompt ajanı kapalı"}
+          </button>
+        </div>
         <textarea
           value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={3}
           onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) run(); }}
@@ -250,10 +257,17 @@ function StudioImage({ connected }: { connected: boolean }) {
           <div className="rounded-2xl p-2" style={{ background: "var(--bg-panel)", border: "1px solid var(--border)" }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={img} alt="üretilen görsel" className="w-full rounded-xl" />
-            <div className="mt-2 flex justify-end">
+            <div className="mt-2 flex items-center justify-end gap-2">
+              <button onClick={run} className="rounded-lg px-3 py-1.5 text-[13px]" style={{ border: "1px solid var(--border-strong)", color: "var(--text)" }}>↻ Yeniden üret</button>
               <a href={img} download="nova-gorsel.png" className="rounded-lg px-3 py-1.5 text-[13px]" style={{ border: "1px solid var(--border-strong)", color: "var(--text)" }}>İndir</a>
             </div>
           </div>
+        )}
+        {used && !busy && (
+          <details className="mt-3 text-[12px]" style={{ color: "var(--text-muted)" }}>
+            <summary className="cursor-pointer">Modele giden İngilizce prompt (ajan yazdı)</summary>
+            <div className="mt-1.5 whitespace-pre-wrap rounded-lg p-2.5" style={{ background: "var(--bg-panel)", border: "1px solid var(--border)", color: "var(--text)" }}>{used}</div>
+          </details>
         )}
       </div>
     </div>
