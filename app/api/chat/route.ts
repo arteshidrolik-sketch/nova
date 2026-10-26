@@ -449,7 +449,9 @@ export async function POST(req: Request) {
         // yazdığı üretim raporlarını kendisi okuyabilmeli (uzmana devredince
         // araç onların setinde olmadığı için NameError alınıyordu).
         GITHUB_TOOL,
-        ...GENERAL_ACTION_TOOLS.filter((t) => (t as { name: string }).name === "github_read_issue"),
+        ...GENERAL_ACTION_TOOLS.filter((t) =>
+          ["github_read_issue", "github_comment_issue"].includes((t as { name: string }).name),
+        ),
         ...(project ? READ_TOOLS : []),
       ]
     : [
@@ -1327,9 +1329,14 @@ export async function POST(req: Request) {
         }
         finishRun(runId, "done");
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Model hatası";
+        const raw = err instanceof Error ? err.message : "Model hatası";
+        // Anthropic API kredisi bittiğinde: ham JSON yerine temiz mesaj + yükleme linki (en altta)
+        const credit = /credit balance|too low to access|Plans & Billing|insufficient.*credit/i.test(raw);
+        const msg = credit
+          ? "Anthropic API kredisi bitti — Nova çalışmak için krediye ihtiyaç duyuyor. Kredi yükleyince kaldığın yerden devam edebilirsin.\n\n[💳 Kredi yükle (Plans & Billing)](https://console.anthropic.com/settings/billing)"
+          : raw;
         emit(`\n\n⚠️ ${msg}`);
-        finishRun(runId, "error", msg);
+        finishRun(runId, "error", credit ? "API kredisi bitti" : raw);
       } finally {
         // İş bitti (normal/hatalı/erken çıkış): cevabı sohbete SUNUCU kaydeder →
         // kullanıcı sohbetten çıkmış olsa bile cevap kaybolmaz.

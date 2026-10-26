@@ -219,7 +219,7 @@ function MessageBody({ content }: { content: string }) {
   // Sıra önemli: video işareti (!video[..](url)) görsel işaretinden ÖNCE denenir.
   // Görsel/video URL'i hem uzak (http) hem yerel (/api/files) olabilir.
   const re =
-    /!video\[[^\]]*\]\(((?:https?:\/\/|\/api\/files)[^\s)]+)\)|!\[[^\]]*\]\(((?:https?:\/\/|\/api\/files)[^\s)]+)\)|\[([^\]]*)\]\((\/api\/files\?[^\s)]+)\)/g;
+    /!video\[[^\]]*\]\(((?:https?:\/\/|\/api\/files)[^\s)]+)\)|!\[[^\]]*\]\(((?:https?:\/\/|\/api\/files)[^\s)]+)\)|\[([^\]]*)\]\((\/api\/files\?[^\s)]+)\)|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
   const parts: ReactNode[] = [];
   let last = 0;
   let k = 0;
@@ -232,6 +232,10 @@ function MessageBody({ content }: { content: string }) {
     else if (m[4])
       parts.push(
         <FileDownload key={k++} href={m[4]} label={m[3] || "dosya"} />,
+      );
+    else if (m[6]) // dış bağlantı [etiket](https://…) → tıklanır link
+      parts.push(
+        <a key={k++} href={m[6]} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: "var(--accent)" }}>{m[5]}</a>,
       );
     last = m.index + m[0].length;
   }
