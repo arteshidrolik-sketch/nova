@@ -151,11 +151,11 @@ export default function Universe() {
         <SpaceControls />
         <button
           onClick={() => setStudio(true)}
-          title="Stüdyo: pod'daki sansürsüz modeller (sohbet + görsel)"
+          title="Admin: pod'daki sansürsüz modeller (sohbet + görsel) — şifreli"
           className="flex h-11 items-center gap-2 rounded-full px-4 text-[14px] font-medium transition-transform duration-200 hover:scale-[1.03]"
           style={{ border: "1px solid var(--border-strong)", color: "var(--text)" }}
         >
-          🎛️ <span className="hidden sm:inline">Stüdyo</span>
+          🔐 <span className="hidden sm:inline">Admin</span>
         </button>
         <button
           onClick={() => setCreating(true)}

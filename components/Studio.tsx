@@ -10,6 +10,19 @@ type Status = { configured: boolean; host: string; port: number; comfyUrl: strin
 type Msg = { role: "user" | "assistant"; content: string };
 
 export default function Studio({ onClose }: { onClose: () => void }) {
+  const [unlocked, setUnlocked] = useState(false);
+  const [pw, setPw] = useState("");
+  const [pwErr, setPwErr] = useState(false);
+  useEffect(() => { try { if (sessionStorage.getItem("nova:admin") === "1") setUnlocked(true); } catch { /* yoksay */ } }, []);
+  // Şifre sunucuda doğrulanır (koda gömülü değil — depo herkese açık)
+  const tryUnlock = async () => {
+    try {
+      const d = await fetch("/api/studio/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pw }) }).then((r) => r.json());
+      if (d.ok) { setUnlocked(true); try { sessionStorage.setItem("nova:admin", "1"); } catch { /* yoksay */ } }
+      else { setPwErr(true); setPw(""); }
+    } catch { setPwErr(true); setPw(""); }
+  };
+
   const [st, setSt] = useState<Status | null>(null);
   const [tab, setTab] = useState<"baglan" | "sohbet" | "gorsel">("baglan");
   const [sshText, setSshText] = useState("");
@@ -20,7 +33,33 @@ export default function Studio({ onClose }: { onClose: () => void }) {
   const refresh = async () => {
     try { const d = await fetch("/api/studio/connect").then((r) => r.json()); setSt(d); if (d.comfyUrl) setComfyUrl(d.comfyUrl); return d as Status; } catch { return null; }
   };
-  useEffect(() => { refresh().then((d) => { if (d?.ollama) setTab("sohbet"); }); }, []);
+  // açılışta pod durumunu al ama otomatik sekme değiştirme — kullanıcı sohbet/görsel seçsin
+  useEffect(() => { if (unlocked) refresh(); }, [unlocked]);
+
+  // Şifre ekranı
+  if (!unlocked) {
+    return (
+      <div className="absolute inset-0 z-[80] flex flex-col items-center justify-center" style={{ background: "linear-gradient(160deg,#0b0f20,#12152e 60%,#190f2b)" }}>
+        <button onClick={onClose} className="absolute left-4 top-4 flex h-11 items-center gap-1 rounded-full pl-2 pr-4 text-[14px]" style={{ border: "1px solid var(--border-strong)", color: "var(--text-muted)" }}>
+          <IconBack width={18} height={18} /> <span className="hidden sm:inline">Evren</span>
+        </button>
+        <div className="w-full max-w-xs rounded-2xl p-6 text-center" style={{ background: "var(--bg-panel)", border: "1px solid var(--border-strong)" }}>
+          <div className="mb-1 text-[28px]">🔐</div>
+          <div className="mb-4 text-[18px] font-bold">Admin</div>
+          <input
+            type="password" autoFocus value={pw}
+            onChange={(e) => { setPw(e.target.value); setPwErr(false); }}
+            onKeyDown={(e) => { if (e.key === "Enter") tryUnlock(); }}
+            placeholder="Şifre"
+            className="mb-3 w-full rounded-xl px-3 py-2.5 text-center text-[16px] outline-none"
+            style={{ background: "var(--bg)", border: `1px solid ${pwErr ? "#ff6b7a" : "var(--border-strong)"}`, color: "var(--text)" }}
+          />
+          {pwErr && <div className="mb-2 text-[13px]" style={{ color: "#ff6b7a" }}>Yanlış şifre</div>}
+          <button onClick={tryUnlock} className="w-full rounded-xl py-2.5 text-[14px] font-bold" style={{ background: "var(--grad)", color: "#0b1030" }}>Gir</button>
+        </div>
+      </div>
+    );
+  }
 
   // "ssh root@IP -p PORT -i ..." ya da "IP:PORT" ya da "IP PORT" → {host, port}
   const parse = (s: string): { host: string; port: number } | null => {
@@ -49,7 +88,7 @@ export default function Studio({ onClose }: { onClose: () => void }) {
         <button onClick={onClose} className="flex h-11 items-center gap-1 rounded-full pl-2 pr-4 text-[14px]" style={{ border: "1px solid var(--border-strong)", color: "var(--text-muted)" }}>
           <IconBack width={18} height={18} /> <span className="hidden sm:inline">Evren</span>
         </button>
-        <div className="text-[18px] font-bold" style={{ background: "var(--grad)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>Stüdyo</div>
+        <div className="text-[18px] font-bold" style={{ background: "var(--grad)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>Admin</div>
         <span className="flex items-center gap-1.5 text-[12px]" style={{ color: connected ? "#2ff5b5" : "#ff7a7a" }}>
           <span className="h-2 w-2 rounded-full" style={{ background: connected ? "#2ff5b5" : "#ff7a7a" }} />
           {connected ? "pod bağlı" : "pod bağlı değil"}
