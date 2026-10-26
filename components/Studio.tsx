@@ -132,7 +132,7 @@ export default function Studio({ onClose }: { onClose: () => void }) {
 }
 
 function StudioChat({ models, connected }: { models: string[]; connected: boolean }) {
-  const [model, setModel] = useState(models[0] || "qwen2.5-coder:32b");
+  const [model, setModel] = useState(models[0] || "huihui_ai/qwen2.5-coder-abliterate:32b");
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -160,7 +160,7 @@ function StudioChat({ models, connected }: { models: string[]; connected: boolea
       <div className="flex items-center gap-2 border-b px-4 py-2" style={{ borderColor: "var(--border-strong)" }}>
         <span className="text-[12px]" style={{ color: "var(--text-muted)" }}>Model:</span>
         <select value={model} onChange={(e) => setModel(e.target.value)} className="rounded-lg px-2 py-1 text-[13px] outline-none" style={{ background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)" }}>
-          {(models.length ? models : ["qwen2.5-coder:32b"]).map((m) => <option key={m} value={m}>{m}</option>)}
+          {(models.length ? models : ["huihui_ai/qwen2.5-coder-abliterate:32b"]).map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
         {msgs.length > 0 && <button onClick={() => setMsgs([])} className="ml-auto rounded-lg border px-2 py-1 text-[12px]" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>Temizle</button>}
       </div>

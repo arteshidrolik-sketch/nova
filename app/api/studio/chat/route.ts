@@ -10,7 +10,7 @@ type Msg = { role: "system" | "user" | "assistant"; content: string };
 
 export async function POST(req: Request) {
   const b = (await req.json().catch(() => ({}))) as { model?: string; messages?: Msg[] };
-  const model = String(b.model ?? "qwen2.5-coder:32b");
+  const model = String(b.model ?? "huihui_ai/qwen2.5-coder-abliterate:32b");
   const messages = Array.isArray(b.messages) ? b.messages.filter((m) => m && m.content) : [];
   if (!messages.length) return Response.json({ error: "mesaj yok" }, { status: 400 });
 
