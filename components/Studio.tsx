@@ -206,11 +206,11 @@ function StudioImage({ connected }: { connected: boolean }) {
             <button key={lbl} onClick={() => setSize([w, h])} className="rounded-lg px-2.5 py-1.5 text-[12px]" style={{ border: `1px solid ${size[0] === w && size[1] === h ? "var(--accent)" : "var(--border)"}`, color: size[0] === w && size[1] === h ? "var(--text)" : "var(--text-muted)" }}>{lbl}</button>
           ))}
           <button onClick={run} disabled={busy || !prompt.trim() || !connected} className="ml-auto rounded-xl px-5 py-2 text-[14px] font-bold disabled:opacity-40" style={{ background: "var(--grad)", color: "#0b1030" }}>
-            {busy ? "Üretiliyor… (~30 sn)" : "Üret"}
+            {busy ? "Üretiliyor…" : "Üret"}
           </button>
         </div>
         {err && <div className="mb-3 text-[13px]" style={{ color: "#ff6b7a" }}>⚠ {err}</div>}
-        {busy && <div className="flex h-80 items-center justify-center rounded-2xl text-[13px]" style={{ background: "var(--bg-panel)", border: "1px solid var(--border)", color: "var(--text-muted)" }}>Model çalışıyor, görsel hazırlanıyor…</div>}
+        {busy && <div className="flex h-80 items-center justify-center rounded-2xl text-[13px]" style={{ background: "var(--bg-panel)", border: "1px solid var(--border)", color: "var(--text-muted)" }}>Görsel hazırlanıyor… (pod kapalıysa önce ~3 dk uyanır, sonraki görseller hızlı)</div>}
         {img && !busy && (
           <div className="rounded-2xl p-2" style={{ background: "var(--bg-panel)", border: "1px solid var(--border)" }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}

@@ -1,9 +1,10 @@
 // Stüdyo görsel üretimi: Nova sunucusu pod'daki ComfyUI'yi (SSH köprüsü üzerinden) çalıştırır,
 // üretilen görseli döndürür. Tarayıcı pod'a HİÇ bağlanmaz → PC tüneli / WARP sorunu yok.
 import { ensureFromCfg, execOnPod, tunnelTarget } from "@/lib/studio/tunnel";
+import { ensurePodReady, podAutomationReady, touchPod } from "@/lib/studio/pod";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 600;
 
 const COMFY = "http://127.0.0.1:8188";
 
@@ -29,8 +30,13 @@ export async function POST(req: Request) {
   const h = Math.min(2048, Math.max(512, Number(b.height) || 1024));
   const seed = Number.isFinite(b.seed) ? Number(b.seed) : Math.floor(Math.random() * 1e9);
 
+  // Otomasyon açıksa: pod kapalıysa başlat, hazırla (soğuk başlatma ~2-3 dk). Her üretim "aktivite" sayılır.
+  touchPod();
+  if (podAutomationReady()) {
+    try { await ensurePodReady(); } catch (e) { return Response.json({ error: e instanceof Error ? e.message : "pod hazırlanamadı" }, { status: 503 }); }
+  }
   if (!tunnelTarget()) await ensureFromCfg();
-  if (!tunnelTarget()) return Response.json({ error: "Pod bağlı değil. Önce Stüdyo'da bağlan." }, { status: 409 });
+  if (!tunnelTarget()) return Response.json({ error: "Pod bağlı değil. Önce Admin'de bağlan." }, { status: 409 });
 
   try {
     const q = await fetch(`${COMFY}/prompt`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: workflow(prompt, String(b.negative ?? ""), w, h, seed) }), signal: AbortSignal.timeout(15000) });

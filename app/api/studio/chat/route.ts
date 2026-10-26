@@ -2,9 +2,10 @@
 // Claude/Anthropic'e UĞRAMAZ — sansürsüz, yerel modelin kendisi cevap verir.
 import { ollamaChatStream } from "@/lib/brain/ollama";
 import { ensureFromCfg, tunnelTarget } from "@/lib/studio/tunnel";
+import { ensurePodReady, podAutomationReady, touchPod } from "@/lib/studio/pod";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 600;
 
 type Msg = { role: "system" | "user" | "assistant"; content: string };
 
@@ -14,8 +15,12 @@ export async function POST(req: Request) {
   const messages = Array.isArray(b.messages) ? b.messages.filter((m) => m && m.content) : [];
   if (!messages.length) return Response.json({ error: "mesaj yok" }, { status: 400 });
 
+  touchPod();
+  if (podAutomationReady()) {
+    try { await ensurePodReady(); } catch (e) { return Response.json({ error: e instanceof Error ? e.message : "pod hazırlanamadı" }, { status: 503 }); }
+  }
   if (!tunnelTarget()) await ensureFromCfg();
-  if (!tunnelTarget()) return Response.json({ error: "Pod bağlı değil. Önce Stüdyo'da bağlan." }, { status: 409 });
+  if (!tunnelTarget()) return Response.json({ error: "Pod bağlı değil. Önce Admin'de bağlan." }, { status: 409 });
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
