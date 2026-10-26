@@ -57,9 +57,19 @@ export default function Studio({ onClose }: { onClose: () => void }) {
         <div className="ml-auto flex gap-1.5">
           {(["baglan", "sohbet"] as const).map((t) => (
             <button key={t} onClick={() => setTab(t)} className="rounded-lg px-3 py-1.5 text-[13px]" style={{ background: tab === t ? "var(--grad)" : "transparent", color: tab === t ? "#0b1030" : "var(--text-muted)", fontWeight: tab === t ? 700 : 500 }}>
-              {t === "baglan" ? "Bağlan" : "Sohbet"}
+              {t === "baglan" ? "Bağlan" : "💬 Sohbet"}
             </button>
           ))}
+          {/* Görsel: her zaman görünür — ComfyUI'yi yeni sekmede açar */}
+          <button
+            onClick={() => { const u = (st?.comfyUrl || comfyUrl || "http://localhost:8188"); window.open(u, "_blank", "noopener"); }}
+            disabled={!st?.comfy}
+            title={st?.comfy ? "ComfyUI'yi aç" : "ComfyUI bağlı değil"}
+            className="rounded-lg px-3 py-1.5 text-[13px] disabled:opacity-40"
+            style={{ background: "transparent", color: "var(--text-muted)", fontWeight: 500, border: "1px solid var(--border-strong)" }}
+          >
+            🎨 Görsel ↗
+          </button>
         </div>
       </header>
 
