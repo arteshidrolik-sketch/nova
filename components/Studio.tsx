@@ -13,7 +13,7 @@ export default function Studio({ onClose }: { onClose: () => void }) {
   const [st, setSt] = useState<Status | null>(null);
   const [tab, setTab] = useState<"baglan" | "sohbet">("baglan");
   const [sshText, setSshText] = useState("");
-  const [comfyUrl, setComfyUrl] = useState("http://localhost:8188");
+  const [comfyUrl, setComfyUrl] = useState("http://127.0.0.1:8188");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -62,7 +62,7 @@ export default function Studio({ onClose }: { onClose: () => void }) {
           ))}
           {/* Görsel: her zaman görünür — ComfyUI'yi yeni sekmede açar */}
           <button
-            onClick={() => { const u = (st?.comfyUrl || comfyUrl || "http://localhost:8188"); window.open(u, "_blank", "noopener"); }}
+            onClick={() => { const u = (st?.comfyUrl || comfyUrl || "http://127.0.0.1:8188"); window.open(u, "_blank", "noopener"); }}
             disabled={!st?.comfy}
             title={st?.comfy ? "ComfyUI'yi aç" : "ComfyUI bağlı değil"}
             className="rounded-lg px-3 py-1.5 text-[13px] disabled:opacity-40"
