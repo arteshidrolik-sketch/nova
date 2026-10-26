@@ -240,6 +240,71 @@ function StudioImage({ connected }: { connected: boolean }) {
   );
 }
 
+// Akıcı Matrix yağmuru (canvas + rAF + delta-zaman → kare atlamaz, iz sürekli solar).
+function MatrixRain() {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d", { alpha: true });
+    if (!ctx) return;
+    const CH = "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲンﾊﾋ0123456789ﾘﾂABCDEF".split("");
+    const FONT = 16;
+    let w = 0, h = 0, dpr = 1, cols = 0;
+    let y: number[] = [], spd: number[] = [], cur: string[] = [], cell: number[] = [];
+    const rnd = (a: number, b: number) => a + Math.random() * (b - a);
+
+    const setup = () => {
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      w = canvas.clientWidth; h = canvas.clientHeight;
+      canvas.width = Math.max(1, Math.floor(w * dpr));
+      canvas.height = Math.max(1, Math.floor(h * dpr));
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.font = `${FONT}px "Courier New", monospace`;
+      ctx.textBaseline = "top";
+      cols = Math.ceil(w / FONT);
+      y = Array.from({ length: cols }, () => rnd(-h, 0));
+      spd = Array.from({ length: cols }, () => rnd(55, 135)); // px/sn
+      cur = Array.from({ length: cols }, () => CH[(Math.random() * CH.length) | 0]);
+      cell = y.map((v) => Math.floor(v / FONT));
+      ctx.clearRect(0, 0, w, h);
+    };
+    setup();
+
+    let last = performance.now();
+    let raf = 0;
+    const draw = (now: number) => {
+      let dt = (now - last) / 1000; last = now;
+      if (dt > 0.05) dt = 0.05; // sekme arka plandan dönünce zıplamasın
+
+      // iz solması — kare hızından bağımsız (tau ~0.55sn), sürekli ve pürüzsüz
+      ctx.fillStyle = `rgba(6,10,18,${Math.min(0.5, dt / 0.55)})`;
+      ctx.fillRect(0, 0, w, h);
+
+      for (let i = 0; i < cols; i++) {
+        y[i] += spd[i] * dt;
+        const c = Math.floor(y[i] / FONT);
+        if (c !== cell[i]) { cur[i] = CH[(Math.random() * CH.length) | 0]; cell[i] = c; } // hücre değişince yeni karakter
+        const x = i * FONT;
+        const yy = c * FONT;
+        ctx.fillStyle = "#0aff8c"; // parlak baş
+        ctx.fillText(cur[i], x, yy);
+        ctx.fillStyle = "rgba(10,255,140,0.35)"; // bir arkadaki soluk iz
+        ctx.fillText(cur[i], x, yy - FONT);
+        if (y[i] > h + rnd(0, h * 0.4)) { y[i] = rnd(-FONT * 6, 0); spd[i] = rnd(55, 135); cell[i] = Math.floor(y[i] / FONT); }
+      }
+      raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+
+    let rt: ReturnType<typeof setTimeout>;
+    const onResize = () => { clearTimeout(rt); rt = setTimeout(setup, 150); };
+    window.addEventListener("resize", onResize);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", onResize); clearTimeout(rt); };
+  }, []);
+  return <canvas ref={ref} className="pointer-events-none absolute inset-0 h-full w-full" style={{ zIndex: 0, opacity: 0.3 }} aria-hidden />;
+}
+
 // Müfettiş paneli: ekip ajanlarının OPERASYON performans skorları + sert verdiktler.
 type IDims = { hiz: number; teslim: number; verim: number; disiplin: number; ilgililik: number | null };
 type IScore = { role: string; person: string; runs: number; avg: number; dims: IDims; pending: number };
@@ -379,8 +444,9 @@ function StudioChat({ models, connected, msgs, setMsgs, input, setInput, model, 
   const clear = () => { setMsgs([]); save([], skills); };
 
   return (
-    <div className="absolute inset-0 flex flex-col">
-      <div className="flex items-center gap-2 border-b px-4 py-2" style={{ borderColor: "var(--border-strong)" }}>
+    <div className="absolute inset-0 flex flex-col overflow-hidden">
+      <MatrixRain />
+      <div className="relative z-10 flex items-center gap-2 border-b px-4 py-2" style={{ borderColor: "var(--border-strong)", background: "rgba(8,12,22,0.55)", backdropFilter: "blur(2px)" }}>
         <span className="text-[12px]" style={{ color: "var(--text-muted)" }}>Model:</span>
         <select value={model} onChange={(e) => setModel(e.target.value)} className="rounded-lg px-2 py-1 text-[13px] outline-none" style={{ background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)" }}>
           {(models.length ? models : ["huihui_ai/qwen2.5-coder-abliterate:32b"]).map((m) => <option key={m} value={m}>{m}</option>)}
@@ -391,7 +457,7 @@ function StudioChat({ models, connected, msgs, setMsgs, input, setInput, model, 
         {msgs.length > 0 && <button onClick={clear} className="ml-auto rounded-lg border px-2 py-1 text-[12px]" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>Temizle</button>}
       </div>
       {showSkills && (
-        <div className="border-b px-4 py-3" style={{ borderColor: "var(--border-strong)", background: "var(--bg-panel)" }}>
+        <div className="relative z-10 border-b px-4 py-3" style={{ borderColor: "var(--border-strong)", background: "var(--bg-panel)" }}>
           <div className="mb-2 text-[11px]" style={{ color: "var(--text-muted)" }}>Seçili beceriler sistem talimatı olarak modele yüklenir (kodlama tarzını belirler):</div>
           <div className="flex flex-wrap gap-2">
             {SKILLS.map((s) => {
@@ -405,7 +471,7 @@ function StudioChat({ models, connected, msgs, setMsgs, input, setInput, model, 
           </div>
         </div>
       )}
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-8">
+      <div ref={scrollRef} className="relative z-10 min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-8">
         <div className="mx-auto flex max-w-3xl flex-col gap-4">
           {!connected && <div className="rounded-xl p-4 text-[13px]" style={{ background: "var(--bg-panel)", border: "1px dashed var(--border-strong)", color: "var(--text-muted)" }}>Pod bağlı değil — önce &quot;Bağlan&quot; sekmesinden bağlan.</div>}
           {msgs.map((m, i) => (
@@ -417,7 +483,7 @@ function StudioChat({ models, connected, msgs, setMsgs, input, setInput, model, 
           ))}
         </div>
       </div>
-      <div className="border-t p-3 sm:p-4" style={{ borderColor: "var(--border-strong)" }}>
+      <div className="relative z-10 border-t p-3 sm:p-4" style={{ borderColor: "var(--border-strong)", background: "rgba(8,12,22,0.55)", backdropFilter: "blur(2px)" }}>
         <div className="mx-auto flex max-w-3xl items-end gap-2">
           <textarea
             value={input} onChange={(e) => setInput(e.target.value)} rows={1}
