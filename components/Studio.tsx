@@ -214,15 +214,29 @@ function StudioImage({ connected }: { connected: boolean }) {
   const [err, setErr] = useState("");
   const [enhance, setEnhance] = useState(true); // prompt ajanı (Türkçe→detaylı İngilizce)
   const [used, setUsed] = useState(""); // ajanın ürettiği, modele giden prompt
+  const [note, setNote] = useState(""); // ilerleme notu (pod hazırlanıyor / üretiliyor)
 
+  // Asenkron: POST işi başlatır (hemen jobId döner), GET ile yoklanır. Böylece
+  // uzun üretim (soğuk başlatma) proxy'yi (Cloudflare 100sn) aşmaz.
   const run = async () => {
     const p = prompt.trim();
     if (!p || busy) return;
-    setBusy(true); setErr(""); setImg(null); setUsed("");
+    setBusy(true); setErr(""); setImg(null); setUsed(""); setNote("iş başlatılıyor…");
     try {
-      const d = await fetch("/api/studio/image", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: p, width: size[0], height: size[1], enhance }) }).then((r) => r.json());
-      if (d.image) { setImg(d.image); if (d.usedPrompt) setUsed(d.usedPrompt); } else setErr(d.error || "üretilemedi");
-    } catch { setErr("bağlantı hatası"); }
+      const start = await fetch("/api/studio/image", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: p, width: size[0], height: size[1], enhance }) }).then((r) => r.json());
+      if (!start.jobId) { setErr(start.error || "üretilemedi"); setBusy(false); setNote(""); return; }
+      // ~6 dk boyunca 3 sn'de bir yokla
+      for (let i = 0; i < 120; i++) {
+        await new Promise((r) => setTimeout(r, 3000));
+        let j: { status?: string; image?: string; error?: string; usedPrompt?: string; note?: string };
+        try { j = await fetch(`/api/studio/image?job=${start.jobId}`).then((r) => r.json()); }
+        catch { continue; } // geçici ağ hatası → yoklamaya devam (iş sunucuda sürüyor)
+        if (j.note) setNote(j.note);
+        if (j.status === "done" && j.image) { setImg(j.image); if (j.usedPrompt) setUsed(j.usedPrompt); setNote(""); setBusy(false); return; }
+        if (j.status === "error") { setErr(j.error || "üretilemedi"); setNote(""); setBusy(false); return; }
+      }
+      setErr("zaman aşımı — görsel gelmedi"); setNote("");
+    } catch { setErr("iş başlatılamadı"); setNote(""); }
     setBusy(false);
   };
 
@@ -253,7 +267,7 @@ function StudioImage({ connected }: { connected: boolean }) {
           </button>
         </div>
         {err && <div className="mb-3 text-[13px]" style={{ color: "#ff6b7a" }}>⚠ {err}</div>}
-        {busy && <div className="flex h-80 items-center justify-center rounded-2xl text-[13px]" style={{ background: "var(--bg-panel)", border: "1px solid var(--border)", color: "var(--text-muted)" }}>Görsel hazırlanıyor… (pod kapalıysa önce ~3 dk uyanır, sonraki görseller hızlı)</div>}
+        {busy && <div className="flex h-80 flex-col items-center justify-center gap-2 rounded-2xl text-[13px]" style={{ background: "var(--bg-panel)", border: "1px solid var(--border)", color: "var(--text-muted)" }}><div>Görsel hazırlanıyor… (pod kapalıysa önce ~3 dk uyanır, sonraki görseller hızlı)</div>{note && <div style={{ color: "var(--accent)" }}>{note}</div>}</div>}
         {img && !busy && (
           <div className="rounded-2xl p-2" style={{ background: "var(--bg-panel)", border: "1px solid var(--border)" }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}

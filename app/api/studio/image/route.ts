@@ -3,6 +3,7 @@
 import { ensureFromCfg, execOnPod, tunnelTarget } from "@/lib/studio/tunnel";
 import { ensurePodReady, podAutomationReady, touchPod } from "@/lib/studio/pod";
 import { enhanceImagePrompt, DEFAULT_NEGATIVE } from "@/lib/studio/prompt";
+import { createJob, updateJob, getJob } from "@/lib/studio/imagejobs";
 
 export const runtime = "nodejs";
 export const maxDuration = 600;
@@ -23,6 +24,14 @@ function workflow(prompt: string, negative: string, w: number, h: number, seed: 
   };
 }
 
+// İstemci yoklaması: GET ?job=<id> → işin durumu (hazırsa görseli içerir).
+export async function GET(req: Request) {
+  const id = new URL(req.url).searchParams.get("job") || "";
+  const j = id ? getJob(id) : null;
+  if (!j) return Response.json({ status: "unknown" }, { status: 404 });
+  return Response.json(j);
+}
+
 export async function POST(req: Request) {
   const b = (await req.json().catch(() => ({}))) as { prompt?: string; negative?: string; width?: number; height?: number; seed?: number; enhance?: boolean };
   const raw = String(b.prompt ?? "").trim();
@@ -31,50 +40,59 @@ export async function POST(req: Request) {
   const h = Math.min(2048, Math.max(512, Number(b.height) || 1024));
   const seed = Number.isFinite(b.seed) ? Number(b.seed) : Math.floor(Math.random() * 1e9);
 
-  // Otomasyon açıksa: pod kapalıysa başlat, hazırla (soğuk başlatma ~2-3 dk). Her üretim "aktivite" sayılır.
-  touchPod();
-  if (podAutomationReady()) {
-    try { await ensurePodReady(); } catch (e) { return Response.json({ error: e instanceof Error ? e.message : "pod hazırlanamadı" }, { status: 503 }); }
-  }
-  if (!tunnelTarget()) await ensureFromCfg();
-  if (!tunnelTarget()) return Response.json({ error: "Pod bağlı değil. Önce Admin'de bağlan." }, { status: 409 });
+  // İşi oluştur ve HEMEN jobId dön. Üretim arka planda sürer (uzun sürse de
+  // proxy bağlantıyı kesemez — istemci GET ?job ile yoklar).
+  const jobId = crypto.randomUUID();
+  createJob(jobId);
 
-  // Prompt ajanı: Türkçe isteği detaylı İngilizce prompt + negative'e çevir (model daha iyi izlesin).
-  // Varsayılan açık; kullanıcı kapatabilir. Başarısız olursa ham prompt kullanılır.
-  let prompt = raw;
-  let negative = String(b.negative ?? "").trim() || DEFAULT_NEGATIVE;
-  if (b.enhance !== false) {
-    const e = await enhanceImagePrompt(raw);
-    if (e) { prompt = e.prompt; if (!b.negative) negative = e.negative; }
-  }
-
-  try {
-    const q = await fetch(`${COMFY}/prompt`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: workflow(prompt, negative, w, h, seed) }), signal: AbortSignal.timeout(15000) });
-    if (!q.ok) return Response.json({ error: `ComfyUI kuyruk hatası (${q.status})` }, { status: 502 });
-    const pid = ((await q.json()) as { prompt_id?: string }).prompt_id;
-    if (!pid) return Response.json({ error: "prompt_id alınamadı" }, { status: 502 });
-
-    // sonucu bekle (en fazla ~4 dk)
-    for (let i = 0; i < 80; i++) {
-      await new Promise((r) => setTimeout(r, 3000));
-      const h2 = await fetch(`${COMFY}/history/${pid}`, { signal: AbortSignal.timeout(10000) }).then((r) => r.json()).catch(() => ({}));
-      const entry = (h2 as Record<string, { status?: { status_str?: string }; outputs?: Record<string, { images?: { filename: string; subfolder: string; type: string }[] }> }>)[pid];
-      if (!entry) continue;
-      const imgs = Object.values(entry.outputs ?? {}).flatMap((o) => o.images ?? []);
-      if (imgs.length) {
-        const im = imgs[0];
-        const url = `${COMFY}/view?filename=${encodeURIComponent(im.filename)}&subfolder=${encodeURIComponent(im.subfolder)}&type=${encodeURIComponent(im.type)}`;
-        const r = await fetch(url, { signal: AbortSignal.timeout(20000) });
-        const buf = Buffer.from(await r.arrayBuffer());
-        // Görsel tarayıcıya base64 olarak gönderildi; diskte birikmesin diye pod'daki dosyayı sil.
-        const safe = im.filename.replace(/[^A-Za-z0-9._-]/g, "");
-        if (safe) execOnPod(`rm -f /workspace/ComfyUI/output/${safe}`).catch(() => {});
-        return Response.json({ image: `data:image/png;base64,${buf.toString("base64")}`, seed, filename: im.filename, usedPrompt: prompt });
+  (async () => {
+    try {
+      touchPod();
+      if (podAutomationReady()) {
+        updateJob(jobId, { note: "pod hazırlanıyor" });
+        await ensurePodReady((s) => updateJob(jobId, { note: s }));
       }
-      if (entry.status?.status_str === "error") return Response.json({ error: "ComfyUI üretim hatası" }, { status: 502 });
+      if (!tunnelTarget()) await ensureFromCfg();
+      if (!tunnelTarget()) { updateJob(jobId, { status: "error", error: "Pod bağlı değil. Önce Admin'de bağlan." }); return; }
+
+      // Prompt ajanı: Türkçe isteği detaylı İngilizce prompt + negative'e çevir.
+      let prompt = raw;
+      let negative = String(b.negative ?? "").trim() || DEFAULT_NEGATIVE;
+      if (b.enhance !== false) {
+        const e = await enhanceImagePrompt(raw);
+        if (e) { prompt = e.prompt; if (!b.negative) negative = e.negative; }
+      }
+
+      updateJob(jobId, { status: "generating", note: "üretiliyor", usedPrompt: prompt });
+      const q = await fetch(`${COMFY}/prompt`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: workflow(prompt, negative, w, h, seed) }), signal: AbortSignal.timeout(20000) });
+      if (!q.ok) { updateJob(jobId, { status: "error", error: `ComfyUI kuyruk hatası (${q.status})` }); return; }
+      const pid = ((await q.json()) as { prompt_id?: string }).prompt_id;
+      if (!pid) { updateJob(jobId, { status: "error", error: "prompt_id alınamadı" }); return; }
+
+      // sonucu bekle (en fazla ~5 dk — ilk model yüklemesi uzun sürebilir)
+      for (let i = 0; i < 100; i++) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const h2 = await fetch(`${COMFY}/history/${pid}`, { signal: AbortSignal.timeout(10000) }).then((r) => r.json()).catch(() => ({}));
+        const entry = (h2 as Record<string, { status?: { status_str?: string }; outputs?: Record<string, { images?: { filename: string; subfolder: string; type: string }[] }> }>)[pid];
+        if (!entry) continue;
+        const imgs = Object.values(entry.outputs ?? {}).flatMap((o) => o.images ?? []);
+        if (imgs.length) {
+          const im = imgs[0];
+          const url = `${COMFY}/view?filename=${encodeURIComponent(im.filename)}&subfolder=${encodeURIComponent(im.subfolder)}&type=${encodeURIComponent(im.type)}`;
+          const r = await fetch(url, { signal: AbortSignal.timeout(20000) });
+          const buf = Buffer.from(await r.arrayBuffer());
+          const safe = im.filename.replace(/[^A-Za-z0-9._-]/g, "");
+          if (safe) execOnPod(`rm -f /workspace/ComfyUI/output/${safe}`).catch(() => {});
+          updateJob(jobId, { status: "done", image: `data:image/png;base64,${buf.toString("base64")}`, seed, usedPrompt: prompt });
+          return;
+        }
+        if (entry.status?.status_str === "error") { updateJob(jobId, { status: "error", error: "ComfyUI üretim hatası" }); return; }
+      }
+      updateJob(jobId, { status: "error", error: "zaman aşımı (görsel 5 dk'da gelmedi)" });
+    } catch (e) {
+      updateJob(jobId, { status: "error", error: e instanceof Error ? e.message : "hata" });
     }
-    return Response.json({ error: "zaman aşımı (görsel 4 dk'da gelmedi)" }, { status: 504 });
-  } catch (e) {
-    return Response.json({ error: e instanceof Error ? e.message : "hata" }, { status: 502 });
-  }
+  })();
+
+  return Response.json({ jobId });
 }
