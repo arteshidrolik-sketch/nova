@@ -25,7 +25,7 @@ export default function Studio({ onClose }: { onClose: () => void }) {
   };
 
   const [st, setSt] = useState<Status | null>(null);
-  const [tab, setTab] = useState<"baglan" | "sohbet" | "gorsel" | "mufettis">("baglan");
+  const [tab, setTab] = useState<"baglan" | "sohbet" | "gorsel" | "guvenlik" | "mufettis">("baglan");
   // Sohbet durumu üst bileşende tutulur → sekme değişince (StudioChat unmount) yazışma kaybolmaz
   const [chatMsgs, setChatMsgs] = useState<Msg[]>([]);
   const [chatInput, setChatInput] = useState("");
@@ -128,7 +128,7 @@ export default function Studio({ onClose }: { onClose: () => void }) {
           <button onClick={toggleFs} title={isFs ? "Tam ekrandan çık" : "Tam ekran"} className="mr-1 h-9 w-9 rounded-lg text-[16px]" style={{ border: "1px solid var(--border-strong)", color: "var(--text-muted)" }}>
             {isFs ? "🗗" : "⛶"}
           </button>
-          {([["baglan", "Bağlan"], ["sohbet", "💬 Sohbet"], ["gorsel", "🎨 Görsel"], ["mufettis", "🕵️ Müfettiş"]] as const).map(([t, label]) => (
+          {([["baglan", "Bağlan"], ["sohbet", "💬 Sohbet"], ["gorsel", "🎨 Görsel"], ["guvenlik", "🎯 Güvenlik"], ["mufettis", "🕵️ Müfettiş"]] as const).map(([t, label]) => (
             <button key={t} onClick={() => setTab(t)} className="rounded-lg px-3 py-1.5 text-[13px]" style={{ background: tab === t ? "var(--grad)" : "transparent", color: tab === t ? "#0b1030" : "var(--text-muted)", fontWeight: tab === t ? 700 : 500 }}>
               {label}
             </button>
@@ -198,6 +198,7 @@ export default function Studio({ onClose }: { onClose: () => void }) {
         )}
         {tab === "sohbet" && <StudioChat models={st?.models ?? []} connected={connected} msgs={chatMsgs} setMsgs={setChatMsgs} input={chatInput} setInput={setChatInput} model={chatModel} setModel={setChatModel} skills={chatSkills} setSkills={setChatSkills} />}
         {tab === "gorsel" && <StudioImage connected={!!st?.comfy} />}
+        {tab === "guvenlik" && <StudioSecurity connected={connected} />}
         {tab === "mufettis" && <StudioInspector />}
       </main>
     </div>
@@ -346,6 +347,104 @@ type IVerdict = { id: string; ts: number; role: string; person: string; tier: st
 
 const scoreColor = (n: number) => (n >= 80 ? "#2ff5b5" : n >= 50 ? "#ffcf5c" : "#ff7a7a");
 const ROLE_TR: Record<string, string> = { research: "Araştırma", coder: "Yazılım", marketing: "Pazarlama" };
+
+// 🎯 Güvenlik: hedef ver → "Saldır" → pod'daki Qwen açıkları bulup ele geçirmeye çalışır.
+// Kapsam kilidi (yalnız Yücel'in kendi varlıkları) sunucuda zorlanır.
+function StudioSecurity({ connected }: { connected: boolean }) {
+  const [target, setTarget] = useState("");
+  const [level, setLevel] = useState<"kesif" | "saldiri">("kesif");
+  const [log, setLog] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [scope, setScope] = useState<{ hosts: string[]; ips: string[] } | null>(null);
+  const [reports, setReports] = useState<{ name: string; ts: number }[]>([]);
+  const [viewer, setViewer] = useState<{ name: string; content: string } | null>(null);
+  const [showScope, setShowScope] = useState(false);
+  const [scopeEdit, setScopeEdit] = useState("");
+  const logRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const load = () => fetch("/api/security").then((r) => r.json()).then((d) => {
+    if (d.scope) { setScope(d.scope); setScopeEdit([...(d.scope.hosts || []), ...(d.scope.ips || [])].join("\n")); }
+    if (Array.isArray(d.reports)) setReports(d.reports);
+  }).catch(() => {});
+  useEffect(() => { load(); }, []);
+  useEffect(() => { logRef.current?.scrollTo({ top: 1e9 }); }, [log]);
+
+  const attack = async () => {
+    const t = target.trim();
+    if (!t || busy) return;
+    setBusy(true); setLog(""); setViewer(null);
+    const ac = new AbortController(); abortRef.current = ac;
+    try {
+      const r = await fetch("/api/security", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target: t, level }), signal: ac.signal });
+      if (!r.ok || !r.body) { const e = await r.json().catch(() => ({})); setLog(`⚠️ ${e.error || "hata"}`); setBusy(false); return; }
+      const reader = r.body.getReader(); const dec = new TextDecoder(); let acc = "";
+      for (;;) { const { done, value } = await reader.read(); if (done) break; acc += dec.decode(value, { stream: true }); setLog(acc); }
+      load(); // yeni rapor listeye düşsün
+    } catch (e) { if ((e as Error).name !== "AbortError") setLog((l) => l + `\n⚠️ bağlantı hatası`); }
+    setBusy(false);
+  };
+  const stop = () => { abortRef.current?.abort(); setBusy(false); };
+
+  const saveScope = async () => {
+    const lines = scopeEdit.split("\n").map((s) => s.trim()).filter(Boolean);
+    const ips = lines.filter((l) => /^\d{1,3}(\.\d{1,3}){3}$/.test(l));
+    const hosts = lines.filter((l) => !ips.includes(l));
+    const d = await fetch("/api/security", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: { hosts, ips } }) }).then((r) => r.json()).catch(() => null);
+    if (d?.scope) { setScope(d.scope); setShowScope(false); }
+  };
+  const openReport = (name: string) => fetch(`/api/security?report=${encodeURIComponent(name)}`).then((r) => r.json()).then((d) => { if (d.content) setViewer({ name: d.name, content: d.content }); }).catch(() => {});
+
+  return (
+    <div className="absolute inset-0 flex flex-col overflow-hidden">
+      <div className="flex flex-col gap-2 border-b px-4 py-3" style={{ borderColor: "var(--border-strong)", background: "var(--bg-panel)" }}>
+        <div className="flex flex-wrap items-center gap-2">
+          <input value={target} onChange={(e) => setTarget(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") attack(); }}
+            placeholder="https://getdriver.com.tr  (yalnız kendi varlıkların)" disabled={busy}
+            className="min-w-0 flex-1 rounded-lg px-3 py-2 text-[14px] outline-none" style={{ background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)" }} />
+          <select value={level} onChange={(e) => setLevel(e.target.value as "kesif" | "saldiri")} disabled={busy}
+            className="rounded-lg px-2 py-2 text-[13px] outline-none" style={{ background: "var(--bg)", border: `1px solid ${level === "saldiri" ? "#ff7a7a" : "var(--border)"}`, color: level === "saldiri" ? "#ff7a7a" : "var(--text)" }}>
+            <option value="kesif">🔍 Keşif (zararsız)</option>
+            <option value="saldiri">⚔️ Saldırı (sömürü)</option>
+          </select>
+          {busy
+            ? <button onClick={stop} className="rounded-lg px-4 py-2 text-[14px] font-bold" style={{ background: "#ff7a7a", color: "#0b1030" }}>⏹ Durdur</button>
+            : <button onClick={attack} disabled={!connected || !target.trim()} className="rounded-lg px-4 py-2 text-[14px] font-bold" style={{ background: connected && target.trim() ? "var(--grad)" : "var(--border)", color: "#0b1030", opacity: connected && target.trim() ? 1 : 0.5 }}>Saldır ▶</button>}
+          <button onClick={() => setShowScope((v) => !v)} className="rounded-lg border px-2 py-2 text-[12px]" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>🔒 Kapsam</button>
+        </div>
+        {!connected && <div className="text-[12px]" style={{ color: "#ffcf5c" }}>Pod bağlı değil — ilk &quot;Saldır&quot;da otomatik başlar (~2-3 dk soğuk başlatma).</div>}
+        {level === "saldiri" && <div className="text-[12px]" style={{ color: "#ff9a7a" }}>⚠️ Saldırı modu veriyi değiştirebilir/sistemi bozabilir. Canlı yerine kopya/staging hedefle, önce yedek al.</div>}
+        {scope && <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>İzinli: {scope.hosts.join(", ")}{scope.ips.length ? ` · ${scope.ips.join(", ")}` : ""}</div>}
+        {showScope && (
+          <div className="rounded-lg p-3" style={{ background: "var(--bg)", border: "1px solid var(--border)" }}>
+            <div className="mb-1 text-[12px]" style={{ color: "var(--text-muted)" }}>İzinli hedefler (her satıra bir alan adı ya da IP). Ajan yalnız bunlara saldırabilir:</div>
+            <textarea value={scopeEdit} onChange={(e) => setScopeEdit(e.target.value)} rows={4} className="w-full rounded-lg px-2 py-1.5 text-[13px] outline-none" style={{ background: "var(--bg-panel)", border: "1px solid var(--border)", color: "var(--text)", fontFamily: "monospace" }} />
+            <button onClick={saveScope} className="mt-2 rounded-lg px-3 py-1.5 text-[13px] font-semibold" style={{ background: "var(--grad)", color: "#0b1030" }}>Kaydet</button>
+          </div>
+        )}
+      </div>
+      <div className="min-h-0 flex-1 overflow-hidden" style={{ display: "grid", gridTemplateColumns: viewer ? "1fr 1fr" : "1fr" }}>
+        <div ref={logRef} className="min-h-0 overflow-y-auto px-4 py-3 text-[12.5px] leading-relaxed" style={{ fontFamily: "monospace", whiteSpace: "pre-wrap", color: "var(--text)" }}>
+          {log || <span style={{ color: "var(--text-muted)" }}>Hedef adresi gir, modu seç, Saldır&apos;a bas. Ajan keşiften başlar, açık buldukça canlı raporlar; sonunda tam rapor kaydedilir.{"\n\n"}Son raporlar:{"\n"}{reports.length === 0 ? "  (henüz yok)" : reports.map((r) => `  • ${r.name}`).join("\n")}</span>}
+          {!busy && reports.length > 0 && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {reports.slice(0, 8).map((r) => <button key={r.name} onClick={() => openReport(r.name)} className="rounded border px-2 py-1 text-[11px]" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>📄 {r.name.slice(0, 28)}</button>)}
+            </div>
+          )}
+        </div>
+        {viewer && (
+          <div className="min-h-0 overflow-y-auto border-l px-4 py-3" style={{ borderColor: "var(--border-strong)" }}>
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-[12px] font-semibold">{viewer.name}</span>
+              <button onClick={() => setViewer(null)} className="text-[12px]" style={{ color: "var(--text-muted)" }}>✕ kapat</button>
+            </div>
+            <div className="text-[12.5px] leading-relaxed" style={{ whiteSpace: "pre-wrap", fontFamily: "monospace", color: "var(--text)" }}>{viewer.content}</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function StudioInspector() {
   const [sb, setSb] = useState<IScore[]>([]);

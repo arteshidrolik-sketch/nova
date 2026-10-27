@@ -83,6 +83,28 @@ export async function execOnPod(cmd: string): Promise<void> {
   });
 }
 
+// Pod'da komut çalıştır ve ÇIKTIYI yakala (güvenlik ajanı araçları için).
+// timeoutMs sonunda süreç öldürülür; stdout+stderr birleşik döner (kesilirse not düşülür).
+export async function execOnPodCapture(cmd: string, timeoutMs = 120000): Promise<{ out: string; timedOut: boolean; code: number | null }> {
+  const c = await readCfg();
+  if (!c?.host || !c?.port) return { out: "(pod bağlı değil)", timedOut: false, code: null };
+  await fs.chmod(KEY, 0o600).catch(() => {});
+  return await new Promise((resolve) => {
+    let out = ""; let timedOut = false; const MAX = 200_000; // çıktı tavanı (istem şişmesin)
+    const ssh = spawn("ssh", [
+      "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+      "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+      "-i", KEY, "-p", String(c.port), `root@${c.host}`, cmd,
+    ], { stdio: ["ignore", "pipe", "pipe"] });
+    const onData = (d: Buffer) => { if (out.length < MAX) out += d.toString("utf8"); };
+    ssh.stdout.on("data", onData);
+    ssh.stderr.on("data", onData);
+    const timer = setTimeout(() => { timedOut = true; try { ssh.kill("SIGKILL"); } catch { /* yoksay */ } }, timeoutMs);
+    ssh.on("exit", (code) => { clearTimeout(timer); resolve({ out: out.slice(0, MAX) + (timedOut ? "\n…(süre doldu, kesildi)" : ""), timedOut, code }); });
+    ssh.on("error", (e) => { clearTimeout(timer); resolve({ out: `(ssh hatası: ${e.message})`, timedOut, code: null }); });
+  });
+}
+
 // Pod bilgisi kayıtlıysa köprüyü kendiliğinden kur (sunucu yeniden başladığında).
 export async function ensureFromCfg(): Promise<void> {
   if (tunnelTarget()) return;

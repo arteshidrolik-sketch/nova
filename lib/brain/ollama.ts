@@ -74,6 +74,21 @@ export function toOllamaMessages(
   return msgs;
 }
 
+// Tek seferlik (akışsız) sohbet — tüm yanıtı metin olarak döndür. Ajan döngüleri için.
+export async function ollamaChatOnce(
+  baseUrl: string, model: string, messages: OllamaMsg[],
+  opts: { temperature?: number; timeoutMs?: number } = {},
+): Promise<string> {
+  const res = await fetch(`${baseUrl.replace(/\/$/, "")}/api/chat`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model, messages, stream: false, options: { temperature: opts.temperature ?? 0.4 } }),
+    signal: AbortSignal.timeout(opts.timeoutMs ?? 180000),
+  });
+  if (!res.ok) throw new Error(`Ollama yanıt vermedi (HTTP ${res.status}).`);
+  const j = (await res.json()) as { message?: { content?: string } };
+  return String(j?.message?.content ?? "");
+}
+
 // Ollama /api/chat akışını oku, her metin parçasını onChunk ile ver.
 export async function ollamaChatStream(
   baseUrl: string,
