@@ -6,7 +6,7 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { ollamaChatOnce } from "@/lib/brain/ollama";
-import { getScope, scopeSummary, extractHost, type Scope } from "./scope";
+import { getScope, checkTarget, extractHost, type Scope } from "./scope";
 import { runSecTool, toolCatalog, type SecLevel } from "./tools";
 
 const OLLAMA = "http://127.0.0.1:11434";
@@ -16,13 +16,14 @@ const REPORTS = path.join(process.cwd(), "data", "security", "reports");
 type OllamaMsg = { role: "system" | "user" | "assistant"; content: string };
 type Finding = { baslik: string; onem: string; kanit: string; cozum: string };
 
-function systemPrompt(target: string, level: SecLevel, scope: Scope): string {
+function systemPrompt(target: string, level: SecLevel, host: string): string {
   const tools = toolCatalog(level).map((t) => `- ${t.name} [${t.level}]: ${t.desc}`).join("\n");
   return (
-    `Sen Nova'nın SIZMA TESTİ AJANISIN (red team). Yücel'in KENDİ sistemlerine, AÇIK YETKİSİYLE, ` +
+    `Sen Nova'nın SIZMA TESTİ AJANISIN (red team). Yücel'in KENDİ sistemine, AÇIK YETKİSİYLE, ` +
     `güvenlik açığı bulmak için saldırıyorsun. Hedef: ${target}\n` +
     `Mod: ${level === "saldiri" ? "SALDIRI (sömürü/ele geçirme serbest)" : "KEŞİF (zararsız tespit)"}\n` +
-    `${scopeSummary(scope)}\n\n` +
+    `⚠️ YALNIZCA bu hedefe saldır: ${host} (ve onun alt alan adları). BAŞKA hiçbir host'a dokunma — ` +
+    `başka adres denersen reddedilir. Tek bir ürüne odaklan, başka sistem tarama.\n\n` +
     `AMACIN: açıkları SİSTEMATİK bul, mümkünse sömürüp etkisini KANITLA (ele geçirme, veri erişimi, yetki atlama), raporla. ` +
     `OWASP yöntemiyle çalış: keşif → saldırı yüzeyi → her sınıf (yetki/IDOR, enjeksiyon, kimlik doğrulama, SSRF, yanlış yapılandırma, sızıntı) → PoC.\n\n` +
     `KULLANABİLECEĞİN ARAÇLAR:\n${tools}\n\n` +
@@ -58,15 +59,24 @@ export type RunOpts = { target: string; level: SecLevel; emit: (s: string) => vo
 
 export async function runSecurityAgent(opts: RunOpts): Promise<{ findings: Finding[]; reportPath: string }> {
   const { target, level, emit } = opts;
-  const scope = await getScope();
+  const globalScope = await getScope();
   const host = extractHost(target);
   const maxSteps = level === "saldiri" ? 24 : 16;
   const findings: Finding[] = [];
 
-  emit(`🎯 Hedef: ${target}  ·  Mod: ${level === "saldiri" ? "⚔️ SALDIRI" : "🔍 KEŞİF"}\n${scopeSummary(scope)}\n\n`);
+  // Hedef, izinli mi? (kilit açıkken listede olmalı; kapalıyken serbest)
+  const gchk = await checkTarget(target, globalScope);
+  if (!gchk.ok) { emit(`⛔ ${gchk.reason}\n`); return { findings: [], reportPath: "" }; }
+
+  // BU KOŞUM yalnız girilen hedefe (ve alt alan adlarına) kilitli — liste taranmaz.
+  // Global allowlist sadece "neye izin var"ı belirler; koşum tek ürüne odaklanır.
+  const isIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+  const runScope: Scope = { hosts: isIp ? [] : [host], ips: isIp ? [host] : [], enforce: true };
+
+  emit(`🎯 Hedef: ${target}  ·  Mod: ${level === "saldiri" ? "⚔️ SALDIRI" : "🔍 KEŞİF"}\nYalnız bu hedef taranır: ${host} (+ alt alan adları)\n\n`);
 
   const messages: OllamaMsg[] = [
-    { role: "system", content: systemPrompt(target, level, scope) },
+    { role: "system", content: systemPrompt(target, level, host) },
     { role: "user", content: `Hedefe (${target}) sızma testine başla. İlk adımın ne?` },
   ];
 
@@ -113,7 +123,7 @@ export async function runSecurityAgent(opts: RunOpts): Promise<{ findings: Findi
       continue;
     }
     emit(`\n[${step}/${maxSteps}] 🔧 ${toolName}  ${JSON.stringify(args).slice(0, 180)}\n   ↳ ${String(action.dusunce || "").slice(0, 160)}\n`);
-    const res = await runSecTool(toolName, args, level, scope);
+    const res = await runSecTool(toolName, args, level, runScope);
     const obs = res.output.slice(0, 6000);
     emit(`   ${res.blocked ? "⛔" : res.ok ? "✓" : "⚠"} ${obs.split("\n").slice(0, 8).join("\n   ").slice(0, 600)}${obs.length > 600 ? " …" : ""}\n`);
     messages.push({ role: "user", content: `ARAÇ ÇIKTISI (${toolName}):\n${obs}\n\nSıradaki adımın? (JSON)` });
