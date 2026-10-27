@@ -50,6 +50,7 @@ import { isAgentKey } from "@/lib/agents/meta";
 import { getCustomAgent, type CustomAgent } from "@/lib/agents/custom";
 import { getSkillsByIds } from "@/lib/skills/store";
 import { logToVault } from "@/lib/vault/journal";
+import { meetingForRun } from "@/lib/inspector/meeting";
 import { getControl, isStopped } from "@/lib/control/store";
 import { getBudget, isOverCap, recordUsage } from "@/lib/budget/store";
 import { recordProjectUsage } from "@/lib/team/usage";
@@ -573,6 +574,7 @@ export async function POST(req: Request) {
 
   // İşi bağlantıdan AYIR: arka planda çalıştır, istemci poll ile takip eder.
   const runId = crypto.randomUUID();
+  const runT0 = Date.now(); // iş sonu müfettiş görüşmesi: bu koşumun verdiktlerini ayırmak için
   createRun(runId, responseAgent, answerModel);
   const emit = (s: string) => appendRun(runId, s);
 
@@ -1326,6 +1328,16 @@ export async function POST(req: Request) {
           } else {
             convo.push({ role: "user", content: toolResults });
           }
+        }
+        // 🕵️ İş sonu görüşmesi: müfettiş bu koşumun durumunu müdüre söyler,
+        // müdür cevap verir + aksiyon alır (sohbete ve sağ panele düşer).
+        if (teamMode && assignState.total > 0 && !isCanceled(runId) && !isStopped()) {
+          try {
+            const m = await meetingForRun(conversationId, runT0);
+            if (m) {
+              emit(`\n\n🕵️ Müfettiş: ${m.mufettis}\n👔 ${m.mudurAdi}: ${m.mudur}${m.aksiyon ? `\n⚡ Aksiyon: ${m.aksiyon}` : ""}\n`);
+            }
+          } catch { /* görüşme yapılamazsa iş yine biter */ }
         }
         finishRun(runId, "done");
       } catch (err) {

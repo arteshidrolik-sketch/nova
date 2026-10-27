@@ -1,5 +1,5 @@
 // Müfettiş paneli ucu: GET = skor tablosu + son verdiktler; POST = kuyruğu işle (pod uyandırır).
-import { readVerdicts, scoreboard, readQueue } from "@/lib/inspector/store";
+import { readVerdicts, scoreboard, readQueue, readMeetings } from "@/lib/inspector/store";
 import { processQueue } from "@/lib/inspector/inspect";
 
 export const runtime = "nodejs";
@@ -13,7 +13,8 @@ export async function GET(req: Request) {
   const recent = [...verdicts].sort((a, b) => b.ts - a.ts).slice(0, 40);
   const queue = await readQueue();
   const pending = (scope ? queue.filter((p) => p.projectId === scope) : queue).length;
-  return Response.json({ scoreboard: scoreboard(verdicts), recent, pending });
+  const meetings = (await readMeetings(scope || undefined, 10)).reverse(); // en yeni önde
+  return Response.json({ scoreboard: scoreboard(verdicts), recent, pending, meetings });
 }
 
 export async function POST(req: Request) {

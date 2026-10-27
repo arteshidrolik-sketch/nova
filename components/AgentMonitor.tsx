@@ -28,7 +28,11 @@ type InspVerdict = {
   id: string; ts: number; role: string; person: string; tier: string;
   task: string; dims: InspDims; total: number; judged: boolean; verdikt?: string;
 };
-type InspData = { recent: InspVerdict[]; pending: number };
+type InspMeeting = {
+  id: string; ts: number; kind: "sert" | "dobra";
+  mufettis: string; mudurAdi: string; mudur: string; aksiyon?: string;
+};
+type InspData = { recent: InspVerdict[]; pending: number; meetings: InspMeeting[] };
 const scoreColor = (n: number) => (n >= 80 ? "#2ff5b5" : n >= 60 ? "#ffb547" : "#ff6b7a");
 const tokOf = (t?: Totals) => (t ? t.input + t.cacheWrite + t.cacheRead + t.output : 0);
 function fmtTok(n: number) {
@@ -90,7 +94,7 @@ export default function AgentMonitor({ convId }: { convId: string }) {
   const [insp, setInsp] = useState<InspData | null>(null);
   const loadInsp = useCallback(() => {
     fetch(`/api/inspector?scope=${encodeURIComponent(convId)}`).then((r) => r.json())
-      .then((d) => { if (Array.isArray(d?.recent)) setInsp({ recent: d.recent, pending: d.pending ?? 0 }); })
+      .then((d) => { if (Array.isArray(d?.recent)) setInsp({ recent: d.recent, pending: d.pending ?? 0, meetings: Array.isArray(d.meetings) ? d.meetings : [] }); })
       .catch(() => {});
   }, [convId]);
   useEffect(() => { loadInsp(); }, [loadInsp]);
@@ -227,11 +231,38 @@ export default function AgentMonitor({ convId }: { convId: string }) {
         <Section title="🕵️ Müfettiş" right={insp?.pending ? `${insp.pending} sert verdikt kuyrukta` : undefined}>
           {insp === null ? (
             <div style={{ color: "var(--text-muted)" }}>Yükleniyor…</div>
-          ) : insp.recent.length === 0 ? (
-            <div style={{ color: "var(--text-muted)" }}>Müfettiş bu projede henüz verdikt yazmadı. Uzmanlar teslim ettikçe her koşum burada puanlanır.</div>
+          ) : insp.recent.length === 0 && insp.meetings.length === 0 ? (
+            <div style={{ color: "var(--text-muted)" }}>Müfettiş bu projede henüz konuşmadı. Ekip bir işi bitirince durumu müdüre raporlar; konuşma burada görünür.</div>
           ) : (
+            <>
+            {/* İş sonu görüşmeleri: müfettiş → müdür → aksiyon */}
+            {insp.meetings.length > 0 && (
+              <ol className="mb-3 flex flex-col gap-2">
+                {insp.meetings.slice(0, 5).map((m) => (
+                  <li key={m.id} className="rounded-lg p-3" style={{ background: "var(--bg-panel)", border: "1px solid var(--border)" }}>
+                    <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                      {new Date(m.ts).toLocaleString("tr-TR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} · iş sonu görüşmesi{m.kind === "dobra" ? " · dobra verdikt" : ""}
+                    </div>
+                    <div className="mt-1.5 flex gap-2">
+                      <span className="shrink-0">🕵️</span>
+                      <span className="min-w-0 break-words italic" style={{ color: "#ff9d6b" }}>{m.mufettis}</span>
+                    </div>
+                    <div className="mt-1.5 flex gap-2">
+                      <span className="shrink-0">👔</span>
+                      <span className="min-w-0 break-words"><b>{m.mudurAdi}:</b> {m.mudur}</span>
+                    </div>
+                    {m.aksiyon && (
+                      <div className="mt-1.5 inline-flex max-w-full items-start gap-1.5 rounded px-2 py-1 text-[12px]" style={{ background: "var(--chip-bg)", color: "#2ff5b5" }}>
+                        <span className="shrink-0">⚡</span><span className="min-w-0 break-words">{m.aksiyon}</span>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            )}
+            {/* Koşum puan kartları */}
             <ol className="flex flex-col gap-2">
-              {insp.recent.slice(0, 12).map((v) => {
+              {insp.recent.slice(0, 6).map((v) => {
                 const meta = TEAM_META[v.role as TeamRole];
                 return (
                   <li key={v.id} className="rounded-lg p-3" style={{ background: "var(--bg-panel)", border: "1px solid var(--border)" }}>
@@ -258,6 +289,7 @@ export default function AgentMonitor({ convId }: { convId: string }) {
                 );
               })}
             </ol>
+            </>
           )}
         </Section>
 

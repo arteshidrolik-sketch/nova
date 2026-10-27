@@ -50,6 +50,21 @@ export async function enqueue(pkg: RunPackage): Promise<void> {
 export async function readQueue(): Promise<RunPackage[]> { return readJsonl<RunPackage>(QUEUE); }
 export async function setQueue(rows: RunPackage[]): Promise<void> { await writeJsonl(QUEUE, rows); }
 
+// İş sonu görüşmesi: müfettiş durumu söyler, müdür cevap verir, aksiyon alınır.
+export type Meeting = {
+  id: string; ts: number; projectId: string;
+  kind: "sert" | "dobra"; // sert = metrik bazlı (iş biter bitmez) · dobra = sansürsüz model verdiktleri işlenince
+  mufettis: string; mudurAdi: string; mudur: string;
+  aksiyon?: string; briefNotu?: string;
+};
+const MEETINGS = path.join(DIR, "meetings.jsonl");
+export async function appendMeeting(m: Meeting): Promise<void> { await appendJsonl(MEETINGS, m); }
+export async function readMeetings(projectId?: string, limit = 20): Promise<Meeting[]> {
+  const all = await readJsonl<Meeting>(MEETINGS);
+  const f = projectId ? all.filter((m) => m.projectId === projectId) : all;
+  return f.slice(-limit);
+}
+
 export async function appendVerdict(v: Verdict): Promise<void> { await appendJsonl(VERDICTS, v); }
 export async function readVerdicts(limit = 2000): Promise<Verdict[]> {
   const all = await readJsonl<Verdict>(VERDICTS);

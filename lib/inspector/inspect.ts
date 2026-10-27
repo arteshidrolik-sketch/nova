@@ -7,6 +7,7 @@ import {
   type RunMetrics, type RunPackage, type Dims, type Verdict,
   enqueue, appendVerdict, readQueue, setQueue, updateVerdict,
 } from "./store";
+import { holdMeeting } from "./meeting";
 
 const INSPECTOR_MODEL = process.env.NOVA_INSPECTOR_MODEL || "huihui_ai/qwen2.5-coder-abliterate:32b";
 
@@ -97,15 +98,25 @@ export async function processQueue(opts: { wake?: boolean; max?: number } = {}):
   const batch = queue.slice(0, max);
   let processed = 0;
   const done = new Set<string>();
+  const judgedByProject: Record<string, Verdict[]> = {}; // dobra görüşme için
   for (const pkg of batch) {
     const res = await askInspector(pkg);
     if (!res) continue; // başarısızsa kuyrukta kalsın, sonra tekrar denenir
     const hd = hardDims(pkg.metrics);
     const dims: Dims = { ...hd, ilgililik: res.ilgililik };
     await updateVerdict(pkg.id, { dims, total: combine(dims), judged: true, verdikt: res.verdikt });
+    (judgedByProject[pkg.projectId] ??= []).push({
+      id: pkg.id, ts: pkg.ts, projectId: pkg.projectId, role: pkg.role, person: pkg.person,
+      tier: pkg.tier, model: pkg.model, metrics: pkg.metrics, task: pkg.task.split("\n")[0].slice(0, 120),
+      dims, total: combine(dims), judged: true, verdikt: res.verdikt,
+    });
     done.add(pkg.id);
     processed++;
   }
   if (done.size) await setQueue(queue.filter((p) => !done.has(p.id)));
+  // Dobra görüşme: sansürsüz verdiktler hazır → müfettiş müdürle konuşur, aksiyon alınır
+  for (const [pid, vs] of Object.entries(judgedByProject)) {
+    await holdMeeting(pid, vs, "dobra").catch(() => {});
+  }
   return { processed, pending: queue.length - done.size };
 }
