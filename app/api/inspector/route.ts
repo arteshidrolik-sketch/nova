@@ -5,10 +5,14 @@ import { processQueue } from "@/lib/inspector/inspect";
 export const runtime = "nodejs";
 export const maxDuration = 600;
 
-export async function GET() {
-  const verdicts = await readVerdicts();
+export async function GET(req: Request) {
+  // ?scope=<projectId> → yalnız o projenin verdiktleri (sohbet sağ paneli için)
+  const scope = new URL(req.url).searchParams.get("scope") || "";
+  const all = await readVerdicts();
+  const verdicts = scope ? all.filter((v) => v.projectId === scope) : all;
   const recent = [...verdicts].sort((a, b) => b.ts - a.ts).slice(0, 40);
-  const pending = (await readQueue()).length;
+  const queue = await readQueue();
+  const pending = (scope ? queue.filter((p) => p.projectId === scope) : queue).length;
   return Response.json({ scoreboard: scoreboard(verdicts), recent, pending });
 }
 

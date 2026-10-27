@@ -1,8 +1,9 @@
 "use client";
 
-// Ajan performans paneli (Ekip sekmesinin sağ sütunu): anlık takip.
+// Ajan performans paneli (her proje sohbetinin sağ sütunu): anlık takip.
 // - Şu an: hangi uzman çalışıyor, hangi modelle, ne kadar süredir
-// - Canlı akış: bu isteğin olayları (görev, araç, hata, revizyon, teslim) zamanıyla
+// - 🕵️ Müfettiş: bu projenin koşum verdiktleri (canlı akışın yerine) — sert puan
+//   her teslimde anında, dobra verdikt pod açıkken kuyruğu işleyince gelir
 // - Karne (son 30 gün, /api/team/log): uzman başına iş, ilk seferde kabul,
 //   ortalama süre, maliyet, hata; son düzeltmeler, hatalar ve seviye önerileri
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -16,11 +17,19 @@ type Ev = { t: number; icon: string; text: string; kind: "work" | "done" | "rev"
 
 const TIER_LABEL: Record<string, string> = { hafif: "Haiku", standart: "Sonnet", agir: "Opus" };
 const TIER_COLOR: Record<string, string> = { Haiku: "#2ff5b5", Sonnet: "#7aa2ff", Opus: "#ff7ad9", hafif: "#2ff5b5", standart: "#7aa2ff", agir: "#ff7ad9" };
-const KIND_COLOR: Record<Ev["kind"], string> = { work: "#7aa2ff", done: "#2ff5b5", rev: "#ffb547", err: "#ff6b7a", tool: "#9d9d9d", info: "#9d9d9d" };
 const SPECIALISTS: TeamRole[] = ["research", "coder", "marketing"];
 
 type Totals = { input: number; cacheWrite: number; cacheRead: number; output: number; usd: number; calls: number };
 type ProjUsage = { since: number | null; total: Totals; roles: Partial<Record<TeamRole | "direct", Totals>> };
+
+// Müfettiş verdikti (bu projenin koşumları) — /api/inspector?scope=<convId>
+type InspDims = { hiz: number; teslim: number; verim: number; disiplin: number; ilgililik: number | null };
+type InspVerdict = {
+  id: string; ts: number; role: string; person: string; tier: string;
+  task: string; dims: InspDims; total: number; judged: boolean; verdikt?: string;
+};
+type InspData = { recent: InspVerdict[]; pending: number };
+const scoreColor = (n: number) => (n >= 80 ? "#2ff5b5" : n >= 60 ? "#ffb547" : "#ff6b7a");
 const tokOf = (t?: Totals) => (t ? t.input + t.cacheWrite + t.cacheRead + t.output : 0);
 function fmtTok(n: number) {
   if (n >= 1e6) return `${(n / 1e6).toLocaleString("tr-TR", { maximumFractionDigits: 2 })}M`;
@@ -77,6 +86,15 @@ export default function AgentMonitor({ convId }: { convId: string }) {
   }, [convId]);
   useEffect(() => { loadLog(); }, [loadLog]);
 
+  // Müfettişin puanlama konuşması (bu proje) — sert puan her teslimde anında düşer
+  const [insp, setInsp] = useState<InspData | null>(null);
+  const loadInsp = useCallback(() => {
+    fetch(`/api/inspector?scope=${encodeURIComponent(convId)}`).then((r) => r.json())
+      .then((d) => { if (Array.isArray(d?.recent)) setInsp({ recent: d.recent, pending: d.pending ?? 0 }); })
+      .catch(() => {});
+  }, [convId]);
+  useEffect(() => { loadInsp(); }, [loadInsp]);
+
   useEffect(() => {
     const onStream = (e: Event) => {
       const d = (e as CustomEvent<{ convId: string; text: string; running: boolean }>).detail;
@@ -88,20 +106,21 @@ export default function AgentMonitor({ convId }: { convId: string }) {
         seen.current = parsed.length;
         setEvents((prev) => [...prev, ...fresh]);
       }
-      if (!d.running && wasRunning.current) { setTimeout(loadLog, 1500); setTimeout(loadUsage, 1500); } // kayıt yazılsın, karneyi tazele
+      if (!d.running && wasRunning.current) { setTimeout(loadLog, 1500); setTimeout(loadUsage, 1500); setTimeout(loadInsp, 1500); } // kayıt yazılsın, karneyi tazele
       wasRunning.current = d.running;
       setRunning(d.running);
     };
     window.addEventListener("nova:stream", onStream);
     return () => window.removeEventListener("nova:stream", onStream);
-  }, [convId, loadLog, loadUsage]);
+  }, [convId, loadLog, loadUsage, loadInsp]);
 
   useEffect(() => {
     if (!running) return;
     const i = setInterval(() => setNow(Date.now()), 1000);
     const u = setInterval(loadUsage, 4000); // çalışırken sayaç canlı artsın
-    return () => { clearInterval(i); clearInterval(u); };
-  }, [running, loadUsage]);
+    const m = setInterval(loadInsp, 5000); // her teslimde müfettişin sert puanı düşer
+    return () => { clearInterval(i); clearInterval(u); clearInterval(m); };
+  }, [running, loadUsage, loadInsp]);
 
   // Şu an çalışan uzman: son "work" olayından sonra "done" gelmemişse
   let active: { text: string; t: number } | null = null;
@@ -204,20 +223,43 @@ export default function AgentMonitor({ convId }: { convId: string }) {
           )}
         </Section>
 
-        {/* Canlı akış */}
-        {events.length > 0 && (
-          <Section title={running ? "Canlı akış" : "Son istek"}>
-            <ol className="flex flex-col gap-1.5">
-              {events.slice(-30).map((e, i) => (
-                <li key={i} className="flex gap-2">
-                  <span className="w-[58px] shrink-0 tabular-nums" style={{ color: "var(--text-muted)" }}>{fmtTime(e.t).slice(0, 8)}</span>
-                  <span className="w-3 shrink-0 text-center" style={{ color: KIND_COLOR[e.kind] }}>{e.icon}</span>
-                  <span className="min-w-0 break-words" style={{ color: e.kind === "tool" || e.kind === "info" ? "var(--text-muted)" : "var(--text)" }}>{e.text}</span>
-                </li>
-              ))}
+        {/* Müfettişin puanlama konuşması (canlı akışın yerine): her teslimde verdikt */}
+        <Section title="🕵️ Müfettiş" right={insp?.pending ? `${insp.pending} sert verdikt kuyrukta` : undefined}>
+          {insp === null ? (
+            <div style={{ color: "var(--text-muted)" }}>Yükleniyor…</div>
+          ) : insp.recent.length === 0 ? (
+            <div style={{ color: "var(--text-muted)" }}>Müfettiş bu projede henüz verdikt yazmadı. Uzmanlar teslim ettikçe her koşum burada puanlanır.</div>
+          ) : (
+            <ol className="flex flex-col gap-2">
+              {insp.recent.slice(0, 12).map((v) => {
+                const meta = TEAM_META[v.role as TeamRole];
+                return (
+                  <li key={v.id} className="rounded-lg p-3" style={{ background: "var(--bg-panel)", border: "1px solid var(--border)" }}>
+                    <div className="flex items-baseline justify-between gap-2">
+                      <div className="min-w-0 truncate font-medium">
+                        {v.person} <span className="text-[12px] font-normal" style={{ color: meta?.color ?? "var(--text-muted)" }}>{meta?.name ?? v.role}</span>
+                      </div>
+                      <span className="shrink-0 rounded px-1.5 py-0.5 text-[12px] font-semibold tabular-nums" style={{ background: "var(--chip-bg)", color: scoreColor(v.total) }}>{v.total}/100</span>
+                    </div>
+                    <div className="mt-0.5 truncate text-[12px]" style={{ color: "var(--text-muted)" }}>{fmtTime(v.ts)} · {v.task}</div>
+                    {v.judged && v.verdikt ? (
+                      <div className="mt-1.5 break-words italic" style={{ color: scoreColor(v.dims.ilgililik ?? v.total) }}>&ldquo;{v.verdikt}&rdquo;</div>
+                    ) : (
+                      <div className="mt-1.5 text-[12px]" style={{ color: "var(--text-muted)" }}>Sert puan düştü; dobra verdikt kuyrukta (Admin → Müfettişi çalıştır).</div>
+                    )}
+                    <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] tabular-nums" style={{ color: "var(--text-muted)" }}>
+                      <span>hız <b style={{ color: scoreColor(v.dims.hiz) }}>{v.dims.hiz}</b></span>
+                      <span>teslim <b style={{ color: scoreColor(v.dims.teslim) }}>{v.dims.teslim}</b></span>
+                      <span>verim <b style={{ color: scoreColor(v.dims.verim) }}>{v.dims.verim}</b></span>
+                      <span>disiplin <b style={{ color: scoreColor(v.dims.disiplin) }}>{v.dims.disiplin}</b></span>
+                      {v.dims.ilgililik !== null && <span>ilgililik <b style={{ color: scoreColor(v.dims.ilgililik) }}>{v.dims.ilgililik}</b></span>}
+                    </div>
+                  </li>
+                );
+              })}
             </ol>
-          </Section>
-        )}
+          )}
+        </Section>
 
         {/* Karne */}
         <Section title="Karne · son 30 gün" right={entries.length ? `~$${totalCost.toFixed(3)}${fx ? ` · ${fmtTl(totalCost)}` : ""}` : undefined}>
