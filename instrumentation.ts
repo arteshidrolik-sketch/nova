@@ -11,6 +11,14 @@ export async function register() {
     startIgWorker();
   }
 
+  // RunPod nöbetçisi: HER açılışta kurulur (deploy konteyneri yenilese bile) —
+  // pod açık kalmışsa boşta/azami süre dolunca durdurur. 2026-10-27: nöbetçi
+  // yalnız touchPod ile kurulduğu için deploy sonrası pod bakiye bitene kadar çalıştı.
+  try {
+    const { startPodSweeper } = await import("@/lib/studio/pod");
+    startPodSweeper().catch((e) => console.warn("[pod] nöbetçi kurulamadı:", e));
+  } catch (e) { console.warn("[pod] nöbetçi kurulamadı:", e); }
+
   if (process.env.NOVA_SCHEDULER === "off") return;
 
   // Dev HMR'da çift interval kurulmasını engelle

@@ -1,10 +1,16 @@
 // RunPod pod otomasyonu: "Üret"e basınca pod'u başlat, hazır olunca üret, boşta kalınca durdur.
 // Soğuk başlatma ~2-3 dk sürer (pod uyanır + start-all.sh + ComfyUI). Sonraki üretimler hızlı.
+import { promises as fs } from "fs";
+import path from "path";
 import { comfyUp, connect, execOnPod, ollamaStatus, readCfg, writeCfg } from "./tunnel";
 
 const BASE = "https://rest.runpod.io/v1";
 const POD_ID = process.env.NOVA_RUNPOD_POD_ID || "";
 const IDLE_MS = (Number(process.env.NOVA_POD_IDLE_MIN) || 10) * 60_000;
+// Emniyet kemeri: aktivite takibi ne derse desin, pod bu süreden uzun KESİNTİSİZ çalışamaz.
+// (2026-10-27 kazası: deploy nöbetçiyi öldürdü, pod bakiye bitene kadar çalıştı.)
+const MAX_MS = (Number(process.env.NOVA_POD_MAX_MIN) || 240) * 60_000;
+const ACT_FILE = path.join(process.cwd(), "data", "studio", "pod-activity.json"); // deploy'a dayanıklı sayaç
 
 function key(): string { return process.env.RUNPOD_API_KEY || ""; }
 export function podAutomationReady(): boolean { return !!key() && !!POD_ID; }
@@ -39,19 +45,57 @@ async function startPod(): Promise<string | null> {
 }
 export async function stopPod(): Promise<void> { await api(`/pods/${POD_ID}/stop`, "POST"); }
 
-// Son kullanım anı — boşta durdurma için.
+// Son kullanım anı — boşta durdurma için. Diske de yazılır ki deploy
+// (konteyner yenileme) sayacı sıfırlayıp nöbetçiyi öldüremesin.
+type Act = { lastActivity: number; runningSince: number };
 let lastActivity = Date.now();
+let runningSince = 0; // pod'un kesintisiz RUNNING olduğu başlangıç (emniyet kemeri için)
+let touched = false; // bu süreçte gerçek kullanım oldu mu (diskteki eski sayaç ezmesin)
 let sweeper: ReturnType<typeof setInterval> | null = null;
-export function touchPod(): void {
-  lastActivity = Date.now();
-  if (!sweeper && podAutomationReady()) {
-    sweeper = setInterval(async () => {
-      if (Date.now() - lastActivity < IDLE_MS) return;
-      const s = await podStatus();
-      if (s && s.status === "RUNNING") { await stopPod().catch(() => {}); lastActivity = Date.now(); }
-    }, 60_000);
-    if (typeof sweeper.unref === "function") sweeper.unref();
+
+async function writeAct(): Promise<void> {
+  try {
+    await fs.mkdir(path.dirname(ACT_FILE), { recursive: true });
+    await fs.writeFile(ACT_FILE, JSON.stringify({ lastActivity, runningSince } satisfies Act), "utf8");
+  } catch { /* sayaç yazılamazsa nöbetçi bellekten sürer */ }
+}
+
+// Dakikalık kontrol: pod açıksa ve (boşta kaldı VEYA azami süreyi aştı) → durdur.
+async function sweep(): Promise<void> {
+  const s = await podStatus();
+  if (!s || s.status !== "RUNNING") {
+    if (runningSince) { runningSince = 0; writeAct().catch(() => {}); }
+    return;
   }
+  if (!runningSince) { runningSince = Date.now(); writeAct().catch(() => {}); }
+  const idle = Date.now() - lastActivity >= IDLE_MS;
+  const tooLong = Date.now() - runningSince >= MAX_MS;
+  if (!idle && !tooLong) return;
+  console.warn(`[pod] otomatik durdurma: ${idle ? "boşta" : ""}${idle && tooLong ? " + " : ""}${tooLong ? "azami süre aşıldı" : ""}`);
+  await stopPod().catch(() => {});
+  lastActivity = Date.now(); runningSince = 0;
+  writeAct().catch(() => {});
+}
+
+// Nöbetçiyi kur. Sunucu AÇILIŞINDA da çağrılır (instrumentation) → deploy
+// sonrası bile pod açık kalmışsa süre dolunca kapatılır.
+export async function startPodSweeper(): Promise<void> {
+  if (sweeper || !podAutomationReady()) return;
+  sweeper = setInterval(() => { sweep().catch(() => {}); }, 60_000);
+  if (typeof sweeper.unref === "function") sweeper.unref();
+  // Önceki sürecin sayacını devral (bu süreçte henüz kullanım yoksa)
+  try {
+    const a = JSON.parse(await fs.readFile(ACT_FILE, "utf8")) as Partial<Act>;
+    if (!touched && typeof a.lastActivity === "number" && a.lastActivity > 0 && a.lastActivity < lastActivity) lastActivity = a.lastActivity;
+    if (typeof a.runningSince === "number" && a.runningSince > 0) runningSince = a.runningSince;
+  } catch { /* ilk çalışma — dosya yok */ }
+}
+
+export function touchPod(): void {
+  touched = true;
+  lastActivity = Date.now();
+  writeAct().catch(() => {});
+  startPodSweeper().catch(() => {});
 }
 
 // Pod'u üretime hazır hale getir: gerekiyorsa başlat, SSH'ı bağla, start-all.sh çalıştır, ComfyUI'yi bekle.
