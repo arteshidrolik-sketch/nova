@@ -355,7 +355,7 @@ function StudioSecurity({ connected }: { connected: boolean }) {
   const [level, setLevel] = useState<"kesif" | "saldiri">("kesif");
   const [log, setLog] = useState("");
   const [busy, setBusy] = useState(false);
-  const [scope, setScope] = useState<{ hosts: string[]; ips: string[] } | null>(null);
+  const [scope, setScope] = useState<{ hosts: string[]; ips: string[]; enforce: boolean } | null>(null);
   const [reports, setReports] = useState<{ name: string; ts: number }[]>([]);
   const [viewer, setViewer] = useState<{ name: string; content: string } | null>(null);
   const [showScope, setShowScope] = useState(false);
@@ -386,12 +386,18 @@ function StudioSecurity({ connected }: { connected: boolean }) {
   };
   const stop = () => { abortRef.current?.abort(); setBusy(false); };
 
-  const saveScope = async () => {
+  const saveScope = async (enforce?: boolean) => {
     const lines = scopeEdit.split("\n").map((s) => s.trim()).filter(Boolean);
     const ips = lines.filter((l) => /^\d{1,3}(\.\d{1,3}){3}$/.test(l));
     const hosts = lines.filter((l) => !ips.includes(l));
-    const d = await fetch("/api/security", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: { hosts, ips } }) }).then((r) => r.json()).catch(() => null);
-    if (d?.scope) { setScope(d.scope); setShowScope(false); }
+    const en = enforce ?? scope?.enforce ?? true;
+    const d = await fetch("/api/security", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: { hosts, ips, enforce: en } }) }).then((r) => r.json()).catch(() => null);
+    if (d?.scope) setScope(d.scope);
+  };
+  const toggleEnforce = async () => {
+    const next = !(scope?.enforce ?? true);
+    if (next === false && !confirm("Kapsam kilidi KAPANACAK — ajan HER hedefe saldırabilir. Yalnız yetkili olduğun (kendi) sistemleri test etmek senin sorumluluğunda. Onaylıyor musun?")) return;
+    await saveScope(next);
   };
   const openReport = (name: string) => fetch(`/api/security?report=${encodeURIComponent(name)}`).then((r) => r.json()).then((d) => { if (d.content) setViewer({ name: d.name, content: d.content }); }).catch(() => {});
 
@@ -414,12 +420,24 @@ function StudioSecurity({ connected }: { connected: boolean }) {
         </div>
         {!connected && <div className="text-[12px]" style={{ color: "#ffcf5c" }}>Pod bağlı değil — ilk &quot;Saldır&quot;da otomatik başlar (~2-3 dk soğuk başlatma).</div>}
         {level === "saldiri" && <div className="text-[12px]" style={{ color: "#ff9a7a" }}>⚠️ Saldırı modu veriyi değiştirebilir/sistemi bozabilir. Canlı yerine kopya/staging hedefle, önce yedek al.</div>}
-        {scope && <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>İzinli: {scope.hosts.join(", ")}{scope.ips.length ? ` · ${scope.ips.join(", ")}` : ""}</div>}
+        {scope && (scope.enforce
+          ? <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>🔒 Kilit açık · İzinli: {scope.hosts.join(", ")}{scope.ips.length ? ` · ${scope.ips.join(", ")}` : ""}</div>
+          : <div className="text-[11px]" style={{ color: "#ff7a7a" }}>🔓 Kapsam kilidi KAPALI — her hedefe saldırılabilir (sorumluluk sende)</div>)}
         {showScope && (
           <div className="rounded-lg p-3" style={{ background: "var(--bg)", border: "1px solid var(--border)" }}>
-            <div className="mb-1 text-[12px]" style={{ color: "var(--text-muted)" }}>İzinli hedefler (her satıra bir alan adı ya da IP). Ajan yalnız bunlara saldırabilir:</div>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="text-[12px] font-semibold">Kapsam kilidi</span>
+              <button onClick={toggleEnforce} className="rounded-lg px-3 py-1 text-[12px] font-semibold" style={{ background: scope?.enforce ? "#2ff5b5" : "#ff7a7a", color: "#0b1030" }}>
+                {scope?.enforce ? "🔒 AÇIK (yalnız izinli)" : "🔓 KAPALI (her hedef)"}
+              </button>
+            </div>
+            <div className="mb-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
+              {scope?.enforce
+                ? "İzinli hedefler (her satıra bir alan adı ya da IP). Ajan yalnız bunlara saldırabilir. Yeni ürün çıkınca adresini buraya ekle — kod/deploy gerekmez:"
+                : "Kilit kapalı: liste yok sayılır, ajan her hedefe saldırabilir. Yalnız yetkili olduğun sistemleri test et."}
+            </div>
             <textarea value={scopeEdit} onChange={(e) => setScopeEdit(e.target.value)} rows={4} className="w-full rounded-lg px-2 py-1.5 text-[13px] outline-none" style={{ background: "var(--bg-panel)", border: "1px solid var(--border)", color: "var(--text)", fontFamily: "monospace" }} />
-            <button onClick={saveScope} className="mt-2 rounded-lg px-3 py-1.5 text-[13px] font-semibold" style={{ background: "var(--grad)", color: "#0b1030" }}>Kaydet</button>
+            <button onClick={() => { saveScope(); setShowScope(false); }} className="mt-2 rounded-lg px-3 py-1.5 text-[13px] font-semibold" style={{ background: "var(--grad)", color: "#0b1030" }}>Kaydet</button>
           </div>
         )}
       </div>

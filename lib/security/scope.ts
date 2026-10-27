@@ -17,7 +17,10 @@ const DEFAULT_HOSTS = [
 // Sahibi olunan IP'ler (VPS). IP'ler yalnız BURADA açıkça listeliyse hedef olabilir.
 const DEFAULT_IPS = ["76.13.249.73"];
 
-export type Scope = { hosts: string[]; ips: string[] };
+// enforce=false → kapsam kilidi KAPALI: ajan her hedefe saldırabilir. Varsayılan
+// açık (güvenli). Kullanıcı UI'dan kapatır (sorumluluk kendisinde) — bir kez, koda
+// dokunmadan; yeni ürün çıkınca adres eklemeye gerek kalmaz.
+export type Scope = { hosts: string[]; ips: string[]; enforce: boolean };
 
 function envHosts(): string[] {
   return (process.env.NOVA_SECURITY_SCOPE || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
@@ -28,7 +31,9 @@ export async function getScope(): Promise<Scope> {
   try { saved = JSON.parse(await fs.readFile(FILE, "utf8")); } catch { /* ilk çalışma */ }
   const hosts = Array.from(new Set([...DEFAULT_HOSTS, ...envHosts(), ...(saved.hosts ?? [])].map((h) => h.toLowerCase())));
   const ips = Array.from(new Set([...DEFAULT_IPS, ...(saved.ips ?? [])]));
-  return { hosts, ips };
+  // env NOVA_SECURITY_SCOPE_OFF=1 ya da kayıtlı enforce=false → kilit kapalı
+  const enforce = process.env.NOVA_SECURITY_SCOPE_OFF === "1" ? false : (saved.enforce ?? true);
+  return { hosts, ips, enforce };
 }
 
 export async function setScope(s: Scope): Promise<void> {
@@ -36,7 +41,7 @@ export async function setScope(s: Scope): Promise<void> {
   // yalnız kullanıcı eklentilerini kaydet (varsayılanlar koda gömülü)
   const hosts = s.hosts.map((h) => h.trim().toLowerCase()).filter((h) => h && !DEFAULT_HOSTS.includes(h));
   const ips = s.ips.map((i) => i.trim()).filter((i) => i && !DEFAULT_IPS.includes(i));
-  await fs.writeFile(FILE, JSON.stringify({ hosts, ips }), "utf8");
+  await fs.writeFile(FILE, JSON.stringify({ hosts, ips, enforce: s.enforce !== false }), "utf8");
 }
 
 const IP_RE = /^\d{1,3}(\.\d{1,3}){3}$/;
@@ -66,10 +71,12 @@ export async function checkTarget(target: string, scope?: Scope): Promise<ScopeC
   const s = scope ?? (await getScope());
   const host = extractHost(target);
   if (!host) return { ok: false, host, reason: "hedef boş/çözümlenemedi" };
+  if (!s.enforce) return { ok: true, host }; // kilit kapalı — sorumluluk kullanıcıda
   if (hostInScope(host, s)) return { ok: true, host };
-  return { ok: false, host, reason: `"${host}" kapsam dışı — yalnız kendi varlıklarına izin var (${s.hosts.join(", ")})` };
+  return { ok: false, host, reason: `"${host}" kapsam dışı — yalnız kendi varlıklarına izin var (${s.hosts.join(", ")}). Kapsam kilidini kapatmak istersen Kapsam panelinden.` };
 }
 
 export function scopeSummary(s: Scope): string {
+  if (!s.enforce) return "⚠️ Kapsam kilidi KAPALI — her hedefe saldırılabilir (sorumluluk sende, yalnız yetkili olduğun sistemleri test et).";
   return `İzinli alan adları: ${s.hosts.join(", ")}${s.ips.length ? ` · IP: ${s.ips.join(", ")}` : ""}`;
 }
