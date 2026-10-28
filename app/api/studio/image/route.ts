@@ -111,7 +111,7 @@ export async function POST(req: Request) {
         buf = await genOne(neg, sd);
         if (!anatomy) break;
         updateJob(jobId, { note: `anatomi kontrol ediliyor (${t}/${maxTries})…` });
-        verdict = await inspectAnatomy(buf.toString("base64"));
+        verdict = await inspectAnatomy(buf);
         if (!verdict || verdict.ok) break; // denetçi yoksa ya da anatomi temizse bitir
         if (t < maxTries) { // kusurlu → negatifi güçlendir, yeni seed, tekrar
           if (verdict.negativeAdd) neg = `${verdict.negativeAdd}, ${neg}`;
