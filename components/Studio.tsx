@@ -246,7 +246,7 @@ function StudioImage({ connected }: { connected: boolean }) {
   return (
     <div className="absolute inset-0 overflow-y-auto">
       <div className="mx-auto max-w-3xl p-4 sm:p-8">
-        {!connected && <div className="mb-4 rounded-xl p-4 text-[13px]" style={{ background: "var(--bg-panel)", border: "1px dashed var(--border-strong)", color: "var(--text-muted)" }}>Pod bağlı değil — önce &quot;Bağlan&quot; sekmesinden bağlan.</div>}
+        {!connected && <div className="mb-4 rounded-xl p-4 text-[13px]" style={{ background: "var(--bg-panel)", border: "1px dashed var(--border-strong)", color: "var(--text-muted)" }}>Pod uykuda olabilir — &quot;Üret&quot;e basınca otomatik uyanır (~1-2 dk, ilerleme gösterilir).</div>}
         <div className="mb-1 flex items-center gap-2">
           <label className="text-[14px] font-bold">Görsel tarifi (Türkçe yazabilirsin)</label>
           <button onClick={() => setEnhance((v) => !v)} title="Prompt ajanı: isteğini detaylı İngilizce prompt'a çevirir, model daha iyi izler" className="ml-auto rounded-lg px-2.5 py-1 text-[12px]" style={{ border: `1px solid ${enhance ? "var(--accent)" : "var(--border)"}`, background: enhance ? "var(--grad)" : "transparent", color: enhance ? "#0b1030" : "var(--text-muted)", fontWeight: enhance ? 700 : 500 }}>
@@ -264,7 +264,7 @@ function StudioImage({ connected }: { connected: boolean }) {
           {sizes.map(([lbl, w, h]) => (
             <button key={lbl} onClick={() => setSize([w, h])} className="rounded-lg px-2.5 py-1.5 text-[12px]" style={{ border: `1px solid ${size[0] === w && size[1] === h ? "var(--accent)" : "var(--border)"}`, color: size[0] === w && size[1] === h ? "var(--text)" : "var(--text-muted)" }}>{lbl}</button>
           ))}
-          <button onClick={run} disabled={busy || !prompt.trim() || !connected} className="ml-auto rounded-xl px-5 py-2 text-[14px] font-bold disabled:opacity-40" style={{ background: "var(--grad)", color: "#0b1030" }}>
+          <button onClick={run} disabled={busy || !prompt.trim()} className="ml-auto rounded-xl px-5 py-2 text-[14px] font-bold disabled:opacity-40" style={{ background: "var(--grad)", color: "#0b1030" }}>
             {busy ? "Üretiliyor…" : "Üret"}
           </button>
         </div>
@@ -431,7 +431,7 @@ function StudioSecurity({ connected }: { connected: boolean }) {
           </select>
           {busy
             ? <button onClick={stop} className="rounded-lg px-4 py-2 text-[14px] font-bold" style={{ background: "#ff7a7a", color: "#0b1030" }}>⏹ Durdur</button>
-            : <button onClick={attack} disabled={!connected || !target.trim()} className="rounded-lg px-4 py-2 text-[14px] font-bold" style={{ background: connected && target.trim() ? "var(--grad)" : "var(--border)", color: "#0b1030", opacity: connected && target.trim() ? 1 : 0.5 }}>Saldır ▶</button>}
+            : <button onClick={attack} disabled={!target.trim()} className="rounded-lg px-4 py-2 text-[14px] font-bold" style={{ background: target.trim() ? "var(--grad)" : "var(--border)", color: "#0b1030", opacity: target.trim() ? 1 : 0.5 }}>Saldır ▶</button>}
           <button onClick={() => setShowScope((v) => !v)} className="rounded-lg border px-2 py-2 text-[12px]" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>🔒 Kapsam</button>
         </div>
         {!connected && <div className="text-[12px]" style={{ color: "#ffcf5c" }}>Pod bağlı değil — ilk &quot;Saldır&quot;da otomatik başlar (~2-3 dk soğuk başlatma).</div>}
