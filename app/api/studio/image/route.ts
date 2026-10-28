@@ -4,6 +4,7 @@ import { ensureFromCfg, execOnPod, tunnelTarget } from "@/lib/studio/tunnel";
 import { ensurePodReady, podAutomationReady, touchPod } from "@/lib/studio/pod";
 import { enhanceImagePrompt, DEFAULT_NEGATIVE } from "@/lib/studio/prompt";
 import { createJob, updateJob, getJob } from "@/lib/studio/imagejobs";
+import { inspectAnatomy, ensureAnatomyModel, type AnatomyVerdict } from "@/lib/studio/anatomy";
 
 export const runtime = "nodejs";
 export const maxDuration = 600;
@@ -33,7 +34,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const b = (await req.json().catch(() => ({}))) as { prompt?: string; negative?: string; width?: number; height?: number; seed?: number; enhance?: boolean; steps?: number; cfg?: number };
+  const b = (await req.json().catch(() => ({}))) as { prompt?: string; negative?: string; width?: number; height?: number; seed?: number; enhance?: boolean; steps?: number; cfg?: number; anatomy?: boolean };
   const raw = String(b.prompt ?? "").trim();
   if (!raw) return Response.json({ error: "prompt gerekli" }, { status: 400 });
   const w = Math.min(2048, Math.max(512, Number(b.width) || 1024));
@@ -73,32 +74,54 @@ export async function POST(req: Request) {
       const steps = userSteps ?? (complex ? 30 : 20);
       const cfg = userCfg ?? (complex ? 3.5 : 1);
 
-      updateJob(jobId, { status: "generating", note: complex ? "üretiliyor (yüksek uyum modu)" : "üretiliyor", usedPrompt: prompt });
-      const q = await fetch(`${COMFY}/prompt`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: workflow(prompt, negative, w, h, seed, steps, cfg) }), signal: AbortSignal.timeout(20000) });
-      if (!q.ok) { updateJob(jobId, { status: "error", error: `ComfyUI kuyruk hatası (${q.status})` }); return; }
-      const pid = ((await q.json()) as { prompt_id?: string }).prompt_id;
-      if (!pid) { updateJob(jobId, { status: "error", error: "prompt_id alınamadı" }); return; }
-
-      // sonucu bekle (en fazla ~5 dk — ilk model yüklemesi uzun sürebilir)
-      for (let i = 0; i < 100; i++) {
-        await new Promise((r) => setTimeout(r, 3000));
-        const h2 = await fetch(`${COMFY}/history/${pid}`, { signal: AbortSignal.timeout(10000) }).then((r) => r.json()).catch(() => ({}));
-        const entry = (h2 as Record<string, { status?: { status_str?: string }; outputs?: Record<string, { images?: { filename: string; subfolder: string; type: string }[] }> }>)[pid];
-        if (!entry) continue;
-        const imgs = Object.values(entry.outputs ?? {}).flatMap((o) => o.images ?? []);
-        if (imgs.length) {
-          const im = imgs[0];
-          const url = `${COMFY}/view?filename=${encodeURIComponent(im.filename)}&subfolder=${encodeURIComponent(im.subfolder)}&type=${encodeURIComponent(im.type)}`;
-          const r = await fetch(url, { signal: AbortSignal.timeout(20000) });
-          const buf = Buffer.from(await r.arrayBuffer());
-          const safe = im.filename.replace(/[^A-Za-z0-9._-]/g, "");
-          if (safe) execOnPod(`rm -f /workspace/ComfyUI/output/${safe}`).catch(() => {});
-          updateJob(jobId, { status: "done", image: `data:image/png;base64,${buf.toString("base64")}`, seed, usedPrompt: prompt });
-          return;
+      // ComfyUI'da tek üretim: kuyruk + sonucu bekle + görseli çek. {buf} döner.
+      const genOne = async (neg: string, sd: number): Promise<Buffer> => {
+        const q = await fetch(`${COMFY}/prompt`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: workflow(prompt, neg, w, h, sd, steps, cfg) }), signal: AbortSignal.timeout(20000) });
+        if (!q.ok) throw new Error(`ComfyUI kuyruk hatası (${q.status})`);
+        const pid = ((await q.json()) as { prompt_id?: string }).prompt_id;
+        if (!pid) throw new Error("prompt_id alınamadı");
+        for (let i = 0; i < 100; i++) {
+          await new Promise((r) => setTimeout(r, 3000));
+          const h2 = await fetch(`${COMFY}/history/${pid}`, { signal: AbortSignal.timeout(10000) }).then((r) => r.json()).catch(() => ({}));
+          const entry = (h2 as Record<string, { status?: { status_str?: string }; outputs?: Record<string, { images?: { filename: string; subfolder: string; type: string }[] }> }>)[pid];
+          if (!entry) continue;
+          const imgs = Object.values(entry.outputs ?? {}).flatMap((o) => o.images ?? []);
+          if (imgs.length) {
+            const im = imgs[0];
+            const url = `${COMFY}/view?filename=${encodeURIComponent(im.filename)}&subfolder=${encodeURIComponent(im.subfolder)}&type=${encodeURIComponent(im.type)}`;
+            const buf = Buffer.from(await (await fetch(url, { signal: AbortSignal.timeout(20000) })).arrayBuffer());
+            const safe = im.filename.replace(/[^A-Za-z0-9._-]/g, "");
+            if (safe) execOnPod(`rm -f /workspace/ComfyUI/output/${safe}`).catch(() => {});
+            return buf;
+          }
+          if (entry.status?.status_str === "error") throw new Error("ComfyUI üretim hatası");
         }
-        if (entry.status?.status_str === "error") { updateJob(jobId, { status: "error", error: "ComfyUI üretim hatası" }); return; }
+        throw new Error("zaman aşımı (görsel gelmedi)");
+      };
+
+      // Anatomi denetim DÖNGÜSÜ: üret → denetçi görseli inceler → kusurluysa
+      // negatifi güçlendir + yeni seed → yeniden üret. Düzelene / hak bitene kadar.
+      const anatomy = b.anatomy === true;
+      const maxTries = anatomy ? 4 : 1;
+      let neg = negative, sd = seed, buf: Buffer | null = null, verdict: AnatomyVerdict | null = null;
+      if (anatomy) { updateJob(jobId, { note: "anatomi denetçisi hazırlanıyor…" }); await ensureAnatomyModel((s) => updateJob(jobId, { note: s })); }
+
+      for (let t = 1; t <= maxTries; t++) {
+        updateJob(jobId, { status: "generating", note: anatomy ? `üretiliyor (deneme ${t}/${maxTries})` : (complex ? "üretiliyor (yüksek uyum modu)" : "üretiliyor"), usedPrompt: prompt });
+        buf = await genOne(neg, sd);
+        if (!anatomy) break;
+        updateJob(jobId, { note: `anatomi kontrol ediliyor (${t}/${maxTries})…` });
+        verdict = await inspectAnatomy(buf.toString("base64"));
+        if (!verdict || verdict.ok) break; // denetçi yoksa ya da anatomi temizse bitir
+        if (t < maxTries) { // kusurlu → negatifi güçlendir, yeni seed, tekrar
+          if (verdict.negativeAdd) neg = `${verdict.negativeAdd}, ${neg}`;
+          sd = Math.floor(Math.random() * 1e9);
+          updateJob(jobId, { note: `anatomi kusurlu (${verdict.defects.slice(0, 2).join(", ") || "kusur"}) → yeniden üretiliyor` });
+        }
       }
-      updateJob(jobId, { status: "error", error: "zaman aşımı (görsel 5 dk'da gelmedi)" });
+      if (!buf) { updateJob(jobId, { status: "error", error: "üretilemedi" }); return; }
+      const doneNote = anatomy ? (verdict?.ok ? "anatomi onaylandı ✓" : verdict ? `anatomi tam düzelmedi: ${verdict.defects.slice(0, 2).join(", ")}` : "denetçi yanıt vermedi") : "";
+      updateJob(jobId, { status: "done", image: `data:image/png;base64,${buf.toString("base64")}`, seed: sd, usedPrompt: prompt, note: doneNote });
     } catch (e) {
       updateJob(jobId, { status: "error", error: e instanceof Error ? e.message : "hata" });
     }

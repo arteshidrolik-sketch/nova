@@ -215,6 +215,7 @@ function StudioImage({ connected }: { connected: boolean }) {
   const [img, setImg] = useState<string | null>(null);
   const [err, setErr] = useState("");
   const [enhance, setEnhance] = useState(true); // prompt ajanı (Türkçe→detaylı İngilizce)
+  const [anatomy, setAnatomy] = useState(false); // anatomi denetçisi (üret→kontrol→düzelene kadar)
   const [used, setUsed] = useState(""); // ajanın ürettiği, modele giden prompt
   const [note, setNote] = useState(""); // ilerleme notu (pod hazırlanıyor / üretiliyor)
 
@@ -225,7 +226,7 @@ function StudioImage({ connected }: { connected: boolean }) {
     if (!p || busy) return;
     setBusy(true); setErr(""); setImg(null); setUsed(""); setNote("iş başlatılıyor…");
     try {
-      const start = await fetch("/api/studio/image", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: p, width: size[0], height: size[1], enhance }) }).then((r) => r.json());
+      const start = await fetch("/api/studio/image", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: p, width: size[0], height: size[1], enhance, anatomy }) }).then((r) => r.json());
       if (!start.jobId) { setErr(start.error || "üretilemedi"); setBusy(false); setNote(""); return; }
       // ~6 dk boyunca 3 sn'de bir yokla
       for (let i = 0; i < 120; i++) {
@@ -247,9 +248,12 @@ function StudioImage({ connected }: { connected: boolean }) {
     <div className="absolute inset-0 overflow-y-auto">
       <div className="mx-auto max-w-3xl p-4 sm:p-8">
         {!connected && <div className="mb-4 rounded-xl p-4 text-[13px]" style={{ background: "var(--bg-panel)", border: "1px dashed var(--border-strong)", color: "var(--text-muted)" }}>Pod uykuda olabilir — &quot;Üret&quot;e basınca otomatik uyanır (~1-2 dk, ilerleme gösterilir).</div>}
-        <div className="mb-1 flex items-center gap-2">
+        <div className="mb-1 flex flex-wrap items-center gap-2">
           <label className="text-[14px] font-bold">Görsel tarifi (Türkçe yazabilirsin)</label>
-          <button onClick={() => setEnhance((v) => !v)} title="Prompt ajanı: isteğini detaylı İngilizce prompt'a çevirir, model daha iyi izler" className="ml-auto rounded-lg px-2.5 py-1 text-[12px]" style={{ border: `1px solid ${enhance ? "var(--accent)" : "var(--border)"}`, background: enhance ? "var(--grad)" : "transparent", color: enhance ? "#0b1030" : "var(--text-muted)", fontWeight: enhance ? 700 : 500 }}>
+          <button onClick={() => setAnatomy((v) => !v)} title="Anatomi denetçisi: üretilen görseli sansürsüz görü modeli inceler; el/uzuv/vücut bütünlüğü kusurluysa negatifi güçlendirip yeniden üretir (düzelene kadar, en çok 4 deneme). Daha yavaş ama anatomi daha sağlam." className="ml-auto rounded-lg px-2.5 py-1 text-[12px]" style={{ border: `1px solid ${anatomy ? "var(--accent)" : "var(--border)"}`, background: anatomy ? "var(--grad)" : "transparent", color: anatomy ? "#0b1030" : "var(--text-muted)", fontWeight: anatomy ? 700 : 500 }}>
+            {anatomy ? "🧍 Anatomi kontrolü açık" : "🧍 Anatomi kontrolü"}
+          </button>
+          <button onClick={() => setEnhance((v) => !v)} title="Prompt ajanı: isteğini detaylı İngilizce prompt'a çevirir, model daha iyi izler" className="rounded-lg px-2.5 py-1 text-[12px]" style={{ border: `1px solid ${enhance ? "var(--accent)" : "var(--border)"}`, background: enhance ? "var(--grad)" : "transparent", color: enhance ? "#0b1030" : "var(--text-muted)", fontWeight: enhance ? 700 : 500 }}>
             {enhance ? "✨ Prompt ajanı açık" : "Prompt ajanı kapalı"}
           </button>
         </div>
