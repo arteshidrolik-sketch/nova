@@ -9,15 +9,16 @@ export const runtime = "nodejs";
 const FILE = path.join(process.cwd(), "data", "studio-chat.json");
 
 type Msg = { role: "user" | "assistant"; content: string };
-type Store = { msgs: Msg[]; skills: string[] };
+type Store = { msgs: Msg[]; skills: string[]; persona: string };
 
 async function read(): Promise<Store> {
   try {
     const j = JSON.parse(await fs.readFile(FILE, "utf8")) as Partial<Store>;
     const msgs = Array.isArray(j.msgs) ? j.msgs.filter((m) => m && m.content && (m.role === "user" || m.role === "assistant")) : [];
     const skills = Array.isArray(j.skills) ? j.skills.filter((s) => SKILL_IDS.includes(s)) : [];
-    return { msgs, skills };
-  } catch { return { msgs: [], skills: [] }; }
+    const persona = typeof j.persona === "string" ? j.persona.slice(0, 2000) : "";
+    return { msgs, skills, persona };
+  } catch { return { msgs: [], skills: [], persona: "" }; }
 }
 
 export async function GET() {
@@ -30,7 +31,8 @@ export async function POST(req: Request) {
     .filter((m) => m && m.content && (m.role === "user" || m.role === "assistant"))
     .slice(-200); // son 200 mesaj — dosya sınırsız büyümesin
   const skills = (Array.isArray(b.skills) ? b.skills : []).filter((s) => SKILL_IDS.includes(s));
+  const persona = typeof b.persona === "string" ? b.persona.slice(0, 2000) : "";
   await fs.mkdir(path.dirname(FILE), { recursive: true });
-  await fs.writeFile(FILE, JSON.stringify({ msgs, skills }));
+  await fs.writeFile(FILE, JSON.stringify({ msgs, skills, persona }));
   return Response.json({ ok: true });
 }

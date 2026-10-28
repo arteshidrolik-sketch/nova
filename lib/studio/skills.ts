@@ -76,9 +76,16 @@ export const SKILLS: SkillDef[] = [
 
 export const SKILL_IDS = SKILLS.map((s) => s.id);
 
-// Seçili beceri id'lerinden modele verilecek sistem metnini kur.
-export function buildSystemPrompt(ids: string[] | undefined): string {
+// Seçili beceri id'lerinden (+ kullanıcının kişilik/talimatından) sistem metnini kur.
+// persona: kullanıcının tanımladığı üslup/kişilik (ör. samimi, küfürlü ağabey tavrı).
+// Üslup konusunda varsayılanların (kısa-net yazılımcı) önüne geçer; yetenek aynı kalır.
+export function buildSystemPrompt(ids: string[] | undefined, persona?: string): string {
   const chosen = SKILLS.filter((s) => (ids ?? []).includes(s.id));
-  if (!chosen.length) return BASE;
-  return BASE + "\n\nAktif beceriler:\n" + chosen.map((s) => "• " + s.text).join("\n\n");
+  let out = BASE;
+  if (chosen.length) out += "\n\nAktif beceriler:\n" + chosen.map((s) => "• " + s.text).join("\n\n");
+  const p = (persona ?? "").trim();
+  if (p) {
+    out += `\n\nKİŞİLİK / ÜSLUP (kullanıcının tanımı — ÜSLUP ve TAVIR konusunda yukarıdaki varsayılanların önüne geçer; yeteneğin aynı kalır):\n${p.slice(0, 2000)}`;
+  }
+  return out;
 }

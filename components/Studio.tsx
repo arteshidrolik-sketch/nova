@@ -31,6 +31,7 @@ export default function Studio({ onClose }: { onClose: () => void }) {
   const [chatInput, setChatInput] = useState("");
   const [chatModel, setChatModel] = useState("huihui_ai/qwen2.5-coder-abliterate:32b");
   const [chatSkills, setChatSkills] = useState<string[]>(["hatasiz-kod", "debug", "dogrulama"]);
+  const [chatPersona, setChatPersona] = useState(""); // kalıcı kişilik/üslup talimatı
   const rootRef = useRef<HTMLDivElement>(null);
   const [isFs, setIsFs] = useState(false);
   useEffect(() => {
@@ -64,6 +65,7 @@ export default function Studio({ onClose }: { onClose: () => void }) {
     fetch("/api/studio/chat-history").then((r) => r.json()).then((d) => {
       if (Array.isArray(d?.msgs) && d.msgs.length) setChatMsgs(d.msgs);
       if (Array.isArray(d?.skills) && d.skills.length) setChatSkills(d.skills);
+      if (typeof d?.persona === "string") setChatPersona(d.persona);
     }).catch(() => { /* yoksay */ });
   }, [unlocked]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -196,7 +198,7 @@ export default function Studio({ onClose }: { onClose: () => void }) {
             </div>
           </div>
         )}
-        {tab === "sohbet" && <StudioChat models={st?.models ?? []} connected={connected} msgs={chatMsgs} setMsgs={setChatMsgs} input={chatInput} setInput={setChatInput} model={chatModel} setModel={setChatModel} skills={chatSkills} setSkills={setChatSkills} />}
+        {tab === "sohbet" && <StudioChat models={st?.models ?? []} connected={connected} msgs={chatMsgs} setMsgs={setChatMsgs} input={chatInput} setInput={setChatInput} model={chatModel} setModel={setChatModel} skills={chatSkills} setSkills={setChatSkills} persona={chatPersona} setPersona={setChatPersona} />}
         {tab === "gorsel" && <StudioImage connected={!!st?.comfy} />}
         {tab === "guvenlik" && <StudioSecurity connected={connected} />}
         {tab === "mufettis" && <StudioInspector />}
@@ -568,15 +570,17 @@ function StudioInspector() {
   );
 }
 
-function StudioChat({ models, connected, msgs, setMsgs, input, setInput, model, setModel, skills, setSkills }: {
+function StudioChat({ models, connected, msgs, setMsgs, input, setInput, model, setModel, skills, setSkills, persona, setPersona }: {
   models: string[]; connected: boolean;
   msgs: Msg[]; setMsgs: React.Dispatch<React.SetStateAction<Msg[]>>;
   input: string; setInput: (v: string) => void;
   model: string; setModel: (v: string) => void;
   skills: string[]; setSkills: (v: string[]) => void;
+  persona: string; setPersona: (v: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [showSkills, setShowSkills] = useState(false);
+  const [showPersona, setShowPersona] = useState(false);
   const [atts, setAtts] = useState<string[]>([]); // ekli görseller (resim ya da video kareleri, dataURL)
   const [attLabel, setAttLabel] = useState(""); // "2 resim" / "video: 5 kare"
   const [listening, setListening] = useState(false); // mikrofon açık mı
@@ -657,9 +661,9 @@ function StudioChat({ models, connected, msgs, setMsgs, input, setInput, model, 
     finally { URL.revokeObjectURL(url); }
   };
 
-  // Hafızaya yaz (yazışma + seçili beceriler) — sunucuda diskte tutulur
-  const save = (m: Msg[], sk: string[]) => {
-    fetch("/api/studio/chat-history", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ msgs: m, skills: sk }) }).catch(() => { /* yoksay */ });
+  // Hafızaya yaz (yazışma + beceriler + kişilik) — sunucuda diskte tutulur
+  const save = (m: Msg[], sk: string[], pr: string = persona) => {
+    fetch("/api/studio/chat-history", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ msgs: m, skills: sk, persona: pr }) }).catch(() => { /* yoksay */ });
   };
   const toggleSkill = (id: string) => {
     const next = skills.includes(id) ? skills.filter((s) => s !== id) : [...skills, id];
@@ -677,7 +681,7 @@ function StudioChat({ models, connected, msgs, setMsgs, input, setInput, model, 
     const shownMsgs: Msg[] = [...msgs, { role: "user", content: shown || "Bu görseli ayrıntılı anlat." }];
     setMsgs([...shownMsgs, { role: "assistant", content: "" }]);
     try {
-      const r = await fetch("/api/studio/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model, messages: next, skills, images }) });
+      const r = await fetch("/api/studio/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model, messages: next, skills, images, persona }) });
       if (!r.ok || !r.body) { const e = await r.json().catch(() => ({})); const done: Msg[] = [...shownMsgs, { role: "assistant", content: `⚠️ ${e.error || "hata"}` }]; setMsgs(done); save(done, skills); setBusy(false); return; }
       const reader = r.body.getReader(); const dec = new TextDecoder(); let acc = "";
       for (;;) { const { done, value } = await reader.read(); if (done) break; acc += dec.decode(value, { stream: true }); setMsgs([...shownMsgs, { role: "assistant", content: acc }]); }
@@ -700,8 +704,23 @@ function StudioChat({ models, connected, msgs, setMsgs, input, setInput, model, 
         <button onClick={() => setShowSkills((v) => !v)} className="rounded-lg border px-2 py-1 text-[12px]" style={{ borderColor: showSkills ? "var(--accent)" : "var(--border)", color: "var(--text-muted)" }}>
           ⚙️ Beceriler{skills.length ? ` (${skills.length})` : ""}
         </button>
+        <button onClick={() => setShowPersona((v) => !v)} className="rounded-lg border px-2 py-1 text-[12px]" style={{ borderColor: showPersona || persona ? "var(--accent)" : "var(--border)", color: "var(--text-muted)" }}>
+          🎭 Kişilik{persona ? " ✓" : ""}
+        </button>
         {msgs.length > 0 && <button onClick={clear} className="ml-auto rounded-lg border px-2 py-1 text-[12px]" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>Temizle</button>}
       </div>
+      {showPersona && (
+        <div className="relative z-10 border-b px-4 py-3" style={{ borderColor: "var(--border-strong)", background: "var(--bg-panel)" }}>
+          <div className="mb-2 text-[11px]" style={{ color: "var(--text-muted)" }}>Kişilik / üslup talimatı — her konuşmada modele yüklenir, kalıcı kaydedilir. Nova'nın nasıl konuşacağını buraya yaz (ör. samimi ağabey tavrı, uygun yerlerde argo/küfür). Boş bırakırsan varsayılan (kısa, net) kalır.</div>
+          <textarea value={persona} onChange={(e) => setPersona(e.target.value)} onBlur={() => save(msgs, skills, persona)} rows={4} maxLength={2000}
+            placeholder="Örn: Benimle laubali, samimi bir ağabey gibi konuş. Uygun yerlerde Türkçe argo/küfür kullanmaktan çekinme. Yapmacık olma, dobra ol."
+            className="w-full resize-none rounded-lg p-2.5 text-[13px] outline-none" style={{ background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)" }} />
+          <div className="mt-1.5 flex items-center justify-between">
+            <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>{persona.length}/2000 · otomatik kaydedilir</span>
+            {persona && <button onClick={() => { setPersona(""); save(msgs, skills, ""); }} className="text-[11px]" style={{ color: "#ff7a7a" }}>Temizle</button>}
+          </div>
+        </div>
+      )}
       {showSkills && (
         <div className="relative z-10 border-b px-4 py-3" style={{ borderColor: "var(--border-strong)", background: "var(--bg-panel)" }}>
           <div className="mb-2 text-[11px]" style={{ color: "var(--text-muted)" }}>Seçili beceriler sistem talimatı olarak modele yüklenir (kodlama tarzını belirler):</div>

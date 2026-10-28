@@ -13,7 +13,7 @@ const VISION_MODEL = process.env.NOVA_VISION_MODEL || "llama3.2-vision:11b";
 type Msg = { role: "system" | "user" | "assistant"; content: string; images?: string[] };
 
 export async function POST(req: Request) {
-  const b = (await req.json().catch(() => ({}))) as { model?: string; messages?: Msg[]; skills?: string[]; images?: string[] };
+  const b = (await req.json().catch(() => ({}))) as { model?: string; messages?: Msg[]; skills?: string[]; images?: string[]; persona?: string };
   const convo = Array.isArray(b.messages) ? b.messages.filter((m) => m && m.content && m.role !== "system") : [];
   if (!convo.length) return Response.json({ error: "mesaj yok" }, { status: 400 });
 
@@ -26,7 +26,7 @@ export async function POST(req: Request) {
   const model = vision ? VISION_MODEL : String(b.model ?? "huihui_ai/qwen2.5-coder-abliterate:32b");
 
   // Beceriler → sistem talimatı, her istekte en başa (modelin tarzını belirler)
-  const messages: Msg[] = [{ role: "system", content: buildSystemPrompt(b.skills) }, ...convo];
+  const messages: Msg[] = [{ role: "system", content: buildSystemPrompt(b.skills, b.persona) }, ...convo];
   if (vision) {
     // görselleri son kullanıcı mesajına ekle
     for (let i = messages.length - 1; i >= 0; i--) { if (messages[i].role === "user") { messages[i] = { ...messages[i], images: imgs }; break; } }
