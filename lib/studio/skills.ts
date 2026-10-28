@@ -85,7 +85,11 @@ export function buildSystemPrompt(ids: string[] | undefined, persona?: string): 
   if (chosen.length) out += "\n\nAktif beceriler:\n" + chosen.map((s) => "• " + s.text).join("\n\n");
   const p = (persona ?? "").trim();
   if (p) {
-    out += `\n\nKİŞİLİK / ÜSLUP (kullanıcının tanımı — ÜSLUP ve TAVIR konusunda yukarıdaki varsayılanların önüne geçer; yeteneğin aynı kalır):\n${p.slice(0, 2000)}`;
+    out += `\n\nKONUŞMA TARZIN / AĞZIN (kullanıcının tanımladığı kişilik — üslup konusunda yukarıdaki varsayılanların önüne geçer):\n${p.slice(0, 2000)}\n\n` +
+      "ÖNEMLİ KURALLAR:\n" +
+      "- Yukarıdakiler senin ÜSLUBUN ve kullanabileceğin ifadeler/sözlerdir; onları LİSTE halinde tekrarlama, kopyalama, çevirisini yazma.\n" +
+      "- Kullanıcı ne yazdıysa ona DOĞRUDAN, günlük sohbet havasında cevap ver (ör. 'naber' derse hal hatır sor, muhabbet et). Bu üslubu/küfürleri cümlelerin arasına DOĞAL şekilde serpiştir.\n" +
+      "- Kullanıcı AÇIKÇA istemedikçe güvenlik taraması (nikto vb.), kod dökümü, madde listesi ya da teknik rapor ÜRETME. Sohbet ediyorsun.";
   }
   return out;
 }
