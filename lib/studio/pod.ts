@@ -163,12 +163,15 @@ export function touchPod(): void {
   startPodSweeper().catch(() => {});
 }
 
-// Pod'u üretime hazır hale getir: gerekiyorsa başlat, SSH'ı bağla, start-all.sh çalıştır, ComfyUI'yi bekle.
-// onLog ile ilerleme bildirilir. Hazır olunca döner; olmazsa Error fırlatır.
-export async function ensurePodReady(onLog?: (s: string) => void): Promise<void> {
+// Pod'u hazır hale getir: gerekiyorsa başlat, SSH'ı bağla, start-all.sh çalıştır, servisi bekle.
+// onLog ile ilerleme bildirilir. opts.needComfy=false → yalnız Ollama beklenir (SOHBET için;
+// ComfyUI'yi beklemek gereksiz, ~1 dk kazandırır). Hazır olunca döner; olmazsa Error fırlatır.
+export async function ensurePodReady(onLog?: (s: string) => void, opts: { needComfy?: boolean } = {}): Promise<void> {
   touchPod();
   if (!podAutomationReady()) return; // otomasyon kapalı — mevcut köprüye güven
+  const needComfy = opts.needComfy !== false;
   const log = (s: string) => onLog?.(s);
+  const serviceUp = async () => needComfy ? comfyUp() : (await ollamaStatus()).up;
 
   let st = await podStatus();
 
@@ -181,6 +184,7 @@ export async function ensurePodReady(onLog?: (s: string) => void): Promise<void>
     // RUNNING + SSH portu gelene kadar bekle (~2-3 dk; taze deploy biraz daha uzun)
     for (let i = 0; i < 45; i++) {
       await new Promise((r) => setTimeout(r, 4000));
+      if (i % 4 === 3) log("pod uyanıyor…"); // nabız (~16sn): akış canlı kalsın, proxy kesmesin
       st = await podStatus();
       if (st && st.status === "RUNNING" && st.host && st.sshPort) break;
     }
@@ -194,18 +198,19 @@ export async function ensurePodReady(onLog?: (s: string) => void): Promise<void>
     await connect(st.host, st.sshPort);
   }
 
-  // ComfyUI zaten ayakta mı?
-  if (await comfyUp()) return;
+  // Servis zaten ayakta mı? (sohbet→ollama, görsel→comfy)
+  if (await serviceUp()) return;
 
   // Değilse start-all.sh çalıştır ve bekle
-  log("Modeller yükleniyor… (~1-2 dk)");
+  log(needComfy ? "Modeller yükleniyor… (~1-2 dk)" : "Model uyanıyor… (~1 dk)");
   await execOnPod("bash /workspace/start-all.sh");
   for (let i = 0; i < 60; i++) {
     await new Promise((r) => setTimeout(r, 4000));
+    if (i % 4 === 3) log("model yükleniyor…"); // nabız: akış canlı kalsın
     if (await connectIfNeeded(st.host, st.sshPort)) { /* köprü canlı */ }
-    if (await comfyUp()) return;
+    if (await serviceUp()) return;
   }
-  throw new Error("ComfyUI hazır olmadı (zaman aşımı)");
+  throw new Error((needComfy ? "ComfyUI" : "Ollama") + " hazır olmadı (zaman aşımı)");
 }
 
 // Köprü düşmüşse tekrar kur (başlatma sırasında SSH yeni gelebilir).

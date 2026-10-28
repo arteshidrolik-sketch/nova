@@ -32,30 +32,33 @@ export async function POST(req: Request) {
     for (let i = messages.length - 1; i >= 0; i--) { if (messages[i].role === "user") { messages[i] = { ...messages[i], images: imgs }; break; } }
   }
 
-  touchPod();
-  if (podAutomationReady()) {
-    try { await ensurePodReady(); } catch (e) { return Response.json({ error: e instanceof Error ? e.message : "pod hazırlanamadı" }, { status: 503 }); }
-  }
-  if (!tunnelTarget()) await ensureFromCfg();
-  if (!tunnelTarget()) return Response.json({ error: "Pod bağlı değil. Önce Admin'de bağlan." }, { status: 409 });
-
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
+      const enq = (s: string) => { try { controller.enqueue(encoder.encode(s)); } catch { /* kapandı */ } };
       try {
+        // Pod hazırlığı AKIŞIN İÇİNDE: ilk byte hemen gider, pod uyanırken ilerleme
+        // akar → bağlantı canlı kalır, proxy (Cloudflare 100sn) kesmez. Sohbet için
+        // ComfyUI beklenmez (needComfy:false) — ~1 dk kazanç.
+        touchPod();
+        if (podAutomationReady()) {
+          try { await ensurePodReady((s) => enq(`⏳ ${s}\n`), { needComfy: false }); }
+          catch (e) { enq(`⚠️ ${e instanceof Error ? e.message : "pod hazırlanamadı"}`); controller.close(); return; }
+        }
+        if (!tunnelTarget()) await ensureFromCfg();
+        if (!tunnelTarget()) { enq("⚠️ Pod bağlı değil. Önce Admin'de bağlan."); controller.close(); return; }
+
         // Görü modeli ilk kez kullanılıyorsa pod'a indir (bir kez, /workspace'e kalıcı)
         if (vision && !(await ollamaHasModel(OLLAMA, model))) {
-          controller.enqueue(encoder.encode(`📥 Görü modeli (${model}) ilk kez kuruluyor, birkaç dakika sürebilir…\n\n`));
+          enq(`📥 Görü modeli (${model}) ilk kez kuruluyor, birkaç dakika sürebilir…\n\n`);
           await ollamaPull(OLLAMA, model);
         }
-        await ollamaChatStream(OLLAMA, model, messages, (t) => {
-          controller.enqueue(encoder.encode(t));
-        });
+        await ollamaChatStream(OLLAMA, model, messages, enq);
       } catch (e) {
-        controller.enqueue(encoder.encode(`\n\n⚠️ ${e instanceof Error ? e.message : "hata"}`));
+        enq(`\n\n⚠️ ${e instanceof Error ? e.message : "hata"}`);
       }
       controller.close();
     },
   });
-  return new Response(stream, { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
+  return new Response(stream, { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "X-Accel-Buffering": "no" } });
 }
